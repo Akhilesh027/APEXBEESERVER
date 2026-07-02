@@ -1,0 +1,28 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const franchiseController_1 = require("../controllers/franchiseController");
+const auth_1 = require("../middleware/auth");
+const router = (0, express_1.Router)();
+router.post("/create", auth_1.protect, franchiseController_1.createFranchise);
+router.get("/profile", auth_1.protect, franchiseController_1.getFranchiseProfile);
+router.put("/profile", auth_1.protect, franchiseController_1.updateFranchiseProfile);
+router.get("/team", auth_1.protect, franchiseController_1.getFranchiseTeam);
+router.get("/territories", auth_1.protect, franchiseController_1.getFranchiseTerritories);
+router.get("/performance", auth_1.protect, franchiseController_1.getFranchisePerformance);
+router.get("/network", auth_1.protect, franchiseController_1.getFranchiseNetwork);
+router.get("/wallet", auth_1.protect, franchiseController_1.getFranchiseWallet);
+router.post("/withdraw", auth_1.protect, franchiseController_1.createFranchiseWithdrawal);
+router.get("/applications", auth_1.protect, franchiseController_1.getFranchiseApplications);
+router.post("/applications/:id/action", auth_1.protect, franchiseController_1.handleFranchiseApplicationAction);
+router.get("/security/logins", auth_1.protect, franchiseController_1.getFranchiseLogins);
+router.get("/dashboard/analytics", auth_1.protect, franchiseController_1.getFranchiseDashboardAnalytics);
+router.get("/commissions", auth_1.protect, franchiseController_1.getFranchiseCommissions);
+router.get("/reports/data", auth_1.protect, franchiseController_1.getFranchiseReportsData);
+router.get("/reports/download", franchiseController_1.downloadFranchiseReport); // direct browser link: token auth is done inside the handler
+router.get("/customers", auth_1.protect, franchiseController_1.getFranchiseCustomers);
+router.get("/delivery-partners", auth_1.protect, franchiseController_1.getFranchiseDeliveryPartners);
+router.get("/territory/details", auth_1.protect, franchiseController_1.getFranchiseTerritoryDetails);
+router.get("/", franchiseController_1.getAllFranchises);
+router.get("/:id", franchiseController_1.getFranchiseById);
+exports.default = router;

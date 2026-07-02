@@ -1,0 +1,11 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const discoveryController_1 = require("../controllers/discoveryController");
+const router = (0, express_1.Router)();
+router.get("/groups", discoveryController_1.getGroups);
+router.get("/trending", discoveryController_1.getTrending);
+router.get("/featured-vendors", discoveryController_1.getFeaturedVendors);
+router.get("/service-providers", discoveryController_1.getServiceProviders);
+router.get("/courses", discoveryController_1.getCourses);
+exports.default = router;

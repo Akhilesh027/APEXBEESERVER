@@ -1,0 +1,42 @@
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const mongoose_1 = __importDefault(require("mongoose"));
+const dotenv_1 = __importDefault(require("dotenv"));
+const path_1 = __importDefault(require("path"));
+dotenv_1.default.config({ path: path_1.default.join(__dirname, "../.env") });
+const mongoURI = process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/apexbee";
+async function run() {
+    try {
+        console.log("Connecting to:", mongoURI);
+        await mongoose_1.default.connect(mongoURI);
+        console.log("Connected successfully!");
+        const db = mongoose_1.default.connection.db;
+        if (!db) {
+            throw new Error("Mongoose connection DB is undefined");
+        }
+        const collections = await db.listCollections().toArray();
+        console.log(`Found ${collections.length} collections:`);
+        const results = [];
+        for (const col of collections) {
+            const count = await db.collection(col.name).countDocuments();
+            results.push({ name: col.name, count });
+        }
+        // Sort by count descending
+        results.sort((a, b) => b.count - a.count);
+        console.log("\n--- Collection Counts ---");
+        results.forEach(r => {
+            console.log(`${r.name}: ${r.count} documents`);
+        });
+        await mongoose_1.default.disconnect();
+        console.log("\nDisconnected from MongoDB.");
+        process.exit(0);
+    }
+    catch (err) {
+        console.error("Error inspecting database:", err);
+        process.exit(1);
+    }
+}
+run();

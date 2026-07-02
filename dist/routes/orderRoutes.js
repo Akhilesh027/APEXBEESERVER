@@ -1,0 +1,18 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const orderController_1 = require("../controllers/orderController");
+const multer_1 = require("../middleware/multer");
+const auth_1 = require("../middleware/auth");
+const router = (0, express_1.Router)();
+router.get("/", auth_1.protect, (0, auth_1.restrictTo)('admin', 'vendor', 'wholesaler', 'manufacturer'), orderController_1.getOrders);
+router.get("/user/:userId", auth_1.protect, orderController_1.getOrdersByUserId);
+router.get("/:userId/count", auth_1.protect, orderController_1.getOrderCountByUserId);
+router.get("/:id", auth_1.protect, orderController_1.getOrderById);
+router.post("/", auth_1.protect, orderController_1.createOrder);
+router.post("/with-proof", auth_1.protect, multer_1.uploadAnyDisk.single('paymentProof'), orderController_1.createOrderWithProof);
+router.put("/:id", auth_1.protect, orderController_1.updateOrder);
+router.patch("/:id", auth_1.protect, orderController_1.updateOrder);
+router.patch("/:id/status", auth_1.protect, orderController_1.updateOrder);
+router.delete("/:id", auth_1.protect, (0, auth_1.restrictTo)('admin'), orderController_1.deleteOrder);
+exports.default = router;

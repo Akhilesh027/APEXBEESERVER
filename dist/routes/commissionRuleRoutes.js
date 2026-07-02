@@ -1,0 +1,10 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const commissionRuleController_1 = require("../controllers/commissionRuleController");
+const auth_1 = require("../middleware/auth");
+const router = (0, express_1.Router)();
+router.get("/", auth_1.protect, commissionRuleController_1.getCommissionRules);
+router.post("/", auth_1.protect, (0, auth_1.restrictTo)("admin"), commissionRuleController_1.createCommissionRule);
+router.put("/:id", auth_1.protect, (0, auth_1.restrictTo)("admin"), commissionRuleController_1.updateCommissionRule);
+exports.default = router;
