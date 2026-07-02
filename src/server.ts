@@ -68,7 +68,13 @@ app.use(
       'http://127.0.0.1:5178',
       'http://127.0.0.1:5179',
       'http://127.0.0.1:5180',
-      'http://127.0.0.1:8080'
+      'http://127.0.0.1:8080',
+      'https://user.apexbee.in',
+      'https://apexbeeadmin.apexbee.in',
+      'https://apexbeevendor.apexbee.in',
+      'https://franchser.apexbee.in',
+      'https://service.apexbee.in',
+      'https://delivery.apexbee.in',
     ],
     credentials: true,
   })
