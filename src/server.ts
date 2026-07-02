@@ -75,6 +75,7 @@ app.use(
       'https://franchser.apexbee.in',
       'https://service.apexbee.in',
       'https://delivery.apexbee.in',
+      'https://server.apexbee.in'
     ],
     credentials: true,
   })
