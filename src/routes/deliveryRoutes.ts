@@ -34,7 +34,11 @@ import {
   getScheduledPickups,
   createScheduledPickup,
   getSubscriptions,
-  updateSubscriptionRun
+  updateSubscriptionRun,
+  register,
+  applyLeave,
+  getLeaves,
+  getReferrals
 } from '../controllers/deliveryController';
 import { protect } from '../middleware/auth';
 
@@ -43,6 +47,7 @@ const router = Router();
 // Public routes
 router.post('/login', login);
 router.post('/verify-otp', verifyOtp);
+router.post('/register', register);
 
 // Protected routes (Require authentication token)
 router.post('/checkin', protect, checkIn);
@@ -54,6 +59,11 @@ router.get('/pickups', protect, getScheduledPickups);
 router.post('/pickups', protect, createScheduledPickup);
 router.get('/subscriptions', protect, getSubscriptions);
 router.post('/subscriptions/:subId/run', protect, updateSubscriptionRun);
+
+// Leaves & Referrals routes
+router.post('/leaves', protect, applyLeave);
+router.get('/leaves', protect, getLeaves);
+router.get('/referrals', protect, getReferrals);
 
 // Orders routing
 router.get('/orders', protect, getOrders);

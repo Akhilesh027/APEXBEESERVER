@@ -36,20 +36,28 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.CommissionRule = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
 const CommissionRuleSchema = new mongoose_1.Schema({
+    name: {
+        type: String,
+        unique: true,
+        sparse: true,
+        index: true
+    },
     businessType: {
         type: String,
-        required: true,
         unique: true,
-        trim: true,
-        index: true,
+        sparse: true,
+        index: true
     },
+    description: { type: String, default: "" },
+    platformPercentage: { type: Number, required: true, default: 5 },
+    franchisePercentage: { type: Number, required: true, default: 5 },
+    vendorPercentage: { type: Number, required: true, default: 90 },
+    isActive: { type: Boolean, default: true, index: true },
     entrepreneurPercent: { type: Number, default: 0 },
     mandalPercent: { type: Number, default: 0 },
     districtPercent: { type: Number, default: 0 },
     statePercent: { type: Number, default: 0 },
     companyPercent: { type: Number, default: 0 },
-    active: { type: Boolean, default: true },
-}, {
-    timestamps: true,
-});
+    active: { type: Boolean, default: true }
+}, { timestamps: true });
 exports.CommissionRule = mongoose_1.default.model("CommissionRule", CommissionRuleSchema);

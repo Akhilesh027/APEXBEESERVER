@@ -11,7 +11,7 @@ const ServiceProviderKyc_1 = require("../models/ServiceProviderKyc");
 const ServiceProvider_1 = require("../models/ServiceProvider");
 const migrateServiceProviders = async () => {
     try {
-        const providers = await ServiceProvider_1.ServiceProvider.find();
+        const providers = await ServiceProvider_1.ServiceProvider.find({ providerCode: { $exists: false } });
         let updatedCount = 0;
         for (const sp of providers) {
             if (!sp.providerCode) {
@@ -41,7 +41,12 @@ const migrateServiceProviders = async () => {
 };
 const migrateServiceProviderKycs = async () => {
     try {
-        const kycs = await ServiceProviderKyc_1.ServiceProviderKyc.find();
+        const kycs = await ServiceProviderKyc_1.ServiceProviderKyc.find({
+            $or: [
+                { documents: { $exists: false } },
+                { documents: { $size: 0 } }
+            ]
+        });
         let updatedCount = 0;
         for (const kyc of kycs) {
             const originalAadhaarFront = kyc.aadhaarFront;

@@ -5,7 +5,7 @@ const orderController_1 = require("../controllers/orderController");
 const multer_1 = require("../middleware/multer");
 const auth_1 = require("../middleware/auth");
 const router = (0, express_1.Router)();
-router.get("/", auth_1.protect, (0, auth_1.restrictTo)('admin', 'vendor', 'wholesaler', 'manufacturer'), orderController_1.getOrders);
+router.get("/", auth_1.protect, (0, auth_1.restrictTo)('admin', 'vendor', 'wholesaler', 'manufacturer', 'state_franchise', 'district_franchise', 'mandal_franchise'), orderController_1.getOrders);
 router.get("/user/:userId", auth_1.protect, orderController_1.getOrdersByUserId);
 router.get("/:userId/count", auth_1.protect, orderController_1.getOrderCountByUserId);
 router.get("/:id", auth_1.protect, orderController_1.getOrderById);

@@ -5,6 +5,7 @@ const walletController_1 = require("../controllers/walletController");
 const auth_1 = require("../middleware/auth");
 const router = (0, express_1.Router)();
 router.get("/my-wallet", auth_1.protect, walletController_1.getMyWallet);
+router.post("/add-funds", auth_1.protect, walletController_1.addFunds);
 router.post("/withdrawals", auth_1.protect, walletController_1.createWithdrawalRequest);
 router.get("/withdrawals", auth_1.protect, walletController_1.getWithdrawalsHistory);
 // Admin endpoints

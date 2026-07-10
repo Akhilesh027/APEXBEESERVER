@@ -17,6 +17,12 @@ const Product_1 = __importDefault(require("../models/Product"));
 const BusinessRelationship_1 = require("../models/BusinessRelationship");
 const ReferralSettings_1 = require("../models/ReferralSettings");
 const ReferralTransaction_1 = require("../models/ReferralTransaction");
+require("../models/Franchise");
+require("../models/Entrepreneur");
+require("../models/Vendor");
+require("../models/ServiceProvider");
+require("../models/Wholesaler");
+require("../models/Manufacturer");
 dotenv_1.default.config({ path: path_1.default.join(__dirname, '../../.env') });
 const MONGO_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/apexbee_test';
 async function runTests() {

@@ -159,6 +159,15 @@ const updateProfile = async (req, res) => {
                 }
             }
         });
+        // Auto-sync unique active service categories to profile search tags
+        if (updates.services) {
+            const uniqueCats = Array.from(new Set(updates.services
+                .filter((s) => s.active && s.category)
+                .map((s) => s.category)));
+            if (uniqueCats.length > 0) {
+                profile.serviceCategory = uniqueCats;
+            }
+        }
         if (updates.bankDetails) {
             profile.bankDetails = {
                 ...profile.bankDetails,
@@ -452,7 +461,10 @@ const listProviders = async (req, res) => {
             ];
         }
         if (category) {
-            filter.serviceCategory = { $in: [new RegExp(category, 'i')] };
+            filter['$or'] = [
+                { serviceCategory: { $in: [new RegExp(category, 'i')] } },
+                { 'services.category': { $regex: category, $options: 'i' } }
+            ];
         }
         if (district)
             filter.district = { $regex: district, $options: 'i' };

@@ -33,45 +33,35 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.SubscriptionLedger = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
-const CategoryAttributeSchema = new mongoose_1.Schema({
-    name: { type: String, required: true, trim: true },
-    type: {
-        type: String,
-        enum: ['text', 'number', 'select', 'boolean'],
-        default: 'text',
+const SubscriptionLedgerSchema = new mongoose_1.Schema({
+    subscriptionId: {
+        type: mongoose_1.Schema.Types.ObjectId,
+        ref: "LocalShopSubscription",
+        required: true,
+        index: true
     },
-    required: { type: Boolean, default: false },
-    isVariant: { type: Boolean, default: false },
-    options: [{ type: String, trim: true }],
-}, { _id: true });
-const CategorySchema = new mongoose_1.Schema({
-    name: { type: String, required: true, trim: true },
-    slug: {
+    action: {
         type: String,
         required: true,
-        unique: true,
-        lowercase: true,
-        trim: true,
+        enum: ['created', 'paused', 'resumed', 'skipped', 'delivered', 'failed', 'cancelled', 'price_updated', 'renewed', 'statement_generated'],
+        index: true
     },
-    description: { type: String, default: '' },
-    image: { type: String, default: '' },
-    banner: { type: String, default: '' },
-    parentId: {
+    performedBy: {
         type: mongoose_1.Schema.Types.ObjectId,
-        ref: 'Category',
+        ref: "User",
         default: null,
+        index: true
     },
-    level: {
-        type: Number,
-        enum: [1, 2, 3],
-        default: 1,
-    },
-    isActive: { type: Boolean, default: true },
-    sortOrder: { type: Number, default: 0 },
-    brands: [{ type: String, trim: true }],
-    attributes: [CategoryAttributeSchema],
-}, { timestamps: true });
-CategorySchema.index({ parentId: 1 });
-CategorySchema.index({ level: 1 });
-exports.default = mongoose_1.default.model('Category', CategorySchema);
+    notes: { type: String, default: "" },
+    previousValue: { type: String, default: "" },
+    newValue: { type: String, default: "" },
+    timestamp: {
+        type: Date,
+        required: true,
+        default: Date.now,
+        index: true
+    }
+}, { timestamps: { createdAt: true, updatedAt: false } });
+exports.SubscriptionLedger = mongoose_1.default.model("SubscriptionLedger", SubscriptionLedgerSchema);

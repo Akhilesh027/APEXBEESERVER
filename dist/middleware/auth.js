@@ -34,7 +34,6 @@ const restrictTo = (...allowedRoles) => {
             res.status(401).json({ message: 'Not authenticated' });
             return;
         }
-        console.log('[RestrictTo Check] Email:', req.user.email, 'Roles:', req.user.roles, 'Allowed:', allowedRoles);
         // Admin bypass: if user has the 'admin' role, allow everything
         if (req.user.roles.includes('admin')) {
             return next();

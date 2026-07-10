@@ -13,6 +13,12 @@ import Product from '../models/Product';
 import { BusinessRelationship } from '../models/BusinessRelationship';
 import { ReferralSettings } from '../models/ReferralSettings';
 import { ReferralTransaction } from '../models/ReferralTransaction';
+import '../models/Franchise';
+import '../models/Entrepreneur';
+import '../models/Vendor';
+import '../models/ServiceProvider';
+import '../models/Wholesaler';
+import '../models/Manufacturer';
 
 dotenv.config({ path: path.join(__dirname, '../../.env') });
 

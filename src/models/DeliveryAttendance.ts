@@ -18,6 +18,7 @@ export interface IDeliveryAttendance extends Document {
   checkOutTime?: Date;
   breaks: IBreak[];
   status: 'CheckedIn' | 'OnBreak' | 'CheckedOut';
+  shift?: 'Morning' | 'Afternoon' | 'Night';
   startLocation?: ILocationCoords;
   endLocation?: ILocationCoords;
   createdAt: Date;
@@ -42,6 +43,7 @@ const DeliveryAttendanceSchema = new Schema<IDeliveryAttendance>({
   checkOutTime: { type: Date },
   breaks: { type: [BreakSchema], default: [] },
   status: { type: String, enum: ['CheckedIn', 'OnBreak', 'CheckedOut'], default: 'CheckedOut', required: true },
+  shift: { type: String, enum: ['Morning', 'Afternoon', 'Night'] },
   startLocation: { type: CoordsSchema },
   endLocation: { type: CoordsSchema }
 }, { timestamps: true });

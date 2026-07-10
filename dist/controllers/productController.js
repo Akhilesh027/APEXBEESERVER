@@ -110,7 +110,7 @@ const calculatePricing = (body) => {
         };
     });
     const totalCommissionAmount = commissionShares.reduce((sum, item) => sum + normalizeNumber(item.amount), 0);
-    const finalSellerAmount = sellingPrice - platformFeeAmount - shippingCharge - packingCharge;
+    const finalSellerAmount = sellingPrice - platformFeeAmount;
     const customerSellingAmount = body.customerSellingAmount !== undefined
         ? normalizeNumber(body.customerSellingAmount)
         : sellingPrice + shippingCharge + packingCharge;

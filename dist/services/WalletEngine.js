@@ -425,5 +425,40 @@ class WalletEngine {
         result = (await pushQuery) || result;
         return result;
     }
+    /**
+     * Finalize a pending hold (complete the debit)
+     */
+    static async finalizeHold(userId, referenceId, session) {
+        let queryWallet = Wallet_1.Wallet.findOne({ userId });
+        if (session)
+            queryWallet = queryWallet.session(session);
+        const wallet = await queryWallet;
+        if (!wallet)
+            throw new Error('Wallet not found');
+        const entry = wallet.ledgerEntries.find(e => String(e.referenceId) === String(referenceId) && e.status === 'pending');
+        if (!entry)
+            throw new Error('Pending hold not found');
+        const amount = entry.amount;
+        let queryUpdate = Wallet_1.Wallet.findOneAndUpdate({
+            userId,
+            "ledgerEntries.referenceId": referenceId,
+            "ledgerEntries.status": "pending"
+        }, {
+            $inc: {
+                pendingBalance: Number((-amount).toFixed(2)),
+                totalDebits: Number(amount.toFixed(2))
+            },
+            $set: {
+                "ledgerEntries.$.status": "completed",
+                "ledgerEntries.$.remarks": "Subscription hold finalized on delivery"
+            }
+        }, { new: true });
+        if (session)
+            queryUpdate = queryUpdate.session(session);
+        const result = await queryUpdate;
+        if (!result)
+            throw new Error('Hold already processed or not found');
+        return result;
+    }
 }
 exports.WalletEngine = WalletEngine;

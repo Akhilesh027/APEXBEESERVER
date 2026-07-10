@@ -25,6 +25,12 @@ const DistrictMaster_1 = require("../models/DistrictMaster");
 const MandalMaster_1 = require("../models/MandalMaster");
 const WalletEngine_1 = require("../services/WalletEngine");
 const DeliveryPartner_1 = require("../models/DeliveryPartner");
+const Product_1 = __importDefault(require("../models/Product"));
+const LocalShopSubscription_1 = __importDefault(require("../models/LocalShopSubscription"));
+const SupportTicket_1 = require("../models/SupportTicket");
+const Referral_1 = require("../models/Referral");
+const ReportingService_1 = require("../services/ReportingService");
+const ExportEngine_1 = require("../services/ExportEngine");
 const autoAssignTerritoriesToFranchise = async (franchiseId) => {
     const franchise = await Franchise_1.Franchise.findById(franchiseId);
     if (!franchise)
@@ -263,7 +269,7 @@ const getFranchiseTeam = async (req, res) => {
         }
         // Populate actual revenues & commissions dynamically from database
         const populatedSubs = await Promise.all(subFranchises.map(async (sf) => {
-            const sfSettlements = await CommissionSettlement_1.CommissionSettlement.find({ recipientId: sf._id }).populate('orderId');
+            const sfSettlements = await CommissionSettlement_1.CommissionSettlement.find({ recipientId: sf.userId }).populate('orderId');
             const commissionEarned = sfSettlements
                 .filter(s => s.status === 'released')
                 .reduce((sum, s) => sum + s.amount, 0);
@@ -275,7 +281,7 @@ const getFranchiseTeam = async (req, res) => {
             };
         }));
         const populatedEnts = await Promise.all(entrepreneurs.map(async (ent) => {
-            const entSettlements = await CommissionSettlement_1.CommissionSettlement.find({ recipientId: ent._id }).populate('orderId');
+            const entSettlements = await CommissionSettlement_1.CommissionSettlement.find({ recipientId: ent.userId }).populate('orderId');
             const entReferrals = await ReferralTransaction_1.ReferralTransaction.find({ recipientUserId: ent.userId });
             const settlementCommissions = entSettlements
                 .filter(s => s.status === 'released')
@@ -421,13 +427,13 @@ const getFranchisePerformance = async (req, res) => {
         else
             query = { mandalFranchiseId: franchise._id };
         const mappingsCount = await TerritoryMapping_1.TerritoryMapping.countDocuments(query);
-        const wallet = await Wallet_1.Wallet.findOne({ userId: franchise._id });
+        const wallet = await Wallet_1.Wallet.findOne({ userId: franchise.userId });
         const availableBalance = wallet ? wallet.availableBalance : 0;
         const pendingBalance = wallet ? wallet.pendingBalance : 0;
         const withdrawnBalance = wallet ? wallet.withdrawnBalance : 0;
         const commissionEarned = Number((availableBalance + withdrawnBalance).toFixed(2));
         // Calculate actual sales from orders linked to settlements
-        const settlements = await CommissionSettlement_1.CommissionSettlement.find({ recipientId: franchise._id });
+        const settlements = await CommissionSettlement_1.CommissionSettlement.find({ recipientId: franchise.userId });
         const orderIds = settlements.map(s => s.orderId);
         const uniqueOrderIds = Array.from(new Set(orderIds.map(id => id.toString())));
         const orders = await Order_1.Order.find({ _id: { $in: uniqueOrderIds } });
@@ -1104,83 +1110,229 @@ const getFranchiseDashboardAnalytics = async (req, res) => {
             res.status(404).json({ message: 'Franchise profile not found' });
             return;
         }
+        const formatINR = (value) => {
+            return new Intl.NumberFormat('en-IN', {
+                style: 'currency',
+                currency: 'INR',
+                maximumFractionDigits: 0
+            }).format(value);
+        };
+        // 1. Scopes & Filter setup
+        const { state, district, mandal, franchiseLevel } = franchise;
+        let scopeFilter = {};
+        let userScopeFilter = {};
+        if (franchiseLevel === 'state') {
+            scopeFilter = { state };
+            userScopeFilter = { 'territory.state': state };
+        }
+        else if (franchiseLevel === 'district') {
+            scopeFilter = { state, district };
+            userScopeFilter = { 'territory.state': state, 'territory.district': district };
+        }
+        else {
+            scopeFilter = { state, district, mandal };
+            userScopeFilter = { 'territory.state': state, 'territory.district': district, 'territory.mandal': mandal };
+        }
+        // 2. Querying Downlines and Teams
+        const subFranchises = await Franchise_1.Franchise.find({ parentFranchiseId: franchise._id });
+        const entrepreneurs = await Entrepreneur_1.Entrepreneur.find(scopeFilter);
+        const vendors = await Vendor_1.Vendor.find(scopeFilter);
+        const totalEntrepreneurs = entrepreneurs.length;
+        const scopedVendorIds = vendors.map(v => v._id);
+        const scopedVendorUserIds = vendors.map(v => v.userId);
+        const activeCustomers = await User_1.User.countDocuments({
+            ...userScopeFilter,
+            roles: 'customer'
+        });
+        const serviceProviders = await ServiceProvider_1.ServiceProvider.find(scopeFilter);
+        const totalServiceProviders = serviceProviders.length;
+        const deliveryPartnerUsers = await User_1.User.find({
+            ...userScopeFilter,
+            roles: 'delivery_partner'
+        }).select('_id');
+        const deliveryPartnerUserIds = deliveryPartnerUsers.map(u => u._id);
+        const deliveryPartners = await DeliveryPartner_1.DeliveryPartner.find({
+            userId: { $in: deliveryPartnerUserIds }
+        });
+        const totalDeliveryPartners = deliveryPartners.length;
+        // 3. Store Statistics
+        const draftStores = vendors.filter(v => v.marketplaceStatus === 'Draft').length;
+        const pendingReviewStores = vendors.filter(v => v.marketplaceStatus === 'Pending Review').length;
+        const approvedStores = vendors.filter(v => v.marketplaceStatus === 'Approved').length;
+        const suspendedStores = vendors.filter(v => v.marketplaceStatus === 'Suspended').length;
+        const suspendedVendors = suspendedStores;
+        const hiddenStores = vendors.filter(v => v.marketplaceStatus === 'Hidden').length;
+        const activeVendors = approvedStores;
+        // 4. Product Statistics
+        const products = await Product_1.default.find({
+            sellerId: { $in: scopedVendorUserIds }
+        });
+        const productsListed = products.length;
+        const liveProducts = products.filter(p => p.status === 'Live').length;
+        const pendingProducts = products.filter(p => p.status === 'Pending Review').length;
+        const awaitingSellerProducts = products.filter(p => p.status === 'Awaiting Seller Approval').length;
+        const rejectedProducts = products.filter(p => p.status === 'Rejected').length;
+        const outOfStockProducts = products.filter(p => p.stock <= 0).length;
+        const outOfStockProductsCount = outOfStockProducts;
+        // 5. Order Statistics
+        const orders = await Order_1.Order.find({
+            sellerId: { $in: scopedVendorUserIds }
+        });
+        const orderStatuses = {
+            Placed: orders.filter(o => o.orderStatus === 'Placed').length,
+            Confirmed: orders.filter(o => o.orderStatus === 'Confirmed').length,
+            Packed: orders.filter(o => o.orderStatus === 'Packed').length,
+            Shipped: orders.filter(o => o.orderStatus === 'Shipped').length,
+            Delivered: orders.filter(o => o.orderStatus === 'Delivered').length,
+            Cancelled: orders.filter(o => o.orderStatus === 'Cancelled').length,
+            Returned: orders.filter(o => o.orderStatus === 'Returned').length,
+            PaymentPending: orders.filter(o => o.paymentStatus === 'Pending').length
+        };
+        // 6. Revenue Calculations (valid actual orders only)
+        const revenueOrders = orders.filter(o => o.orderStatus !== 'Cancelled' &&
+            o.orderStatus !== 'Payment Rejected' &&
+            (o.paymentStatus === 'Paid' || o.paymentStatus === 'Approved' || o.orderStatus === 'Delivered'));
+        const now = new Date();
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        const todayRevenue = revenueOrders
+            .filter(o => new Date(o.createdAt) >= startOfToday)
+            .reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+        const monthlyRevenue = revenueOrders
+            .filter(o => new Date(o.createdAt) >= startOfMonth)
+            .reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+        const totalRevenue = revenueOrders
+            .reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+        // 7. LocalShopSubscription Analytics
+        const subscriptions = await LocalShopSubscription_1.default.find({
+            vendorId: { $in: scopedVendorIds }
+        });
+        const totalActiveSubscriptions = subscriptions.filter(s => s.status === 'active').length;
+        const totalPausedSubscriptions = subscriptions.filter(s => s.status === 'paused').length;
+        const recurringRevenue = subscriptions
+            .filter(s => s.status === 'active')
+            .reduce((sum, s) => sum + (s.unitPrice * s.quantity), 0);
+        const todayStr = now.toISOString().split('T')[0];
+        const todayDeliveries = subscriptions.filter(s => s.status === 'active' && s.startDate <= todayStr).length;
+        // 8. Platform Delivery Analytics
+        const deliveryAvailable = deliveryPartners.filter(dp => dp.status === 'active').length;
+        const deliveryOffline = deliveryPartners.filter(dp => dp.status === 'offline').length;
+        const deliverySuspended = deliveryPartners.filter(dp => dp.status === 'suspended').length;
+        const todayDeliveriesCount = orders.filter(o => o.deliveryType === 'Platform' && new Date(o.createdAt) >= startOfToday).length;
+        const completedDeliveries = orders.filter(o => o.deliveryType === 'Platform' && o.orderStatus === 'Delivered').length;
+        const failedDeliveries = orders.filter(o => o.deliveryType === 'Platform' && o.orderStatus === 'Returned').length;
+        // 9. Wallet & Commission Breakdowns
         const wallet = await Wallet_1.Wallet.findOne({ userId: franchise.userId });
         const walletBalance = wallet ? wallet.availableBalance : 0;
         const pendingBalance = wallet ? wallet.pendingBalance : 0;
-        const totalWithdrawn = wallet ? wallet.withdrawnBalance : 0;
-        const totalEarned = wallet ? wallet.totalCredits : 0;
-        // Team counting
-        const { state, district, mandal, franchiseLevel } = franchise;
-        let subFranchises = [];
-        let entrepreneurs = [];
-        let vendors = [];
-        if (franchiseLevel === 'state') {
-            subFranchises = await Franchise_1.Franchise.find({ parentFranchiseId: franchise._id });
-            entrepreneurs = await Entrepreneur_1.Entrepreneur.find({ state });
-            const mappings = await TerritoryMapping_1.TerritoryMapping.find({ stateFranchiseId: franchise._id });
-            const vendorIds = mappings.filter(m => m.businessType === 'vendor').map(m => m.businessId);
-            if (vendorIds.length > 0)
-                vendors = await Vendor_1.Vendor.find({ _id: { $in: vendorIds } });
-        }
-        else if (franchiseLevel === 'district') {
-            subFranchises = await Franchise_1.Franchise.find({ parentFranchiseId: franchise._id });
-            entrepreneurs = await Entrepreneur_1.Entrepreneur.find({ state, district });
-            const mappings = await TerritoryMapping_1.TerritoryMapping.find({ districtFranchiseId: franchise._id });
-            const vendorIds = mappings.filter(m => m.businessType === 'vendor').map(m => m.businessId);
-            if (vendorIds.length > 0)
-                vendors = await Vendor_1.Vendor.find({ _id: { $in: vendorIds } });
-        }
-        else if (franchiseLevel === 'mandal') {
-            entrepreneurs = await Entrepreneur_1.Entrepreneur.find({ state, district, mandal });
-            const mappings = await TerritoryMapping_1.TerritoryMapping.find({ mandalFranchiseId: franchise._id });
-            const vendorIds = mappings.filter(m => m.businessType === 'vendor').map(m => m.businessId);
-            if (vendorIds.length > 0)
-                vendors = await Vendor_1.Vendor.find({ _id: { $in: vendorIds } });
-        }
-        const totalEntrepreneurs = entrepreneurs.length;
-        const activeDownline = subFranchises.length + entrepreneurs.length + vendors.length;
-        // Direct Referral count from Referral collection
-        const totalReferrals = await mongoose_1.default.model("Referral").countDocuments({ referrerUserId: franchise.userId });
-        // Ledger breakdown
+        const withdrawnBalance = wallet ? wallet.withdrawnBalance : 0;
         let franchiseCommission = 0;
         let referralCommission = 0;
-        let entrepreneurCommission = 0;
-        let monthlyCommissions = 0;
-        const thirtyDaysAgo = new Date();
-        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-        if (wallet) {
+        let mlmCommission = 0;
+        let level1Commission = 0;
+        let level2Commission = 0;
+        let level3Commission = 0;
+        if (wallet && wallet.ledgerEntries) {
             wallet.ledgerEntries.forEach((entry) => {
-                if (entry.type === 'credit' || entry.type === 'Credit') {
-                    const category = entry.category || '';
-                    const amount = entry.amount || 0;
-                    if (category.includes('Franchise') || category.includes('franchise')) {
-                        franchiseCommission += amount;
+                if (entry.type?.toLowerCase() === 'credit' && entry.status !== 'rejected') {
+                    const cat = entry.category || '';
+                    const amt = entry.amount || 0;
+                    if (["Product Commission", "product_commission"].includes(cat)) {
+                        mlmCommission += amt;
                     }
-                    else if (category.includes('Referral') || category.includes('bonus') || category.includes('referral')) {
-                        referralCommission += amount;
-                    }
-                    else if (category.includes('Entrepreneur') || category.includes('entrepreneur')) {
-                        entrepreneurCommission += amount;
+                    else if (["Referral Bonus", "first_order_bonus", "first_purchase_product_commission"].includes(cat)) {
+                        referralCommission += amt;
                     }
                     else {
-                        // default fallback to MLM or other
-                        franchiseCommission += amount;
+                        franchiseCommission += amt;
                     }
-                    const entryDate = entry.createdAt || entry.date || new Date();
-                    if (new Date(entryDate) >= thirtyDaysAgo) {
-                        monthlyCommissions += amount;
+                    if (entry.remarks?.includes('level 1') || entry.remarks?.includes('Level 1')) {
+                        level1Commission += amt;
+                    }
+                    else if (entry.remarks?.includes('level 2') || entry.remarks?.includes('Level 2')) {
+                        level2Commission += amt;
+                    }
+                    else if (entry.remarks?.includes('level 3') || entry.remarks?.includes('Level 3')) {
+                        level3Commission += amt;
                     }
                 }
             });
         }
-        // Sum monthly revenue from orders linked to franchise settlements
-        const settlements = await CommissionSettlement_1.CommissionSettlement.find({ recipientId: franchise._id });
-        const orderIds = settlements.map(s => s.orderId);
-        const uniqueOrderIds = Array.from(new Set(orderIds.map(id => id.toString())));
-        const orders = await Order_1.Order.find({ _id: { $in: uniqueOrderIds } });
-        const monthlyOrders = orders.filter(order => new Date(order.createdAt) >= thirtyDaysAgo);
-        const monthlyRevenue = monthlyOrders.reduce((sum, order) => sum + (order.totalAmount || 0), 0);
-        // Past 6 Months trends
+        const scopedSettlements = await CommissionSettlement_1.CommissionSettlement.find({
+            orderId: { $in: orders.map(o => o._id) }
+        });
+        let vendorCommission = 0;
+        let companyShare = 0;
+        scopedSettlements.forEach(s => {
+            if (s.settlementType === 'vendor')
+                vendorCommission += s.amount;
+            else if (s.settlementType === 'company')
+                companyShare += s.amount;
+        });
+        const todayEarnings = wallet && wallet.ledgerEntries
+            ? wallet.ledgerEntries.filter((e) => e.type?.toLowerCase() === 'credit' && new Date(e.createdAt || e.date || now) >= startOfToday).reduce((sum, e) => sum + e.amount, 0)
+            : 0;
+        const monthlyEarnings = wallet && wallet.ledgerEntries
+            ? wallet.ledgerEntries.filter((e) => e.type?.toLowerCase() === 'credit' && new Date(e.createdAt || e.date || now) >= startOfMonth).reduce((sum, e) => sum + e.amount, 0)
+            : 0;
+        const totalLifetimeEarnings = wallet && wallet.ledgerEntries
+            ? wallet.ledgerEntries.filter((e) => e.type?.toLowerCase() === 'credit').reduce((sum, e) => sum + e.amount, 0)
+            : 0;
+        // 10. Customer Growth
+        const startOfWeek = new Date();
+        startOfWeek.setDate(now.getDate() - 7);
+        const newCustomersToday = await User_1.User.countDocuments({ ...userScopeFilter, roles: 'customer', createdAt: { $gte: startOfToday } });
+        const newCustomersThisWeek = await User_1.User.countDocuments({ ...userScopeFilter, roles: 'customer', createdAt: { $gte: startOfWeek } });
+        const newCustomersThisMonth = await User_1.User.countDocuments({ ...userScopeFilter, roles: 'customer', createdAt: { $gte: startOfMonth } });
+        // 11. Alerts & Support
+        const activeDPs = deliveryPartners.filter(dp => dp.ratings && dp.ratings.averageRating);
+        const avgRating = activeDPs.length > 0
+            ? Number((activeDPs.reduce((sum, dp) => sum + dp.ratings.averageRating, 0) / activeDPs.length).toFixed(1))
+            : 4.8;
+        const pendingStoreApprovals = pendingReviewStores;
+        const pendingProductsCount = pendingProducts;
+        const withdrawRequests = wallet && wallet.ledgerEntries
+            ? wallet.ledgerEntries.filter((e) => e.category === 'Withdrawal' && e.status === 'pending').length
+            : 0;
+        const newSubFranchises = subFranchises.filter(sf => new Date(sf.createdAt) >= startOfMonth).length;
+        const newEntrepreneurs = entrepreneurs.filter(e => new Date(e.createdAt) >= startOfMonth).length;
+        const newVendorsCount = vendors.filter(v => new Date(v.createdAt) >= startOfMonth).length;
+        const newRegistrations = newSubFranchises + newEntrepreneurs + newVendorsCount;
+        const scopedUsers = await User_1.User.find(userScopeFilter).select('_id');
+        const scopedUserIds = scopedUsers.map(u => u._id);
+        const supportTickets = await SupportTicket_1.SupportTicket.countDocuments({
+            userId: { $in: scopedUserIds },
+            status: { $in: ['Open', 'Pending'] }
+        });
+        // 12. Territory coverage mapping
+        let territoryCoverage = 0;
+        if (franchiseLevel === 'state') {
+            territoryCoverage = Math.min(100, Math.max(10, Math.round((subFranchises.length / 5) * 100))) || 78;
+        }
+        else if (franchiseLevel === 'district') {
+            territoryCoverage = Math.min(100, Math.max(10, Math.round((subFranchises.length / 10) * 100))) || 85;
+        }
+        else {
+            territoryCoverage = Math.min(100, Math.max(10, Math.round((vendors.length / 5) * 100))) || 90;
+        }
+        // 13. Territory Heat Map details
+        const districtSalesMap = {};
+        const mandalSalesMap = {};
+        orders.forEach(o => {
+            const vend = vendors.find(v => v.userId.toString() === o.sellerId.toString());
+            if (vend) {
+                if (vend.district)
+                    districtSalesMap[vend.district] = (districtSalesMap[vend.district] || 0) + (o.totalAmount || 0);
+                if (vend.mandal)
+                    mandalSalesMap[vend.mandal] = (mandalSalesMap[vend.mandal] || 0) + (o.totalAmount || 0);
+            }
+        });
+        const sortedDistricts = Object.entries(districtSalesMap).sort((a, b) => b[1] - a[1]);
+        const sortedMandals = Object.entries(mandalSalesMap).sort((a, b) => b[1] - a[1]);
+        const topDistrict = sortedDistricts[0] ? sortedDistricts[0][0] : (district || 'N/A');
+        const topMandal = sortedMandals[0] ? sortedMandals[0][0] : (mandal || 'N/A');
+        const worstPerformingArea = sortedMandals[sortedMandals.length - 1] ? sortedMandals[sortedMandals.length - 1][0] : 'None';
+        // 14. Past 6 Months trends
         const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
         const getLast6Months = () => {
             const result = [];
@@ -1196,82 +1348,230 @@ const getFranchiseDashboardAnalytics = async (req, res) => {
             return result;
         };
         const months = getLast6Months();
-        // Compute trends (purely database-backed, no mock baselines)
         const revenueChartData = months.map(m => {
-            const mOrders = orders.filter(o => {
+            const mOrders = revenueOrders.filter(o => {
                 const oDate = new Date(o.createdAt);
                 return oDate.getMonth() === m.monthNum && oDate.getFullYear() === m.year;
             });
             const revenue = mOrders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
-            return { name: m.name, revenue: revenue || 0 };
+            return { name: m.name, revenue: Number(revenue.toFixed(2)) };
         });
-        const referralGrowthData = months.map((m, idx) => {
-            return { name: m.name, referrals: totalReferrals || 0 };
+        const totalReferrals = await Referral_1.Referral.countDocuments({ referrerUserId: franchise.userId });
+        const referralsList = await Referral_1.Referral.find({ referrerUserId: franchise.userId });
+        let cumulativeReferrals = 0;
+        const referralGrowthData = months.map(m => {
+            const mReferrals = referralsList.filter(r => {
+                const rDate = new Date(r.createdAt);
+                return rDate.getMonth() === m.monthNum && rDate.getFullYear() === m.year;
+            }).length;
+            cumulativeReferrals += mReferrals;
+            return { name: m.name, referrals: cumulativeReferrals };
         });
-        const commissionTrendData = months.map((m, idx) => {
+        const commissionTrendData = months.map(m => {
             let MLM = 0;
-            let Referral = 0;
+            let ReferralAmt = 0;
             let FranchiseComm = 0;
-            if (wallet) {
+            if (wallet && wallet.ledgerEntries) {
                 wallet.ledgerEntries.forEach((entry) => {
-                    if (entry.type === 'credit' || entry.type === 'Credit') {
+                    if (entry.type?.toLowerCase() === 'credit' && entry.status !== 'rejected') {
                         const entryDate = entry.createdAt || entry.date || new Date();
                         const d = new Date(entryDate);
                         if (d.getMonth() === m.monthNum && d.getFullYear() === m.year) {
-                            const category = entry.category || '';
-                            const amount = entry.amount || 0;
-                            if (category.includes('Franchise') || category.includes('franchise')) {
-                                FranchiseComm += amount;
-                            }
-                            else if (category.includes('Referral') || category.includes('bonus') || category.includes('referral')) {
-                                Referral += amount;
-                            }
-                            else {
-                                MLM += amount;
-                            }
+                            const cat = entry.category || '';
+                            const amt = entry.amount || 0;
+                            if (["Product Commission", "product_commission"].includes(cat))
+                                MLM += amt;
+                            else if (["Referral Bonus", "first_order_bonus", "first_purchase_product_commission"].includes(cat))
+                                ReferralAmt += amt;
+                            else
+                                FranchiseComm += amt;
                         }
                     }
                 });
             }
             return {
                 name: m.name,
-                MLM: MLM || 0,
-                Referral: Referral || 0,
-                Franchise: FranchiseComm || 0
+                MLM: Number(MLM.toFixed(2)),
+                Referral: Number(ReferralAmt.toFixed(2)),
+                Franchise: Number(FranchiseComm.toFixed(2))
             };
         });
-        const mlmGrowthData = months.map((m, idx) => {
-            // cumulative downline counts up to the end of month
+        const mlmGrowthData = months.map(m => {
             const limitDate = new Date(m.year, m.monthNum + 1, 1);
             const level1Count = subFranchises.filter(sf => new Date(sf.createdAt) < limitDate).length;
             const level2Count = entrepreneurs.filter(e => new Date(e.createdAt) < limitDate).length;
             const level3Count = vendors.filter(v => new Date(v.createdAt) < limitDate).length;
             return {
                 name: m.name,
-                level1: level1Count || 0,
-                level2: level2Count || 0,
-                level3: level3Count || 0
+                level1: level1Count,
+                level2: level2Count,
+                level3: level3Count
             };
         });
+        // 15. Leaderboards
+        let leaderboard = { title: "Leaderboard", type: "District", items: [] };
+        const startOfCurrMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        const startOfPrevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        if (franchiseLevel === 'state') {
+            const districtsList = await Franchise_1.Franchise.find({ state, franchiseLevel: 'district' });
+            const districtItems = [];
+            for (const dist of districtsList) {
+                const distVendors = await Vendor_1.Vendor.find({ state, district: dist.district });
+                const distVendorUserIds = distVendors.map(v => v.userId);
+                const distOrders = await Order_1.Order.find({ sellerId: { $in: distVendorUserIds }, orderStatus: { $nin: ['Cancelled', 'Payment Rejected'] } });
+                const totalSales = distOrders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+                const currSales = distOrders.filter(o => new Date(o.createdAt) >= startOfCurrMonth).reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+                const prevSales = distOrders.filter(o => new Date(o.createdAt) >= startOfPrevMonth && new Date(o.createdAt) < startOfCurrMonth).reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+                let growth = '+0%';
+                if (prevSales > 0) {
+                    const pct = ((currSales - prevSales) / prevSales) * 100;
+                    growth = `${pct >= 0 ? '+' : ''}${Math.round(pct)}%`;
+                }
+                else if (currSales > 0)
+                    growth = '+100%';
+                districtItems.push({ name: dist.district || dist.businessName, sales: totalSales, growth, performance: totalSales > 0 ? "High" : "Live" });
+            }
+            districtItems.sort((a, b) => b.sales - a.sales);
+            leaderboard = {
+                title: "Top Performing Districts",
+                type: "District",
+                items: districtItems.slice(0, 5).map((item, idx) => ({
+                    rank: idx + 1,
+                    name: item.name,
+                    metric: formatINR(item.sales),
+                    growth: item.growth,
+                    performance: item.performance
+                }))
+            };
+        }
+        else if (franchiseLevel === 'district') {
+            const mandalsList = await Franchise_1.Franchise.find({ state, district, franchiseLevel: 'mandal' });
+            const mandalItems = [];
+            for (const man of mandalsList) {
+                const manVendors = await Vendor_1.Vendor.find({ state, district, mandal: man.mandal });
+                const manVendorUserIds = manVendors.map(v => v.userId);
+                const manOrders = await Order_1.Order.find({ sellerId: { $in: manVendorUserIds }, orderStatus: { $nin: ['Cancelled', 'Payment Rejected'] } });
+                const totalSales = manOrders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+                const currSales = manOrders.filter(o => new Date(o.createdAt) >= startOfCurrMonth).reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+                const prevSales = manOrders.filter(o => new Date(o.createdAt) >= startOfPrevMonth && new Date(o.createdAt) < startOfCurrMonth).reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+                let growth = '+0%';
+                if (prevSales > 0) {
+                    const pct = ((currSales - prevSales) / prevSales) * 100;
+                    growth = `${pct >= 0 ? '+' : ''}${Math.round(pct)}%`;
+                }
+                else if (currSales > 0)
+                    growth = '+100%';
+                mandalItems.push({ name: man.mandal || man.businessName, sales: totalSales, growth, performance: totalSales > 0 ? "High" : "Live" });
+            }
+            mandalItems.sort((a, b) => b.sales - a.sales);
+            leaderboard = {
+                title: "Top Performing Mandals",
+                type: "Mandal",
+                items: mandalItems.slice(0, 5).map((item, idx) => ({
+                    rank: idx + 1,
+                    name: item.name,
+                    metric: formatINR(item.sales),
+                    growth: item.growth,
+                    performance: item.performance
+                }))
+            };
+        }
+        else {
+            const mandalItems = [];
+            for (const v of vendors) {
+                const vOrders = await Order_1.Order.find({ sellerId: v.userId, orderStatus: { $nin: ['Cancelled', 'Payment Rejected'] } });
+                const totalSales = vOrders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+                const currSales = vOrders.filter(o => new Date(o.createdAt) >= startOfCurrMonth).reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+                const prevSales = vOrders.filter(o => new Date(o.createdAt) >= startOfPrevMonth && new Date(o.createdAt) < startOfCurrMonth).reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+                let growth = '+0%';
+                if (prevSales > 0) {
+                    const pct = ((currSales - prevSales) / prevSales) * 100;
+                    growth = `${pct >= 0 ? '+' : ''}${Math.round(pct)}%`;
+                }
+                else if (currSales > 0)
+                    growth = '+100%';
+                mandalItems.push({ name: v.businessName || v.ownerName, sales: totalSales, growth, performance: totalSales > 0 ? "High" : "Live" });
+            }
+            mandalItems.sort((a, b) => b.sales - a.sales);
+            leaderboard = {
+                title: "Top Mandal Vendors",
+                type: "Vendor",
+                items: mandalItems.slice(0, 5).map((item, idx) => ({
+                    rank: idx + 1,
+                    name: item.name,
+                    metric: formatINR(item.sales),
+                    growth: item.growth,
+                    performance: item.performance
+                }))
+            };
+        }
         res.status(200).json({
             success: true,
             analytics: {
+                todayRevenue,
+                monthlyRevenue,
+                totalRevenue,
+                activeVendors,
+                activeCustomers,
+                totalEntrepreneurs,
+                totalServiceProviders,
+                totalDeliveryPartners,
                 walletBalance,
                 pendingBalance,
-                totalEarned,
-                totalWithdrawn,
-                monthlyRevenue,
-                monthlyCommissions,
-                totalReferrals,
-                activeDownline,
-                totalEntrepreneurs,
-                franchiseCommission,
-                entrepreneurCommission,
                 referralCommission,
+                mlmCommission,
+                franchiseCommission,
+                territoryCoverage,
+                newRegistrations,
+                supportTickets,
                 revenueChartData,
                 referralGrowthData,
                 commissionTrendData,
-                mlmGrowthData
+                mlmGrowthData,
+                leaderboard,
+                // Extended metrics
+                productsListed,
+                liveProducts,
+                pendingProducts,
+                awaitingSellerProducts,
+                rejectedProducts,
+                outOfStockProducts,
+                draftStores,
+                pendingReviewStores,
+                approvedStores,
+                suspendedStores,
+                hiddenStores,
+                orderStatuses,
+                totalActiveSubscriptions,
+                totalPausedSubscriptions,
+                recurringRevenue,
+                todayDeliveries,
+                deliveryAvailable,
+                deliveryOffline,
+                deliverySuspended,
+                todayDeliveriesCount,
+                completedDeliveries,
+                failedDeliveries,
+                level1Commission,
+                level2Commission,
+                level3Commission,
+                vendorCommission,
+                companyShare,
+                todayEarnings,
+                monthlyEarnings,
+                totalLifetimeEarnings,
+                newCustomersToday,
+                newCustomersThisWeek,
+                newCustomersThisMonth,
+                avgRating,
+                pendingStoreApprovals,
+                pendingProductsCount,
+                withdrawRequests,
+                outOfStockProductsCount,
+                suspendedVendors,
+                topDistrict,
+                topMandal,
+                worstPerformingArea
             }
         });
     }
@@ -1294,7 +1594,7 @@ const getFranchiseCommissions = async (req, res) => {
             return;
         }
         // 1. Fetch franchise settlements (Franchise & MLM)
-        const settlements = await CommissionSettlement_1.CommissionSettlement.find({ recipientId: franchise._id })
+        const settlements = await CommissionSettlement_1.CommissionSettlement.find({ recipientId: franchise.userId })
             .populate('orderId')
             .populate('vendorId')
             .sort({ createdAt: -1 });
@@ -1408,144 +1708,30 @@ const getFranchiseReportsData = async (req, res) => {
             res.status(401).json({ message: 'Unauthorized' });
             return;
         }
-        const franchise = await Franchise_1.Franchise.findOne({ userId: req.user.id });
-        if (!franchise) {
-            res.status(404).json({ message: 'Franchise profile not found' });
-            return;
-        }
-        const { type } = req.query;
-        let data = [];
-        if (type === 'commission') {
-            const settlements = await CommissionSettlement_1.CommissionSettlement.find({ recipientId: franchise._id })
-                .populate('vendorId')
-                .limit(10)
-                .sort({ createdAt: -1 });
-            data = settlements.map((s) => {
-                const vendorUser = s.vendorId;
-                const vendorName = vendorUser?.sellerProfile?.businessName || vendorUser?.name || 'Vendor Partner';
-                return {
-                    id: s._id.toString(),
-                    vendorName,
-                    commissionEarned: s.amount,
-                    status: s.status === 'released' ? 'Credited' : 'Pending'
-                };
-            });
-        }
-        else if (type === 'territory') {
-            const children = await Franchise_1.Franchise.find({ parentFranchiseId: franchise._id });
-            data = children.map((c, idx) => ({
-                area: `${c.mandal || c.district} (${c.franchiseLevel})`,
-                manager: c.ownerName || 'Unassigned',
-                sales: 225000 + (idx * 85000),
-                growth: `+${(12 + idx * 1.5).toFixed(1)}%`
-            }));
-            if (data.length === 0) {
-                data = [
-                    { area: `${franchise.mandal || franchise.district} (Self)`, manager: franchise.ownerName, sales: 350000, growth: '+14.2%' }
-                ];
+        const isAdmin = req.user.roles.includes('admin');
+        if (!isAdmin) {
+            const franchise = await Franchise_1.Franchise.findOne({ userId: req.user.id });
+            if (!franchise) {
+                res.status(404).json({ message: 'Franchise profile not found' });
+                return;
             }
         }
-        else if (type === 'referral') {
-            const referrals = await ReferralTransaction_1.ReferralTransaction.find({ recipientUserId: franchise.userId })
-                .populate('referredUserId')
-                .limit(10)
-                .sort({ createdAt: -1 });
-            data = referrals.map((r) => {
-                const refUser = r.referredUserId;
-                return {
-                    name: refUser?.name || 'Referral Partner',
-                    date: r.createdAt.toISOString().split('T')[0],
-                    code: refUser?.referralCode || 'N/A',
-                    commission: r.amount
-                };
-            });
-        }
-        else if (type === 'mlm') {
-            const subFranchises = await Franchise_1.Franchise.find({ parentFranchiseId: franchise._id }).limit(5);
-            const entrepreneurs = await Entrepreneur_1.Entrepreneur.find({ state: franchise.state }).limit(5);
-            data = [
-                ...subFranchises.map(sf => ({
-                    name: sf.businessName || sf.ownerName || 'Sub Franchise',
-                    level: 'Level 1',
-                    code: sf.franchiseCode || 'N/A',
-                    sales: 500000
-                })),
-                ...entrepreneurs.map(e => ({
-                    name: e.name || 'Entrepreneur Partner',
-                    level: 'Level 2',
-                    code: e.entrepreneurCode || 'N/A',
-                    sales: 120000
-                }))
-            ].slice(0, 10);
-        }
-        else if (type === 'vendor') {
-            let mappings = [];
-            if (franchise.franchiseLevel === 'state') {
-                mappings = await TerritoryMapping_1.TerritoryMapping.find({ stateFranchiseId: franchise._id, businessType: 'vendor' });
-            }
-            else if (franchise.franchiseLevel === 'district') {
-                mappings = await TerritoryMapping_1.TerritoryMapping.find({ districtFranchiseId: franchise._id, businessType: 'vendor' });
-            }
-            else {
-                mappings = await TerritoryMapping_1.TerritoryMapping.find({ mandalFranchiseId: franchise._id, businessType: 'vendor' });
-            }
-            const vendorIds = mappings.map(m => m.businessId);
-            const vendorList = await Vendor_1.Vendor.find({ _id: { $in: vendorIds } }).limit(10);
-            data = vendorList.map((v) => ({
-                storeName: v.businessName || 'Vendor Store',
-                representative: v.ownerName || 'Representative',
-                category: v.category || 'Retail',
-                salesVolume: v.sales || 45000
-            }));
-        }
-        else if (type === 'customer') {
-            const users = await User_1.User.find({ roles: 'customer', 'territory.state': franchise.state }).limit(10);
-            data = users.map((u, idx) => ({
-                name: u.name || 'Customer',
-                phone: u.phone || 'N/A',
-                ordersCount: `${10 + idx * 4} Orders`,
-                totalSpent: 15000 + (idx * 4500)
-            }));
-        }
-        else if (type === 'entrepreneur') {
-            const ents = await Entrepreneur_1.Entrepreneur.find({ state: franchise.state }).limit(10);
-            data = ents.map((e) => ({
-                name: e.name || 'Entrepreneur',
-                certification: e.certificationLevel || 'Gold',
-                pool: e.purchasePoolContribution || 15000,
-                sales: e.salesRevenue || 95000
-            }));
-        }
-        else if (type === 'service') {
-            let mappings = [];
-            if (franchise.franchiseLevel === 'state') {
-                mappings = await TerritoryMapping_1.TerritoryMapping.find({ stateFranchiseId: franchise._id, businessType: 'service_provider' });
-            }
-            else if (franchise.franchiseLevel === 'district') {
-                mappings = await TerritoryMapping_1.TerritoryMapping.find({ districtFranchiseId: franchise._id, businessType: 'service_provider' });
-            }
-            else {
-                mappings = await TerritoryMapping_1.TerritoryMapping.find({ mandalFranchiseId: franchise._id, businessType: 'service_provider' });
-            }
-            const spIds = mappings.map(m => m.businessId);
-            const spList = await ServiceProvider_1.ServiceProvider.find({ _id: { $in: spIds } }).limit(10);
-            data = spList.map((sp) => ({
-                provider: sp.businessName || 'Service Provider',
-                category: sp.serviceType || 'General',
-                requests: `${sp.serviceRequests || 20} Requests`,
-                earnings: sp.revenueTotal || 12000
-            }));
-        }
-        else if (type === 'delivery') {
-            data = [
-                { riderName: 'P. Shiva Kumar', payout: 1200, deliveries: '442 Deliveries', rating: '4.8 ★' },
-                { riderName: 'Sk. Rabbani', payout: 850, deliveries: '275 Deliveries', rating: '4.6 ★' },
-                { riderName: 'G. Harish', payout: 320, deliveries: '114 Deliveries', rating: '4.1 ★' }
-            ];
-        }
+        const { type, timeframe, state, district, mandal, startDate, endDate } = req.query;
+        const reportType = String(type || 'commission');
+        const tf = String(timeframe || 'Monthly');
+        const criteria = {
+            startDate: startDate ? String(startDate) : undefined,
+            endDate: endDate ? String(endDate) : undefined,
+            state: state ? String(state) : undefined,
+            district: district ? String(district) : undefined,
+            mandal: mandal ? String(mandal) : undefined
+        };
+        const data = await ReportingService_1.ReportingService.getReportData(req.user.id, req.user.roles, reportType, criteria);
+        const summary = await ReportingService_1.ReportingService.getSummaryMetrics(req.user.id, req.user.roles, criteria);
         res.status(200).json({
             success: true,
-            data
+            data,
+            summary
         });
     }
     catch (error) {
@@ -1572,116 +1758,28 @@ const downloadFranchiseReport = async (req, res) => {
             res.status(401).send("Unauthorized: Invalid token");
             return;
         }
-        const franchise = await Franchise_1.Franchise.findOne({ userId: decoded.id });
-        if (!franchise) {
-            res.status(404).send("Franchise profile not found");
+        const user = await User_1.User.findById(decoded.id);
+        if (!user) {
+            res.status(404).send("User profile not found");
             return;
         }
-        const { type, timeframe } = req.query;
-        let csvContent = "";
-        let fileName = `ApexBee_${type || 'report'}_${timeframe || 'monthly'}.csv`;
-        if (type === 'commission') {
-            csvContent = "Transaction ID,Vendor Partner,Commission Earned,Status\n";
-            const settlements = await CommissionSettlement_1.CommissionSettlement.find({ recipientId: franchise._id })
-                .populate('vendorId')
-                .sort({ createdAt: -1 });
-            settlements.forEach((s) => {
-                const vendorUser = s.vendorId;
-                const vendorName = vendorUser?.sellerProfile?.businessName || vendorUser?.name || 'Vendor Partner';
-                csvContent += `"${s._id.toString()}","${vendorName}",${s.amount},"${s.status}"\n`;
-            });
-        }
-        else if (type === 'territory') {
-            csvContent = "Administrative Area,Manager,Sales Revenue,Growth Rate\n";
-            const children = await Franchise_1.Franchise.find({ parentFranchiseId: franchise._id });
-            children.forEach((c, idx) => {
-                csvContent += `"${c.mandal || c.district} (${c.franchiseLevel})","${c.ownerName || 'Unassigned'}",${225000 + (idx * 85000)},"+${(12 + idx * 1.5).toFixed(1)}%"\n`;
-            });
-        }
-        else if (type === 'referral') {
-            csvContent = "Referral Partner,Registered Date,Referral Code,Commission Earned\n";
-            const referrals = await ReferralTransaction_1.ReferralTransaction.find({ recipientUserId: franchise.userId })
-                .populate('referredUserId')
-                .sort({ createdAt: -1 });
-            referrals.forEach((r) => {
-                const refUser = r.referredUserId;
-                csvContent += `"${refUser?.name || 'Referral Partner'}","${r.createdAt.toISOString().split('T')[0]}","${refUser?.referralCode || 'N/A'}",${r.amount}\n`;
-            });
-        }
-        else if (type === 'mlm') {
-            csvContent = "Downline Node,Level,Referral Code,Sales Revenue\n";
-            const subFranchises = await Franchise_1.Franchise.find({ parentFranchiseId: franchise._id });
-            const entrepreneurs = await Entrepreneur_1.Entrepreneur.find({ state: franchise.state });
-            subFranchises.forEach(sf => {
-                csvContent += `"${sf.businessName || sf.ownerName}","Level 1","${sf.franchiseCode || 'N/A'}",500000\n`;
-            });
-            entrepreneurs.forEach(e => {
-                csvContent += `"${e.name}","Level 2","${e.entrepreneurCode || 'N/A'}",120000\n`;
-            });
-        }
-        else if (type === 'vendor') {
-            csvContent = "Store Name,Representative,Category,Sales Volume\n";
-            let mappings = [];
-            if (franchise.franchiseLevel === 'state') {
-                mappings = await TerritoryMapping_1.TerritoryMapping.find({ stateFranchiseId: franchise._id, businessType: 'vendor' });
-            }
-            else if (franchise.franchiseLevel === 'district') {
-                mappings = await TerritoryMapping_1.TerritoryMapping.find({ districtFranchiseId: franchise._id, businessType: 'vendor' });
-            }
-            else {
-                mappings = await TerritoryMapping_1.TerritoryMapping.find({ mandalFranchiseId: franchise._id, businessType: 'vendor' });
-            }
-            const vendorIds = mappings.map(m => m.businessId);
-            const vendorList = await Vendor_1.Vendor.find({ _id: { $in: vendorIds } });
-            vendorList.forEach((v) => {
-                csvContent += `"${v.businessName || 'Vendor Store'}","${v.ownerName || 'Representative'}","${v.category || 'Retail'}",${v.sales || 45000}\n`;
-            });
-        }
-        else if (type === 'customer') {
-            csvContent = "Customer Name,Phone,Orders Count,Total Spent\n";
-            const users = await User_1.User.find({ roles: 'customer', 'territory.state': franchise.state });
-            users.forEach((u, idx) => {
-                csvContent += `"${u.name}","${u.phone || 'N/A'}","${10 + idx * 4} Orders",${15000 + (idx * 4500)}\n`;
-            });
-        }
-        else if (type === 'entrepreneur') {
-            csvContent = "Entrepreneur Name,Certifications,Pool Contributed,Sales Revenue\n";
-            const ents = await Entrepreneur_1.Entrepreneur.find({ state: franchise.state });
-            ents.forEach((e) => {
-                csvContent += `"${e.name}","${e.certificationLevel || 'Gold'}",${e.purchasePoolContribution || 15000},${e.salesRevenue || 95000}\n`;
-            });
-        }
-        else if (type === 'service') {
-            csvContent = "Provider,Category,Requests Completed,Gross Earnings\n";
-            let mappings = [];
-            if (franchise.franchiseLevel === 'state') {
-                mappings = await TerritoryMapping_1.TerritoryMapping.find({ stateFranchiseId: franchise._id, businessType: 'service_provider' });
-            }
-            else if (franchise.franchiseLevel === 'district') {
-                mappings = await TerritoryMapping_1.TerritoryMapping.find({ districtFranchiseId: franchise._id, businessType: 'service_provider' });
-            }
-            else {
-                mappings = await TerritoryMapping_1.TerritoryMapping.find({ mandalFranchiseId: franchise._id, businessType: 'service_provider' });
-            }
-            const spIds = mappings.map(m => m.businessId);
-            const spList = await ServiceProvider_1.ServiceProvider.find({ _id: { $in: spIds } });
-            spList.forEach((sp) => {
-                csvContent += `"${sp.businessName || 'Service Provider'}","${sp.serviceType || 'General'}","${sp.serviceRequests || 20} Requests",${sp.revenueTotal || 12000}\n`;
-            });
-        }
-        else if (type === 'delivery') {
-            csvContent = "Rider Name,Payout Balance,Completed Deliveries,Rating\n";
-            csvContent += `"P. Shiva Kumar",1200,"442 Deliveries","4.8 ★"\n`;
-            csvContent += `"Sk. Rabbani",850,"275 Deliveries","4.6 ★"\n`;
-            csvContent += `"G. Harish",320,"114 Deliveries","4.1 ★"\n`;
-        }
-        res.setHeader("Content-Type", "text/csv");
-        res.setHeader("Content-Disposition", `attachment; filename=${fileName}`);
-        res.status(200).send(csvContent);
+        const { type, timeframe, format, state, district, mandal, startDate, endDate } = req.query;
+        const reportType = String(type || 'commission');
+        const tf = String(timeframe || 'Monthly');
+        const exportFormat = String(format || 'csv').toLowerCase();
+        const criteria = {
+            startDate: startDate ? String(startDate) : undefined,
+            endDate: endDate ? String(endDate) : undefined,
+            state: state ? String(state) : undefined,
+            district: district ? String(district) : undefined,
+            mandal: mandal ? String(mandal) : undefined
+        };
+        const data = await ReportingService_1.ReportingService.getReportData(user._id.toString(), user.roles, reportType, criteria);
+        await ExportEngine_1.ExportEngine.exportReport(res, reportType, tf, data, exportFormat);
     }
     catch (error) {
         console.error('Download report error:', error);
-        res.status(500).send("Server error generating report CSV");
+        res.status(500).send("Server error generating report download");
     }
 };
 exports.downloadFranchiseReport = downloadFranchiseReport;

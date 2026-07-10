@@ -14,11 +14,46 @@ const SettlementEngine_1 = require("../services/SettlementEngine");
 const DeliveryAssignment_1 = require("../models/DeliveryAssignment");
 const DeliveryPartner_1 = require("../models/DeliveryPartner");
 const notificationEmitter_1 = require("../modules/notifications/events/notificationEmitter");
-const autoAssignDeliveryPartner = async (order) => {
+const Franchise_1 = require("../models/Franchise");
+const Vendor_1 = require("../models/Vendor");
+const activeAssignmentTimeouts = new Map();
+const scheduleAutoAssignmentTimeout = (assignmentId) => {
+    if (activeAssignmentTimeouts.has(assignmentId)) {
+        clearTimeout(activeAssignmentTimeouts.get(assignmentId));
+    }
+    const timeoutId = setTimeout(async () => {
+        try {
+            const assignment = await DeliveryAssignment_1.DeliveryAssignment.findById(assignmentId);
+            if (assignment && assignment.status === 'Assigned') {
+                console.log(`[AutoAssign Timeout] Assignment ${assignmentId} expired without acceptance.`);
+                assignment.status = 'Failed';
+                assignment.failedReason = 'Acceptance timeout (30 seconds expired)';
+                await assignment.save();
+                const order = await Order_1.Order.findById(assignment.orderId);
+                if (order) {
+                    order.deliveryAgentId = undefined; // clear assignment to re-trigger
+                    await order.save();
+                    await autoAssignDeliveryPartner(order, assignment.partnerId ? [assignment.partnerId.toString()] : []);
+                }
+            }
+        }
+        catch (err) {
+            console.error('[AutoAssign Timeout] Error:', err);
+        }
+        finally {
+            activeAssignmentTimeouts.delete(assignmentId);
+        }
+    }, 30000); // 30 seconds
+    activeAssignmentTimeouts.set(assignmentId, timeoutId);
+};
+const autoAssignDeliveryPartner = async (order, excludedPartnerIds = []) => {
     try {
-        const activePartners = await DeliveryPartner_1.DeliveryPartner.find({ status: 'active' });
+        const activePartners = await DeliveryPartner_1.DeliveryPartner.find({
+            status: 'active',
+            _id: { $nin: excludedPartnerIds.map(id => new mongoose_1.default.Types.ObjectId(id)) }
+        });
         if (activePartners.length === 0) {
-            console.log(`[AutoAssign] No active partners found for order ${order.orderNumber}`);
+            console.log(`[AutoAssign] No active/remaining partners found for order ${order.orderNumber}`);
             return;
         }
         let bestPartner = null;
@@ -42,6 +77,20 @@ const autoAssignDeliveryPartner = async (order) => {
                 date: new Date().toISOString(),
                 note: `Auto-assigned delivery partner: ${bestPartner.name} (Score: ${highestScore.toFixed(1)})`
             });
+            if (!order.deliveryVerification || !order.deliveryVerification.otp) {
+                const otpCode = Math.floor(1000 + Math.random() * 9000).toString();
+                order.deliveryVerification = {
+                    otp: otpCode,
+                    otpExpires: new Date(Date.now() + 24 * 60 * 60 * 1000),
+                    verified: false,
+                    verificationMethod: 'None'
+                };
+            }
+            const pickupOtpCode = Math.floor(1000 + Math.random() * 9000).toString();
+            order.pickupVerification = {
+                otp: pickupOtpCode,
+                verified: false
+            };
             await order.save();
             // Create Assignment
             const assignment = new DeliveryAssignment_1.DeliveryAssignment({
@@ -60,6 +109,7 @@ const autoAssignDeliveryPartner = async (order) => {
             });
             await assignment.save();
             console.log(`[AutoAssign] Assigned order ${order.orderNumber} to partner ${bestPartner.name}`);
+            scheduleAutoAssignmentTimeout(assignment._id.toString());
         }
     }
     catch (err) {
@@ -115,6 +165,13 @@ const handleManualAssignment = async (order, agentId) => {
         }
         else {
             otpCode = order.deliveryVerification.otp;
+        }
+        if (!order.pickupVerification || !order.pickupVerification.otp) {
+            order.pickupVerification = {
+                otp: Math.floor(1000 + Math.random() * 9000).toString(),
+                verified: false
+            };
+            await order.save();
         }
         console.log(`\n======================================================`);
         console.log(`[DELIVERY MANUAL ASSIGNMENT]`);
@@ -438,6 +495,32 @@ const getOrders = async (req, res) => {
             if (user.roles.includes('vendor') || user.roles.includes('wholesaler') || user.roles.includes('manufacturer')) {
                 filters.sellerId = user.id;
             }
+            else if (user.roles.includes('state_franchise') ||
+                user.roles.includes('district_franchise') ||
+                user.roles.includes('mandal_franchise')) {
+                // Find franchise profile
+                const franchise = await Franchise_1.Franchise.findOne({ userId: user.id });
+                if (franchise) {
+                    const { state, district, mandal, franchiseLevel } = franchise;
+                    let scopeFilter = {};
+                    if (franchiseLevel === 'state') {
+                        scopeFilter = { state };
+                    }
+                    else if (franchiseLevel === 'district') {
+                        scopeFilter = { state, district };
+                    }
+                    else {
+                        scopeFilter = { state, district, mandal };
+                    }
+                    // Find all vendors in scope
+                    const scopedVendors = await Vendor_1.Vendor.find(scopeFilter).select('userId');
+                    const scopedVendorUserIds = scopedVendors.map(v => v.userId);
+                    filters.sellerId = { $in: scopedVendorUserIds };
+                }
+                else {
+                    filters.customerId = user.id;
+                }
+            }
             else {
                 filters.customerId = user.id;
             }
@@ -592,6 +675,9 @@ const updateOrder = async (req, res) => {
                 catch (notifErr) {
                     console.warn("Failed to trigger agent assignment event:", notifErr);
                 }
+            }
+            else if (['Confirmed', 'Placed', 'Packed'].includes(order.orderStatus) && !order.deliveryAgentId) {
+                await autoAssignDeliveryPartner(order);
             }
             if (req.body.orderStatus && req.body.orderStatus !== currentOrder.orderStatus) {
                 try {

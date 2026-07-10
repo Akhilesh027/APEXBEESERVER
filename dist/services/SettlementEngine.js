@@ -322,7 +322,7 @@ class SettlementEngine {
                     queryRel = queryRel.session(session);
                 const rel = await queryRel;
                 // Vendor Payout Calculation
-                const finalSellerAmount = (product.adminPricing?.finalSellerAmount || (sellingPrice - (platformFeePercent * sellingPrice / 100) - (product.adminPricing?.shippingCharge || 0) - (product.adminPricing?.packingCharge || 0))) * qty;
+                const finalSellerAmount = (product.adminPricing?.finalSellerAmount || (sellingPrice - (platformFeePercent * sellingPrice / 100))) * qty;
                 // 1. Create Vendor Settlement Row
                 if (finalSellerAmount > 0) {
                     try {
@@ -368,34 +368,39 @@ class SettlementEngine {
                     const wishLinkCommission = getSplitAmount("wishlink", wishLinkPercent);
                     const referralPoolCommission = getSplitAmount("referralPool", referralPoolPercent);
                     const companyCommission = getSplitAmount("company", companyPercent);
+                    // Resolve actual User IDs for the recipients
+                    const stateFranchise = rel.stateFranchiseId ? await mongoose_1.default.model("Franchise").findById(rel.stateFranchiseId).session(session || null) : null;
+                    const districtFranchise = rel.districtFranchiseId ? await mongoose_1.default.model("Franchise").findById(rel.districtFranchiseId).session(session || null) : null;
+                    const mandalFranchise = rel.mandalFranchiseId ? await mongoose_1.default.model("Franchise").findById(rel.mandalFranchiseId).session(session || null) : null;
+                    const entrepreneur = rel.entrepreneurId ? await mongoose_1.default.model("Entrepreneur").findById(rel.entrepreneurId).session(session || null) : null;
+                    const stateUserId = stateFranchise ? stateFranchise.userId : null;
+                    const districtUserId = districtFranchise ? districtFranchise.userId : null;
+                    const mandalUserId = mandalFranchise ? mandalFranchise.userId : null;
+                    const entrepreneurUserId = entrepreneur ? entrepreneur.userId : null;
                     const splits = [
-                        { id: rel.stateFranchiseId, amount: stateCommission, type: 'franchise', fieldName: 'stateFranchiseId' },
-                        { id: rel.districtFranchiseId, amount: districtCommission, type: 'franchise', fieldName: 'districtFranchiseId' },
-                        { id: rel.mandalFranchiseId, amount: mandalCommission, type: 'franchise', fieldName: 'mandalFranchiseId' },
-                        { id: rel.entrepreneurId, amount: entrepreneurCommission, type: 'entrepreneur', fieldName: 'entrepreneurId' },
-                        { id: this.WISHLINK_ID, amount: wishLinkCommission, type: 'wishlink', fieldName: 'wishLinkCommission' },
-                        { id: this.REFERRAL_POOL_ID, amount: referralPoolCommission, type: 'referralPool', fieldName: 'referralPoolCommission' },
-                        { id: this.COMPANY_ID, amount: companyCommission, type: 'company', fieldName: 'companyCommission' }
+                        { recipientUserId: stateUserId, amount: stateCommission, type: 'franchise', fieldName: 'stateFranchiseId' },
+                        { recipientUserId: districtUserId, amount: districtCommission, type: 'franchise', fieldName: 'districtFranchiseId' },
+                        { recipientUserId: mandalUserId, amount: mandalCommission, type: 'franchise', fieldName: 'mandalFranchiseId' },
+                        { recipientUserId: entrepreneurUserId, amount: entrepreneurCommission, type: 'entrepreneur', fieldName: 'entrepreneurId' },
+                        { recipientUserId: this.WISHLINK_ID, amount: wishLinkCommission, type: 'wishlink', fieldName: 'wishLinkCommission' },
+                        { recipientUserId: this.REFERRAL_POOL_ID, amount: referralPoolCommission, type: 'referralPool', fieldName: 'referralPoolCommission' },
+                        { recipientUserId: this.COMPANY_ID, amount: companyCommission, type: 'company', fieldName: 'companyCommission' }
                     ];
                     for (const sp of splits) {
-                        if (sp.id && sp.amount > 0) {
+                        if (sp.recipientUserId && sp.amount > 0) {
                             try {
                                 const legacyFields = {
                                     vendorId: product.sellerId,
-                                    totalPlatformFee
+                                    totalPlatformFee,
+                                    stateFranchiseId: stateUserId,
+                                    districtFranchiseId: districtUserId,
+                                    mandalFranchiseId: mandalUserId,
+                                    entrepreneurId: entrepreneurUserId
                                 };
-                                if (sp.fieldName === 'stateFranchiseId')
-                                    legacyFields.stateFranchiseId = sp.id;
-                                if (sp.fieldName === 'districtFranchiseId')
-                                    legacyFields.districtFranchiseId = sp.id;
-                                if (sp.fieldName === 'mandalFranchiseId')
-                                    legacyFields.mandalFranchiseId = sp.id;
-                                if (sp.fieldName === 'entrepreneurId')
-                                    legacyFields.entrepreneurId = sp.id;
                                 await this.createCommissionSettlementUnique({
                                     orderId: order._id,
                                     productId: product._id,
-                                    recipientId: sp.id,
+                                    recipientId: sp.recipientUserId,
                                     amount: sp.amount,
                                     settlementType: sp.type,
                                     status: 'placed',
@@ -735,11 +740,39 @@ class SettlementEngine {
             const mandalComm = Math.round(servicePrice * 0.05);
             const entrepreneurComm = Math.round(servicePrice * 0.05);
             const spAmount = servicePrice - (platformFee + stateComm + districtComm + mandalComm + entrepreneurComm);
-            const stateRecipient = provider.stateFranchiseId || SettlementEngine.COMPANY_ID;
-            const districtRecipient = provider.districtFranchiseId || SettlementEngine.COMPANY_ID;
-            const mandalRecipient = provider.mandalFranchiseId || SettlementEngine.COMPANY_ID;
-            const entrepreneurRecipient = provider.entrepreneurId || SettlementEngine.COMPANY_ID;
+            // Resolve actual User IDs for the recipients
+            const stateFranchise = provider.stateFranchiseId ? await mongoose_1.default.model("Franchise").findById(provider.stateFranchiseId).session(sess) : null;
+            const districtFranchise = provider.districtFranchiseId ? await mongoose_1.default.model("Franchise").findById(provider.districtFranchiseId).session(sess) : null;
+            const mandalFranchise = provider.mandalFranchiseId ? await mongoose_1.default.model("Franchise").findById(provider.mandalFranchiseId).session(sess) : null;
+            const entrepreneur = provider.entrepreneurId ? await mongoose_1.default.model("Entrepreneur").findById(provider.entrepreneurId).session(sess) : null;
+            const stateRecipient = stateFranchise ? stateFranchise.userId : SettlementEngine.COMPANY_ID;
+            const districtRecipient = districtFranchise ? districtFranchise.userId : SettlementEngine.COMPANY_ID;
+            const mandalRecipient = mandalFranchise ? mandalFranchise.userId : SettlementEngine.COMPANY_ID;
+            const entrepreneurRecipient = entrepreneur ? entrepreneur.userId : SettlementEngine.COMPANY_ID;
             const transactionId = `TXN_SP_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`;
+            const createServiceSettlement = async (recipientId, amount, type) => {
+                if (!recipientId || amount <= 0)
+                    return;
+                try {
+                    await CommissionSettlement_1.CommissionSettlement.create([{
+                            orderId: booking._id,
+                            recipientId,
+                            amount,
+                            settlementType: type,
+                            status: 'released',
+                            releaseDate: new Date(),
+                            vendorId: booking.providerId,
+                            stateFranchiseId: stateFranchise ? stateFranchise.userId : null,
+                            districtFranchiseId: districtFranchise ? districtFranchise.userId : null,
+                            mandalFranchiseId: mandalFranchise ? mandalFranchise.userId : null,
+                            entrepreneurId: entrepreneur ? entrepreneur.userId : null,
+                            totalPlatformFee: platformFee
+                        }], { session: sess });
+                }
+                catch (err) {
+                    console.warn(`Duplicate service booking settlement caught for ${type}:`, err.message);
+                }
+            };
             // 1. Credit Service Provider wallet
             if (spAmount > 0) {
                 await WalletEngine_1.WalletEngine.credit(booking.providerId, spAmount, {
@@ -749,6 +782,7 @@ class SettlementEngine {
                     referenceId: booking._id,
                     referenceType: "ORDER",
                 }, sess);
+                await createServiceSettlement(booking.providerId, spAmount, 'vendor');
             }
             // 2. Credit State Franchise
             if (stateComm > 0) {
@@ -759,6 +793,7 @@ class SettlementEngine {
                     referenceId: booking._id,
                     referenceType: "ORDER",
                 }, sess);
+                await createServiceSettlement(stateRecipient, stateComm, 'franchise');
             }
             // 3. Credit District Franchise
             if (districtComm > 0) {
@@ -769,6 +804,7 @@ class SettlementEngine {
                     referenceId: booking._id,
                     referenceType: "ORDER",
                 }, sess);
+                await createServiceSettlement(districtRecipient, districtComm, 'franchise');
             }
             // 4. Credit Mandal Franchise
             if (mandalComm > 0) {
@@ -779,6 +815,7 @@ class SettlementEngine {
                     referenceId: booking._id,
                     referenceType: "ORDER",
                 }, sess);
+                await createServiceSettlement(mandalRecipient, mandalComm, 'franchise');
             }
             // 5. Credit Entrepreneur
             if (entrepreneurComm > 0) {
@@ -789,6 +826,7 @@ class SettlementEngine {
                     referenceId: booking._id,
                     referenceType: "ORDER",
                 }, sess);
+                await createServiceSettlement(entrepreneurRecipient, entrepreneurComm, 'entrepreneur');
             }
             // 6. Credit Company System Wallet for platform fee
             if (platformFee > 0) {
@@ -799,6 +837,7 @@ class SettlementEngine {
                     referenceId: booking._id,
                     referenceType: "ORDER",
                 }, sess);
+                await createServiceSettlement(SettlementEngine.COMPANY_ID, platformFee, 'company');
             }
             // Update booking status timeline & payment details
             booking.paymentDetails = {

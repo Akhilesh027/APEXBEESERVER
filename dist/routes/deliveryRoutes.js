@@ -7,6 +7,7 @@ const router = (0, express_1.Router)();
 // Public routes
 router.post('/login', deliveryController_1.login);
 router.post('/verify-otp', deliveryController_1.verifyOtp);
+router.post('/register', deliveryController_1.register);
 // Protected routes (Require authentication token)
 router.post('/checkin', auth_1.protect, deliveryController_1.checkIn);
 router.post('/checkout', auth_1.protect, deliveryController_1.checkOut);
@@ -17,6 +18,10 @@ router.get('/pickups', auth_1.protect, deliveryController_1.getScheduledPickups)
 router.post('/pickups', auth_1.protect, deliveryController_1.createScheduledPickup);
 router.get('/subscriptions', auth_1.protect, deliveryController_1.getSubscriptions);
 router.post('/subscriptions/:subId/run', auth_1.protect, deliveryController_1.updateSubscriptionRun);
+// Leaves & Referrals routes
+router.post('/leaves', auth_1.protect, deliveryController_1.applyLeave);
+router.get('/leaves', auth_1.protect, deliveryController_1.getLeaves);
+router.get('/referrals', auth_1.protect, deliveryController_1.getReferrals);
 // Orders routing
 router.get('/orders', auth_1.protect, deliveryController_1.getOrders);
 router.get('/orders/:id', auth_1.protect, deliveryController_1.getOrderById);

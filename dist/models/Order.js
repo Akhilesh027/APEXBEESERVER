@@ -98,6 +98,16 @@ const OrderSchema = new mongoose_1.Schema({
         verifiedAt: { type: Date },
         verifiedBy: { type: mongoose_1.Schema.Types.ObjectId, ref: 'DeliveryPartner' },
         verificationMethod: { type: String, enum: ['OTP', 'QR', 'Signature', 'None'], default: 'None' }
+    },
+    pickupVerification: {
+        otp: { type: String },
+        verified: { type: Boolean, default: false },
+        verifiedAt: { type: Date }
     }
 }, { timestamps: true });
+OrderSchema.index({ sellerId: 1, createdAt: -1 });
+OrderSchema.index({ customerId: 1, createdAt: -1 });
+OrderSchema.index({ orderStatus: 1, createdAt: -1 });
+OrderSchema.index({ paymentStatus: 1, createdAt: -1 });
+OrderSchema.index({ 'shippingAddress.state': 1, 'shippingAddress.district': 1, 'shippingAddress.mandal': 1 });
 exports.Order = mongoose_1.default.model("Order", OrderSchema);

@@ -40,7 +40,10 @@ const VehicleDetailsSchema = new mongoose_1.Schema({
     number: { type: String, default: '' },
     rcNumber: { type: String, default: '' },
     insurance: { type: String, default: '' },
-    drivingLicense: { type: String, default: '' }
+    drivingLicense: { type: String, default: '' },
+    rcExpiry: { type: Date },
+    insuranceExpiry: { type: Date },
+    licenseExpiry: { type: Date }
 }, { _id: false });
 const DeliveryRatingsSchema = new mongoose_1.Schema({
     customerRating: { type: Number, default: 5.0 },
@@ -48,13 +51,30 @@ const DeliveryRatingsSchema = new mongoose_1.Schema({
     adminRating: { type: Number, default: 5.0 },
     averageRating: { type: Number, default: 5.0 }
 }, { _id: false });
+const DeliveryKycSchema = new mongoose_1.Schema({
+    aadhaarNumber: { type: String, default: '' },
+    drivingLicenseNumber: { type: String, default: '' },
+    panNumber: { type: String, default: '' },
+    selfieUrl: { type: String, default: '' },
+    isVerified: { type: Boolean, default: false }
+}, { _id: false });
 const DeliveryPartnerSchema = new mongoose_1.Schema({
     userId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
+    deliveryPartnerId: { type: String, unique: true, sparse: true },
     name: { type: String, required: true },
     mobile: { type: String, required: true },
     email: { type: String, required: true },
     status: { type: String, enum: ['active', 'pending_approval', 'suspended', 'offline'], default: 'pending_approval' },
+    partnerType: { type: String, enum: ['Employee', 'Freelancer'], default: 'Employee' },
     vehicle: { type: VehicleDetailsSchema },
-    ratings: { type: DeliveryRatingsSchema, default: () => ({}) }
+    kyc: { type: DeliveryKycSchema, default: () => ({ isVerified: false }) },
+    ratings: { type: DeliveryRatingsSchema, default: () => ({}) },
+    fixedSalary: { type: Number, default: 0 },
+    dailyTarget: { type: Number, default: 10 },
+    deliveriesCount: { type: Number, default: 0 },
+    badge: { type: String, enum: ['Bronze', 'Silver', 'Gold', 'Diamond', 'Platinum', 'Legend'], default: 'Bronze' },
+    referredBy: { type: mongoose_1.Schema.Types.ObjectId, ref: 'DeliveryPartner' },
+    referralBonusReceived: { type: Boolean, default: false },
+    tdsDeducted: { type: Number, default: 0 }
 }, { timestamps: true });
 exports.DeliveryPartner = mongoose_1.default.model('DeliveryPartner', DeliveryPartnerSchema);

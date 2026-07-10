@@ -68,10 +68,18 @@ app.use((0, cors_1.default)({
         'http://127.0.0.1:5178',
         'http://127.0.0.1:5179',
         'http://127.0.0.1:5180',
-        'http://127.0.0.1:8080'
+        'http://127.0.0.1:8080',
+        'https://user.apexbee.in',
+        'https://apexbeeadmin.apexbee.in',
+        'https://apexbeevendor.apexbee.in',
+        'https://franchser.apexbee.in',
+        'https://service.apexbee.in',
+        'https://delivery.apexbee.in',
+        'https://server.apexbee.in'
     ],
     credentials: true,
 }));
+app.options("*", (0, cors_1.default)());
 app.use(express_1.default.json());
 app.use(express_1.default.urlencoded({ extended: true }));
 // Serve static uploads

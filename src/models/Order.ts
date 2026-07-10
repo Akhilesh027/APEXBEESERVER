@@ -48,6 +48,11 @@ export interface IOrder extends Document {
     verifiedBy?: mongoose.Types.ObjectId;
     verificationMethod: 'OTP' | 'QR' | 'Signature' | 'None';
   };
+  pickupVerification?: {
+    otp: string;
+    verified: boolean;
+    verifiedAt?: Date;
+  };
 }
 
 const OrderItemSchema = new Schema<IOrderItem>({
@@ -116,6 +121,11 @@ const OrderSchema = new Schema<IOrder>(
       verifiedAt: { type: Date },
       verifiedBy: { type: Schema.Types.ObjectId, ref: 'DeliveryPartner' },
       verificationMethod: { type: String, enum: ['OTP', 'QR', 'Signature', 'None'], default: 'None' }
+    },
+    pickupVerification: {
+      otp: { type: String },
+      verified: { type: Boolean, default: false },
+      verifiedAt: { type: Date }
     }
   },
   { timestamps: true }

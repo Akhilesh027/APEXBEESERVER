@@ -51,6 +51,7 @@ const DeliveryAttendanceSchema = new mongoose_1.Schema({
     checkOutTime: { type: Date },
     breaks: { type: [BreakSchema], default: [] },
     status: { type: String, enum: ['CheckedIn', 'OnBreak', 'CheckedOut'], default: 'CheckedOut', required: true },
+    shift: { type: String, enum: ['Morning', 'Afternoon', 'Night'] },
     startLocation: { type: CoordsSchema },
     endLocation: { type: CoordsSchema }
 }, { timestamps: true });

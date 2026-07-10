@@ -74,4 +74,5 @@ const CommissionSettlementSchema = new mongoose_1.Schema({
 }, { timestamps: true });
 // Compound unique index to prevent duplicate payouts
 CommissionSettlementSchema.index({ orderId: 1, productId: 1, recipientId: 1, settlementType: 1 }, { unique: true });
+CommissionSettlementSchema.index({ recipientId: 1, settlementType: 1, createdAt: -1 });
 exports.CommissionSettlement = mongoose_1.default.model("CommissionSettlement", CommissionSettlementSchema);

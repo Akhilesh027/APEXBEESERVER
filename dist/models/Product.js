@@ -370,14 +370,11 @@ const ProductSchema = new mongoose_1.Schema({
         default: []
     }
 }, { timestamps: true });
-ProductSchema.index({ slug: 1 }, { unique: true });
-ProductSchema.index({ sku: 1 }, { unique: true });
 ProductSchema.index({ sellerId: 1, status: 1 });
 ProductSchema.index({ sellerType: 1, status: 1 });
 ProductSchema.index({ categoryId: 1, status: 1 });
 ProductSchema.index({ subCategoryId: 1, status: 1 });
 ProductSchema.index({ childCategoryId: 1, status: 1 });
-ProductSchema.index({ brand: 1 });
 ProductSchema.index({ status: 1, isActive: 1 });
 ProductSchema.index({ createdAt: -1 });
 exports.default = mongoose_1.default.model('Product', ProductSchema);

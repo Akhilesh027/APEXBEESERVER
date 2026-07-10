@@ -26,11 +26,37 @@ const getCart = async (req, res) => {
             const product = item.productId;
             if (!product)
                 return null;
+            // Find matching variant based on attributes
+            const variant = product.variants?.find((v) => {
+                if (!v.attributes)
+                    return false;
+                return Object.keys(v.attributes).every((key) => {
+                    const attrVal = String(v.attributes[key]).toLowerCase();
+                    const itemColor = String(item.color || '').toLowerCase();
+                    const itemSize = String(item.size || '').toLowerCase();
+                    if (key.toLowerCase() === 'color' || key.toLowerCase() === 'colour') {
+                        return attrVal === itemColor || itemColor === 'default';
+                    }
+                    if (key.toLowerCase() === 'size') {
+                        return attrVal === itemSize || itemSize === 'default';
+                    }
+                    return true;
+                });
+            });
             const categoryName = product.categoryId?.name || 'Marketplace';
             const vendorName = product.sellerId?.sellerProfile?.businessName || product.sellerId?.name || 'ApexBee Seller';
-            const price = product.adminPricing?.customerSellingAmount ?? product.baseSellingPrice ?? 0;
-            const originalPrice = product.adminPricing?.mrp ?? product.baseMrp ?? 0;
+            // Base charges from adminPricing
             const deliveryFee = product.adminPricing?.shippingCharge ?? 0;
+            const packingCharge = product.adminPricing?.packingCharge ?? 0;
+            // Variant prices if found, else base product pricing
+            let originalPrice = product.adminPricing?.mrp ?? product.baseMrp ?? 0;
+            let sellingPrice = product.adminPricing?.sellingPrice ?? product.baseSellingPrice ?? 0;
+            if (variant) {
+                originalPrice = variant.mrp ?? originalPrice;
+                sellingPrice = variant.sellingPrice ?? sellingPrice;
+            }
+            // customerSellingAmount (price) = sellingPrice + packingCharge + deliveryFee
+            const price = sellingPrice + packingCharge + deliveryFee;
             return {
                 _id: item._id,
                 productId: product._id,
@@ -46,6 +72,8 @@ const getCart = async (req, res) => {
                 salesPrice: originalPrice,
                 originalPrice: originalPrice,
                 deliveryFee: deliveryFee,
+                packingCharge: packingCharge,
+                sellingPrice: sellingPrice,
                 stock: product.stock,
                 vendorId: product.sellerId?._id || product.sellerId,
                 vendorName: vendorName,

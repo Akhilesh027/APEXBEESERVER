@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getMyWallet = exports.getAllWithdrawals = exports.rejectWithdrawal = exports.approveWithdrawal = exports.getWithdrawalsHistory = exports.createWithdrawalRequest = void 0;
+exports.addFunds = exports.getMyWallet = exports.getAllWithdrawals = exports.rejectWithdrawal = exports.approveWithdrawal = exports.getWithdrawalsHistory = exports.createWithdrawalRequest = void 0;
 const mongoose_1 = __importDefault(require("mongoose"));
 const Wallet_1 = require("../models/Wallet");
 const WalletEngine_1 = require("../services/WalletEngine");
@@ -215,3 +215,42 @@ const getMyWallet = async (req, res) => {
     }
 };
 exports.getMyWallet = getMyWallet;
+// POST /api/wallet/add-funds
+const addFunds = async (req, res) => {
+    try {
+        const userId = req.user?.id;
+        if (!userId) {
+            return res.status(401).json({ success: false, message: "Unauthorized" });
+        }
+        const { amount } = req.body;
+        const addAmount = Number(amount);
+        if (isNaN(addAmount) || addAmount <= 0) {
+            return res.status(400).json({ success: false, message: "Invalid amount to add" });
+        }
+        const wallet = await WalletEngine_1.WalletEngine.credit(userId, addAmount, {
+            category: "Deposit",
+            source: "self",
+            remarks: `Added funds via UPI/Card`,
+            description: `Added ₹${addAmount} to wallet balance`,
+            referenceType: "SYSTEM"
+        });
+        // Check and process any unpaid subscription holds now that the user has funded their wallet
+        let processedHolds = 0;
+        try {
+            const { SubscriptionSchedulerService } = require('../services/SubscriptionSchedulerService');
+            processedHolds = await SubscriptionSchedulerService.processUnpaidHoldsForUser(userId);
+        }
+        catch (schedErr) {
+            console.error('Failed to process unpaid holds during wallet deposit:', schedErr);
+        }
+        res.status(200).json({
+            success: true,
+            message: `Deposited ₹${addAmount} successfully. Processed ${processedHolds} pending holds.`,
+            wallet
+        });
+    }
+    catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+exports.addFunds = addFunds;

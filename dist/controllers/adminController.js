@@ -962,12 +962,18 @@ const verifyKycApplication = async (req, res) => {
                     else if (level.toLowerCase() === "district") {
                         rewardRoleKey = "district_franchise";
                     }
+                    else if (level.toLowerCase() === "mandal") {
+                        rewardRoleKey = "mandal_franchise";
+                    }
                 }
                 else if (targetRole === "state_franchise") {
                     rewardRoleKey = "state_franchise";
                 }
                 else if (targetRole === "district_franchise") {
                     rewardRoleKey = "district_franchise";
+                }
+                else if (targetRole === "mandal_franchise") {
+                    rewardRoleKey = "mandal_franchise";
                 }
                 referral.referralType = rewardRoleKey;
                 const referralRewards = {
@@ -976,6 +982,7 @@ const verifyKycApplication = async (req, res) => {
                     wholesaler: 1000,
                     manufacturer: 2000,
                     entrepreneur: 3000,
+                    mandal_franchise: 2500,
                     district_franchise: 5000,
                     state_franchise: 10000
                 };

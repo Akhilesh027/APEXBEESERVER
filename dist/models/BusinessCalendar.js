@@ -33,45 +33,28 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.BusinessCalendar = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
-const CategoryAttributeSchema = new mongoose_1.Schema({
-    name: { type: String, required: true, trim: true },
+const BusinessCalendarSchema = new mongoose_1.Schema({
+    name: { type: String, required: true },
+    date: { type: String, required: true, index: true },
     type: {
         type: String,
-        enum: ['text', 'number', 'select', 'boolean'],
-        default: 'text',
-    },
-    required: { type: Boolean, default: false },
-    isVariant: { type: Boolean, default: false },
-    options: [{ type: String, trim: true }],
-}, { _id: true });
-const CategorySchema = new mongoose_1.Schema({
-    name: { type: String, required: true, trim: true },
-    slug: {
-        type: String,
         required: true,
-        unique: true,
-        lowercase: true,
-        trim: true,
+        enum: ['national_holiday', 'vendor_holiday', 'franchise_holiday', 'maintenance', 'emergency_closure'],
+        index: true
     },
-    description: { type: String, default: '' },
-    image: { type: String, default: '' },
-    banner: { type: String, default: '' },
-    parentId: {
+    vendorId: {
         type: mongoose_1.Schema.Types.ObjectId,
-        ref: 'Category',
+        ref: "Vendor",
         default: null,
+        index: true
     },
-    level: {
-        type: Number,
-        enum: [1, 2, 3],
-        default: 1,
-    },
-    isActive: { type: Boolean, default: true },
-    sortOrder: { type: Number, default: 0 },
-    brands: [{ type: String, trim: true }],
-    attributes: [CategoryAttributeSchema],
+    state: { type: String, default: "" },
+    district: { type: String, default: "" },
+    mandal: { type: String, default: "" },
+    description: { type: String, default: "" }
 }, { timestamps: true });
-CategorySchema.index({ parentId: 1 });
-CategorySchema.index({ level: 1 });
-exports.default = mongoose_1.default.model('Category', CategorySchema);
+// Compound index to guarantee uniqueness of dates per calendar scope
+BusinessCalendarSchema.index({ date: 1, type: 1, vendorId: 1 }, { unique: true });
+exports.BusinessCalendar = mongoose_1.default.model("BusinessCalendar", BusinessCalendarSchema);

@@ -33,45 +33,62 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.WalletTransaction = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
-const CategoryAttributeSchema = new mongoose_1.Schema({
-    name: { type: String, required: true, trim: true },
-    type: {
-        type: String,
-        enum: ['text', 'number', 'select', 'boolean'],
-        default: 'text',
+const WalletTransactionSchema = new mongoose_1.Schema({
+    walletId: {
+        type: mongoose_1.Schema.Types.ObjectId,
+        ref: "Wallet",
+        required: true,
+        index: true
     },
-    required: { type: Boolean, default: false },
-    isVariant: { type: Boolean, default: false },
-    options: [{ type: String, trim: true }],
-}, { _id: true });
-const CategorySchema = new mongoose_1.Schema({
-    name: { type: String, required: true, trim: true },
-    slug: {
+    userId: {
+        type: mongoose_1.Schema.Types.ObjectId,
+        ref: "User",
+        required: true,
+        index: true
+    },
+    transactionNumber: {
         type: String,
         required: true,
         unique: true,
-        lowercase: true,
-        trim: true,
+        index: true
     },
-    description: { type: String, default: '' },
-    image: { type: String, default: '' },
-    banner: { type: String, default: '' },
-    parentId: {
-        type: mongoose_1.Schema.Types.ObjectId,
-        ref: 'Category',
-        default: null,
-    },
-    level: {
+    amount: {
         type: Number,
-        enum: [1, 2, 3],
-        default: 1,
+        required: true,
+        min: 0.01
     },
-    isActive: { type: Boolean, default: true },
-    sortOrder: { type: Number, default: 0 },
-    brands: [{ type: String, trim: true }],
-    attributes: [CategoryAttributeSchema],
+    type: {
+        type: String,
+        required: true,
+        enum: ['subscription_credit', 'withdrawal', 'refund', 'commission', 'adjustment', 'reversal', 'payment'],
+        index: true
+    },
+    direction: {
+        type: String,
+        required: true,
+        enum: ['credit', 'debit']
+    },
+    status: {
+        type: String,
+        required: true,
+        enum: ['pending', 'processing', 'completed', 'failed', 'reversed'],
+        default: 'pending',
+        index: true
+    },
+    referenceId: {
+        type: mongoose_1.Schema.Types.Mixed,
+        default: null,
+        index: true
+    },
+    referenceModel: {
+        type: String,
+        default: ""
+    },
+    notes: {
+        type: String,
+        default: ""
+    }
 }, { timestamps: true });
-CategorySchema.index({ parentId: 1 });
-CategorySchema.index({ level: 1 });
-exports.default = mongoose_1.default.model('Category', CategorySchema);
+exports.WalletTransaction = mongoose_1.default.model("WalletTransaction", WalletTransactionSchema);

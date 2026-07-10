@@ -67,4 +67,5 @@ const ReferralTransactionSchema = new mongoose_1.Schema({
 // Compound unique index to prevent duplicate payouts
 ReferralTransactionSchema.index({ referredUserId: 1, orderId: 1, level: 1, transactionType: 1 }, { unique: true });
 ReferralTransactionSchema.index({ orderId: 1, recipientUserId: 1, level: 1, transactionType: 1 }, { unique: true });
+ReferralTransactionSchema.index({ recipientUserId: 1, transactionType: 1, createdAt: -1 });
 exports.ReferralTransaction = mongoose_1.default.model("ReferralTransaction", ReferralTransactionSchema);

@@ -18,11 +18,48 @@ import { notificationEmitter } from "../modules/notifications/events/notificatio
 import { Franchise } from '../models/Franchise';
 import { Vendor } from '../models/Vendor';
 
-const autoAssignDeliveryPartner = async (order: any) => {
+const activeAssignmentTimeouts = new Map<string, NodeJS.Timeout>();
+
+const scheduleAutoAssignmentTimeout = (assignmentId: string) => {
+  if (activeAssignmentTimeouts.has(assignmentId)) {
+    clearTimeout(activeAssignmentTimeouts.get(assignmentId));
+  }
+
+  const timeoutId = setTimeout(async () => {
+    try {
+      const assignment = await DeliveryAssignment.findById(assignmentId);
+      if (assignment && assignment.status === 'Assigned') {
+        console.log(`[AutoAssign Timeout] Assignment ${assignmentId} expired without acceptance.`);
+        assignment.status = 'Failed';
+        assignment.failedReason = 'Acceptance timeout (30 seconds expired)';
+        await assignment.save();
+
+        const order = await Order.findById(assignment.orderId);
+        if (order) {
+          order.deliveryAgentId = undefined; // clear assignment to re-trigger
+          await order.save();
+          
+          await autoAssignDeliveryPartner(order, assignment.partnerId ? [assignment.partnerId.toString()] : []);
+        }
+      }
+    } catch (err) {
+      console.error('[AutoAssign Timeout] Error:', err);
+    } finally {
+      activeAssignmentTimeouts.delete(assignmentId);
+    }
+  }, 30000); // 30 seconds
+
+  activeAssignmentTimeouts.set(assignmentId, timeoutId);
+};
+
+const autoAssignDeliveryPartner = async (order: any, excludedPartnerIds: string[] = []) => {
   try {
-    const activePartners = await DeliveryPartner.find({ status: 'active' });
+    const activePartners = await DeliveryPartner.find({ 
+      status: 'active',
+      _id: { $nin: excludedPartnerIds.map(id => new mongoose.Types.ObjectId(id)) }
+    });
     if (activePartners.length === 0) {
-      console.log(`[AutoAssign] No active partners found for order ${order.orderNumber}`);
+      console.log(`[AutoAssign] No active/remaining partners found for order ${order.orderNumber}`);
       return;
     }
 
@@ -50,6 +87,22 @@ const autoAssignDeliveryPartner = async (order: any) => {
         date: new Date().toISOString(),
         note: `Auto-assigned delivery partner: ${bestPartner.name} (Score: ${highestScore.toFixed(1)})`
       });
+      
+      if (!order.deliveryVerification || !order.deliveryVerification.otp) {
+        const otpCode = Math.floor(1000 + Math.random() * 9000).toString();
+        order.deliveryVerification = {
+          otp: otpCode,
+          otpExpires: new Date(Date.now() + 24 * 60 * 60 * 1000),
+          verified: false,
+          verificationMethod: 'None'
+        };
+      }
+
+      const pickupOtpCode = Math.floor(1000 + Math.random() * 9000).toString();
+      order.pickupVerification = {
+        otp: pickupOtpCode,
+        verified: false
+      };
       await order.save();
 
       // Create Assignment
@@ -69,6 +122,8 @@ const autoAssignDeliveryPartner = async (order: any) => {
       });
       await assignment.save();
       console.log(`[AutoAssign] Assigned order ${order.orderNumber} to partner ${bestPartner.name}`);
+
+      scheduleAutoAssignmentTimeout(assignment._id.toString());
     }
   } catch (err) {
     console.error('[AutoAssign] Error:', err);
@@ -123,6 +178,14 @@ const handleManualAssignment = async (order: any, agentId: string) => {
       await order.save();
     } else {
       otpCode = order.deliveryVerification.otp;
+    }
+
+    if (!order.pickupVerification || !order.pickupVerification.otp) {
+      order.pickupVerification = {
+        otp: Math.floor(1000 + Math.random() * 9000).toString(),
+        verified: false
+      };
+      await order.save();
     }
 
     console.log(`\n======================================================`);
@@ -662,6 +725,8 @@ export const updateOrder = async (req: Request, res: Response) => {
         } catch (notifErr) {
           console.warn("Failed to trigger agent assignment event:", notifErr);
         }
+      } else if (['Confirmed', 'Placed', 'Packed'].includes(order.orderStatus) && !order.deliveryAgentId) {
+        await autoAssignDeliveryPartner(order);
       }
 
       if (req.body.orderStatus && req.body.orderStatus !== currentOrder.orderStatus) {

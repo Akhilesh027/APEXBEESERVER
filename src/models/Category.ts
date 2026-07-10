@@ -78,7 +78,6 @@ const CategorySchema = new Schema<ICategory>(
   { timestamps: true }
 );
 
-CategorySchema.index({ slug: 1 }, { unique: true });
 CategorySchema.index({ parentId: 1 });
 CategorySchema.index({ level: 1 });
 
