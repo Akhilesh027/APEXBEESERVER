@@ -26,4 +26,6 @@ const AddressSchema = new Schema<IAddress>({
   isDefault: { type: Boolean, default: false }
 }, { timestamps: true });
 
+
 export const Address = mongoose.model<IAddress>('Address', AddressSchema);
+
