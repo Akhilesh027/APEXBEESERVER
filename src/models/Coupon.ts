@@ -8,6 +8,8 @@ export interface ICoupon extends Document {
   expiryDate: string;
   usageCount?: number;
   status: 'Active' | 'Inactive' | 'Expired';
+  scope: 'vendor' | 'platform';
+  vendorId?: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -28,9 +30,23 @@ const CouponSchema = new Schema<ICoupon>(
       type: String,
       enum: ['Active', 'Inactive', 'Expired'],
       default: 'Active'
+    },
+    scope: {
+      type: String,
+      enum: ['vendor', 'platform'],
+      default: 'vendor',
+      required: true
+    },
+    vendorId: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      required: function() {
+        return this.scope === 'vendor';
+      }
     }
   },
   { timestamps: true }
 );
 
 export const Coupon = mongoose.model<ICoupon>("Coupon", CouponSchema);
+

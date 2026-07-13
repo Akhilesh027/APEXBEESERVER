@@ -12,6 +12,9 @@ export interface IOrderTimeline {
   status: string;
   date: string;
   note?: string;
+  performedBy?: mongoose.Types.ObjectId;
+  performedByRole?: string;
+  isAdminOverride?: boolean;
 }
 
 export interface IOrder extends Document {
@@ -21,7 +24,8 @@ export interface IOrder extends Document {
   items: IOrderItem[];
   totalAmount: number;
   paymentStatus: 'Pending' | 'Paid' | 'Failed' | 'Refunded' | 'Approved' | 'Rejected';
-  orderStatus: 'Placed' | 'Confirmed' | 'Packed' | 'Shipped' | 'Delivered' | 'Returned' | 'Payment Verified' | 'Payment Rejected' | 'Cancelled';
+  orderStatus: 'Placed' | 'Confirmed' | 'Packed' | 'Ready' | 'Shipped' | 'Out for Delivery' | 'Delivered' | 'Completed' | 'Returned' | 'Payment Verified' | 'Payment Rejected' | 'Cancelled';
+  paymentVerificationStatus?: 'Not Required' | 'Pending Verification' | 'Verified' | 'Rejected';
   deliveryType?: 'Platform' | 'Vendor' | 'Independent';
   deliveryAgentId?: string;
   customerNotes?: string;
@@ -32,6 +36,9 @@ export interface IOrder extends Document {
   timeline: IOrderTimeline[];
   createdAt: Date;
   updatedAt: Date;
+  customerName?: string;
+  customerPhone?: string;
+  deliveryAddress?: string;
   orderItems?: any[];
   shippingAddress?: any;
   paymentDetails?: any;
@@ -53,6 +60,12 @@ export interface IOrder extends Document {
     verified: boolean;
     verifiedAt?: Date;
   };
+  priority?: 'Normal' | 'Express' | 'Scheduled';
+  internalNotes?: string;
+  packingChecklist?: string[];
+  deliverySlot?: string;
+  trackingId?: string;
+  courierPartner?: string;
 }
 
 const OrderItemSchema = new Schema<IOrderItem>({
@@ -66,7 +79,10 @@ const OrderItemSchema = new Schema<IOrderItem>({
 const OrderTimelineSchema = new Schema<IOrderTimeline>({
   status: { type: String, required: true },
   date: { type: String, required: true },
-  note: { type: String, default: "" }
+  note: { type: String, default: "" },
+  performedBy: { type: Schema.Types.ObjectId, ref: "User" },
+  performedByRole: { type: String },
+  isAdminOverride: { type: Boolean, default: false }
 });
 
 const OrderSchema = new Schema<IOrder>(
@@ -83,12 +99,20 @@ const OrderSchema = new Schema<IOrder>(
     },
     orderStatus: {
       type: String,
-      enum: ['Placed', 'Confirmed', 'Packed', 'Shipped', 'Delivered', 'Returned', 'Payment Verified', 'Payment Rejected', 'Cancelled'],
+      enum: ['Placed', 'Confirmed', 'Packed', 'Ready', 'Shipped', 'Out for Delivery', 'Delivered', 'Completed', 'Returned', 'Payment Verified', 'Payment Rejected', 'Cancelled'],
       default: 'Placed'
+    },
+    paymentVerificationStatus: {
+      type: String,
+      enum: ['Not Required', 'Pending Verification', 'Verified', 'Rejected'],
+      default: 'Not Required'
     },
     deliveryType: { type: String },
     deliveryAgentId: { type: String },
     customerNotes: { type: String, default: "" },
+    customerName: { type: String, default: "" },
+    customerPhone: { type: String, default: "" },
+    deliveryAddress: { type: String, default: "" },
     returnReason: { type: String, default: "" },
     refundStatus: {
       type: String,
@@ -126,6 +150,31 @@ const OrderSchema = new Schema<IOrder>(
       otp: { type: String },
       verified: { type: Boolean, default: false },
       verifiedAt: { type: Date }
+    },
+    priority: {
+      type: String,
+      enum: ['Normal', 'Express', 'Scheduled'],
+      default: 'Normal'
+    },
+    internalNotes: {
+      type: String,
+      default: ""
+    },
+    packingChecklist: {
+      type: [String],
+      default: []
+    },
+    deliverySlot: {
+      type: String,
+      default: ""
+    },
+    trackingId: {
+      type: String,
+      default: ""
+    },
+    courierPartner: {
+      type: String,
+      default: ""
     }
   },
   { timestamps: true }

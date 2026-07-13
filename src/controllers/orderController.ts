@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import mongoose from "mongoose";
 import fs from "fs";
+import PDFDocument from 'pdfkit';
 import { Order } from "../models/Order";
 import Cart from "../models/Cart";
 import Product from "../models/Product";
@@ -535,9 +536,16 @@ export const getOrders = async (req: Request, res: Response) => {
 
     // Security check: if user is not admin, enforce that they can only access their own data
     const user = (req as any).user;
-    if (user && !user.roles.includes('admin')) {
+    const isAdmin = user && user.roles.includes('admin');
+
+    if (isAdmin) {
+      if (req.query.customerId) filters.customerId = req.query.customerId;
+      if (req.query.sellerId) filters.sellerId = req.query.sellerId;
+    } else {
       if (user.roles.includes('vendor') || user.roles.includes('wholesaler') || user.roles.includes('manufacturer')) {
         filters.sellerId = user.id;
+      } else if (user.roles.includes('delivery_partner')) {
+        filters.deliveryAgentId = user.id;
       } else if (
         user.roles.includes('state_franchise') ||
         user.roles.includes('district_franchise') ||
@@ -578,10 +586,40 @@ export const getOrders = async (req: Request, res: Response) => {
 
 export const getOrderById = async (req: Request, res: Response) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ success: false, message: "Invalid ID format" });
+    }
+
     const order = await Order.findById(req.params.id);
     if (!order) {
-      return res.status(404).json({ success: false, message: "Order not found" });
+      return res.status(404).json({ success: false, message: "Resource not found" });
     }
+
+    const user = (req as any).user;
+    const isAdmin = user && user.roles.includes('admin');
+    const isSeller = user && (user.roles.includes('vendor') || user.roles.includes('wholesaler') || user.roles.includes('manufacturer')) && String(order.sellerId) === String(user.id);
+    const isCustomer = user && user.roles.includes('customer') && String(order.customerId) === String(user.id);
+    const isDriver = user && user.roles.includes('delivery_partner') && String(order.deliveryAgentId) === String(user.id);
+
+    let isFranchise = false;
+    if (user && (user.roles.includes('state_franchise') || user.roles.includes('district_franchise') || user.roles.includes('mandal_franchise'))) {
+      const franchise = await Franchise.findOne({ userId: user.id });
+      if (franchise) {
+        const { state, district, mandal, franchiseLevel } = franchise;
+        let scopeFilter: any = {};
+        if (franchiseLevel === 'state') scopeFilter = { state };
+        else if (franchiseLevel === 'district') scopeFilter = { state, district };
+        else scopeFilter = { state, district, mandal };
+
+        const vendor = await Vendor.findOne({ userId: order.sellerId, ...scopeFilter });
+        if (vendor) isFranchise = true;
+      }
+    }
+
+    if (!isAdmin && !isSeller && !isCustomer && !isDriver && !isFranchise) {
+      return res.status(404).json({ success: false, message: "Resource not found" });
+    }
+
     return res.status(200).json({ success: true, order });
   } catch (error: any) {
     return res.status(500).json({ success: false, message: error.message });
@@ -590,9 +628,30 @@ export const getOrderById = async (req: Request, res: Response) => {
 
 export const updateOrder = async (req: Request, res: Response) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ success: false, message: "Invalid ID format" });
+    }
+
     const currentOrder = await Order.findById(req.params.id);
     if (!currentOrder) {
-      return res.status(404).json({ success: false, message: "Order not found" });
+      return res.status(404).json({ success: false, message: "Resource not found" });
+    }
+
+    const user = (req as any).user;
+    const isAdmin = user && user.roles.includes('admin');
+    const isSeller = user && (user.roles.includes('vendor') || user.roles.includes('wholesaler') || user.roles.includes('manufacturer')) && String(currentOrder.sellerId) === String(user.id);
+    const isCustomer = user && user.roles.includes('customer') && String(currentOrder.customerId) === String(user.id);
+    const isDriver = user && user.roles.includes('delivery_partner') && String(currentOrder.deliveryAgentId) === String(user.id);
+
+    if (!isAdmin && !isSeller && !isCustomer && !isDriver) {
+      return res.status(404).json({ success: false, message: "Resource not found" });
+    }
+
+    const editableFields = ['orderStatus', 'deliveryAgentId', 'deliveryAgentType', 'deliveryAgentName', 'customerNotes', 'timeline', 'orderStatusObj'];
+    const receivedKeys = Object.keys(req.body);
+    const hasUnallowed = receivedKeys.some(k => !editableFields.includes(k));
+    if (hasUnallowed && !isAdmin) {
+      return res.status(400).json({ success: false, message: 'Submitting protected fields in order update is not allowed.' });
     }
 
     if (req.body.orderStatus) {
@@ -790,5 +849,220 @@ export const getOrderCountByUserId = async (req: Request, res: Response) => {
     return res.status(200).json({ success: true, count });
   } catch (error: any) {
     return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const getOrderInvoicePDF = async (req: Request, res: Response) => {
+  try {
+    const order = await Order.findById(req.params.id);
+    if (!order) {
+      res.status(404).json({ message: 'Order not found' });
+      return;
+    }
+
+    const doc = new PDFDocument({ margin: 50 });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=Invoice_${order.orderNumber}.pdf`);
+
+    doc.pipe(res);
+
+    // Invoice Header
+    doc.fontSize(20).text('TAX INVOICE', { align: 'center' }).moveDown(0.5);
+    doc.fontSize(10).text('ApexBee Hyperlocal Marketplace', { align: 'center' }).moveDown(1.5);
+
+    // Metadata
+    doc.fontSize(10).text(`Invoice Number: INV-${order.orderNumber}`);
+    doc.text(`Order Number: ${order.orderNumber}`);
+    doc.text(`Date: ${new Date(order.createdAt).toLocaleDateString()}`);
+    doc.text(`Payment Status: ${order.paymentStatus}`);
+    doc.moveDown(1);
+
+    // Addresses
+    const yPos = doc.y;
+    doc.text('Seller Details:', 50, yPos, { underline: true });
+    doc.text(`Seller ID: ${order.sellerId}`, 50, yPos + 15);
+    
+    doc.text('Customer Details:', 300, yPos, { underline: true });
+    doc.text(`Name: ${order.customerName || 'N/A'}`, 300, yPos + 15);
+    doc.text(`Address: ${order.deliveryAddress || 'N/A'}`, 300, yPos + 30);
+    
+    doc.y = yPos + 70;
+    doc.x = 50;
+
+    // Items table header
+    doc.moveDown(1);
+    doc.font('Helvetica-Bold');
+    doc.text('Product Name', 50, doc.y, { width: 200 });
+    doc.text('SKU', 250, doc.y, { width: 100 });
+    doc.text('Qty', 350, doc.y, { width: 50, align: 'right' });
+    doc.text('Unit Price', 410, doc.y, { width: 70, align: 'right' });
+    doc.text('Total', 490, doc.y, { width: 70, align: 'right' });
+    doc.moveDown(0.5);
+    doc.font('Helvetica');
+
+    // Draw line
+    doc.moveTo(50, doc.y).lineTo(560, doc.y).stroke();
+    doc.moveDown(0.5);
+
+    // Table items
+    order.items.forEach((item) => {
+      const startY = doc.y;
+      doc.text(item.productName || 'N/A', 50, startY, { width: 190 });
+      doc.text(item.sku || 'N/A', 250, startY, { width: 90 });
+      doc.text((item.quantity || 0).toString(), 350, startY, { width: 50, align: 'right' });
+      doc.text(`₹${(Number(item.price) || 0).toFixed(2)}`, 410, startY, { width: 70, align: 'right' });
+      doc.text(`₹${((Number(item.price) || 0) * (Number(item.quantity) || 0)).toFixed(2)}`, 490, startY, { width: 70, align: 'right' });
+      doc.y = startY + 25;
+    });
+
+    // Summary line
+    doc.moveDown(1);
+    doc.moveTo(50, doc.y).lineTo(560, doc.y).stroke();
+    doc.moveDown(0.5);
+
+    doc.text('Subtotal:', 380, doc.y, { width: 100, align: 'right' });
+    doc.text(`₹${(Number(order.totalAmount) || 0).toFixed(2)}`, 490, doc.y, { width: 70, align: 'right' });
+    
+    doc.moveDown(0.5);
+    doc.font('Helvetica-Bold');
+    doc.text('Net Payable:', 380, doc.y, { width: 100, align: 'right' });
+    doc.text(`₹${(Number(order.totalAmount) || 0).toFixed(2)}`, 490, doc.y, { width: 70, align: 'right' });
+
+    doc.moveDown(2);
+    doc.fontSize(8).font('Helvetica-Oblique').text('This is a computer generated document, no signature required.', { align: 'center' });
+
+    doc.end();
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const getOrderPackingSlipPDF = async (req: Request, res: Response) => {
+  try {
+    const order = await Order.findById(req.params.id);
+    if (!order) {
+      res.status(404).json({ message: 'Order not found' });
+      return;
+    }
+
+    const doc = new PDFDocument({ margin: 50 });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=PackingSlip_${order.orderNumber}.pdf`);
+
+    doc.pipe(res);
+
+    // Packing Slip Header
+    doc.fontSize(20).text('PACKING SLIP', { align: 'center' }).moveDown(0.5);
+    doc.fontSize(10).text('ApexBee Order Fulfillment checklist', { align: 'center' }).moveDown(1.5);
+
+    // Metadata
+    doc.fontSize(10).text(`Order Ref: ${order.orderNumber}`);
+    doc.text(`Fulfillment Priority: ${order.priority || 'Normal'}`);
+    doc.text(`Scheduled Time Slot: ${order.deliverySlot || 'N/A'}`);
+    doc.text(`Internal Dispatch Notes: ${order.internalNotes || 'None'}`);
+    doc.moveDown(1);
+
+    // Shipping Address
+    doc.text('Ship To:', { underline: true });
+    doc.text(`Customer Name: ${order.customerName || 'N/A'}`);
+    doc.text(`Address: ${order.deliveryAddress || 'N/A'}`);
+    doc.moveDown(1);
+
+    // Checklist Header
+    doc.font('Helvetica-Bold');
+    doc.text('[ ]', 50, doc.y, { width: 30 });
+    doc.text('Product SKU & Name', 90, doc.y, { width: 300 });
+    doc.text('Qty ordered', 450, doc.y, { width: 80, align: 'right' });
+    doc.moveDown(0.5);
+    doc.font('Helvetica');
+
+    // Draw line
+    doc.moveTo(50, doc.y).lineTo(560, doc.y).stroke();
+    doc.moveDown(0.5);
+
+    // Items list
+    order.items.forEach((item) => {
+      const isPacked = order.packingChecklist?.includes(item.productId.toString()) || false;
+      const checkboxSymbol = isPacked ? '[X]' : '[  ]';
+      
+      const startY = doc.y;
+      doc.text(checkboxSymbol, 50, startY, { width: 30 });
+      doc.text(`${item.sku} - ${item.productName}`, 90, startY, { width: 300 });
+      doc.text(`${item.quantity} units`, 450, startY, { width: 80, align: 'right' });
+      doc.y = startY + 25;
+    });
+
+    doc.moveDown(2);
+    doc.fontSize(8).font('Helvetica-Oblique').text('Verify all checklist marks before shipping to customers.', { align: 'center' });
+
+    doc.end();
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const updateOrderPackingChecklist = async (req: Request, res: Response) => {
+  try {
+    const { checklist } = req.body; // Array of item product IDs
+    if (!Array.isArray(checklist)) {
+      res.status(400).json({ message: 'checklist must be an array of product IDs' });
+      return;
+    }
+
+    const order = await Order.findById(req.params.id);
+    if (!order) {
+      res.status(404).json({ message: 'Order not found' });
+      return;
+    }
+
+    // Verify ownership
+    const authUser = (req as any).user;
+    if (authUser && !authUser.roles?.includes('admin') && String(order.sellerId) !== String(authUser.id)) {
+      res.status(403).json({ message: 'Forbidden: ownership mismatch' });
+      return;
+    }
+
+    order.packingChecklist = checklist;
+
+    // Auto update state to 'Packed' if all ordered product IDs are checked off
+    const allOrderedIds = order.items.map(item => item.productId.toString());
+    const isFullyPacked = allOrderedIds.every(id => checklist.includes(id));
+
+    if (isFullyPacked && order.orderStatus === 'Confirmed') {
+      order.orderStatus = 'Packed';
+      order.timeline.push({
+        status: 'Packed',
+        date: new Date().toISOString(),
+        note: 'All items marked as packed. Ready for courier pick up.'
+      });
+
+      // Emit notification
+      try {
+        notificationEmitter.emitNotification(
+          'order.packed',
+          {
+            orderNumber: order.orderNumber,
+            orderId: order.orderNumber,
+            entityType: 'order',
+            entityId: order._id
+          },
+          [{ userId: order.customerId, role: 'customer' }]
+        );
+      } catch (err) {
+        console.warn('Failed to emit packed notification:', err);
+      }
+    }
+
+    await order.save();
+
+    res.json({
+      success: true,
+      message: isFullyPacked ? 'Order packed successfully!' : 'Checklist saved',
+      order
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
   }
 };

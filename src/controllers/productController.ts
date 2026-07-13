@@ -1,8 +1,26 @@
 import { Request, Response } from 'express';
+import mongoose from 'mongoose';
+import jwt from 'jsonwebtoken';
 import Product from '../models/Product';
 import Category from '../models/Category';
 import { Vendor } from '../models/Vendor';
 import { uploadToCloudinary } from '../config/cloudinary';
+
+const validateProductFields = (body: any, res: Response): boolean => {
+  const protectedFields = [
+    'status', 'adminPricing', 'commissionShares', 'pricingStatus',
+    'approvedBy', 'approvedAt', 'sellerNegotiations', 'finalSellerAmount',
+    'platformFeePercent', 'adminPricingApproved', 'sellerPricingAccepted',
+    'isActive', 'approvedByAdminAt', 'sellerAcceptedAt', 'liveAt'
+  ];
+  for (const field of protectedFields) {
+    if (body[field] !== undefined) {
+      res.status(400).json({ success: false, message: `Field ${field} is protected and cannot be set by vendors.` });
+      return false;
+    }
+  }
+  return true;
+};
 
 const makeSlug = (name: string) =>
   name
@@ -178,6 +196,13 @@ const calculatePricing = (body: any) => {
 
 export const createProduct = async (req: Request, res: Response) => {
   try {
+    const authUser = (req as any).user;
+    const isAdmin = authUser?.roles.includes('admin');
+
+    if (!isAdmin && !validateProductFields(req.body, res)) {
+      return;
+    }
+
     const {
       name,
       description,
@@ -200,7 +225,7 @@ export const createProduct = async (req: Request, res: Response) => {
       return;
     }
 
-    const sellerId = (req as any).user?._id || req.body.sellerId;
+    const sellerId = isAdmin ? (req.body.sellerId || authUser.id) : authUser.id;
 
     if (!sellerId) {
       res.status(401).json({
@@ -323,6 +348,21 @@ export const getAllProducts = async (req: Request, res: Response) => {
       }
     }
 
+    let authUser: any = undefined;
+    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+      try {
+        const token = req.headers.authorization.split(' ')[1];
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'supersecretjwtkeyforapexbeebusinessoperatingnetwork') as any;
+        authUser = decoded;
+      } catch (err) {}
+    }
+
+    const isAdmin = authUser && authUser.roles?.includes('admin');
+    let selectString = '';
+    if (!isAdmin) {
+      selectString = '-adminPricing -commissionShares -sellerNegotiations -purchasePrice -internalNotes -approvalHistory';
+    }
+
     let query = Product.find(filter).sort({
       createdAt: -1,
     });
@@ -331,7 +371,7 @@ export const getAllProducts = async (req: Request, res: Response) => {
       query = query.limit(Number(limit));
     }
 
-    const products = await populateProduct(query);
+    const products = await populateProduct(query.select(selectString));
 
     res.json({ products });
   } catch (error: any) {
@@ -368,32 +408,82 @@ export const getMyProducts = async (req: Request, res: Response) => {
 
 export const getProductById = async (req: Request, res: Response) => {
   try {
-    const product = await populateProduct(Product.findById(req.params.id));
-
-    if (!product) {
-      res.status(404).json({ message: 'Product not found' });
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      res.status(400).json({ success: false, message: 'Invalid ID format' });
       return;
     }
 
-    res.json({ product });
+    const product = await populateProduct(Product.findById(req.params.id));
+
+    if (!product) {
+      res.status(404).json({ message: 'Resource not found' });
+      return;
+    }
+
+    let authUser: any = undefined;
+    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+      try {
+        const token = req.headers.authorization.split(' ')[1];
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'supersecretjwtkeyforapexbeebusinessoperatingnetwork') as any;
+        authUser = decoded;
+      } catch (err) {}
+    }
+
+    const isOwner = authUser && String(product.sellerId._id || product.sellerId) === String(authUser.id);
+    const isAdmin = authUser && authUser.roles?.includes('admin');
+
+    if (product.status !== 'Live' && !isOwner && !isAdmin) {
+      res.status(404).json({ success: false, message: 'Resource not found' });
+      return;
+    }
+
+    const productObj = product.toObject();
+    if (!isOwner && !isAdmin) {
+      delete productObj.adminPricing;
+      delete productObj.commissionShares;
+      delete productObj.sellerNegotiations;
+      delete productObj.purchasePrice;
+      delete productObj.internalNotes;
+      delete productObj.approvalHistory;
+    }
+
+    res.json({ product: productObj });
   } catch (error: any) {
     res.status(500).json({
       message: 'Failed to fetch product',
       error: error.message,
     });
   }
-};
+}
 
 export const updateProduct = async (req: Request, res: Response) => {
   try {
-    const product = await Product.findById(req.params.id);
-
-    if (!product) {
-      res.status(404).json({ message: 'Product not found' });
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      res.status(400).json({ success: false, message: 'Invalid ID format' });
       return;
     }
 
-    if (product.status === 'Live') {
+    const product = await Product.findById(req.params.id);
+
+    if (!product) {
+      res.status(404).json({ message: 'Resource not found' });
+      return;
+    }
+
+    const authUser = (req as any).user;
+    const isOwner = authUser && String(product.sellerId) === String(authUser.id);
+    const isAdmin = authUser && authUser.roles?.includes('admin');
+
+    if (!isOwner && !isAdmin) {
+      res.status(404).json({ success: false, message: 'Resource not found' });
+      return;
+    }
+
+    if (!isAdmin && !validateProductFields(req.body, res)) {
+      return;
+    }
+
+    if (product.status === 'Live' && !isAdmin) {
       res.status(400).json({
         message: 'Live product cannot be edited directly',
       });
@@ -505,14 +595,28 @@ export const updateProduct = async (req: Request, res: Response) => {
 
 export const deleteProduct = async (req: Request, res: Response) => {
   try {
-    const product = await Product.findById(req.params.id);
-
-    if (!product) {
-      res.status(404).json({ message: 'Product not found' });
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      res.status(400).json({ success: false, message: 'Invalid ID format' });
       return;
     }
 
-    if (product.status === 'Live') {
+    const product = await Product.findById(req.params.id);
+
+    if (!product) {
+      res.status(404).json({ message: 'Resource not found' });
+      return;
+    }
+
+    const authUser = (req as any).user;
+    const isOwner = authUser && String(product.sellerId) === String(authUser.id);
+    const isAdmin = authUser && authUser.roles?.includes('admin');
+
+    if (!isOwner && !isAdmin) {
+      res.status(404).json({ success: false, message: 'Resource not found' });
+      return;
+    }
+
+    if (product.status === 'Live' && !isAdmin) {
       res.status(400).json({
         message: 'Live product cannot be deleted directly',
       });
@@ -823,5 +927,223 @@ export const getProductsByVendor = async (req: Request, res: Response): Promise<
       message: 'Server error fetching products by vendor', 
       error: error.message 
     });
+  }
+};
+
+export const duplicateProduct = async (req: Request, res: Response) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      res.status(400).json({ success: false, message: 'Invalid ID format' });
+      return;
+    }
+
+    const product = await Product.findById(req.params.id);
+    if (!product) {
+      res.status(404).json({ message: 'Product not found' });
+      return;
+    }
+
+    const authUser = (req as any).user;
+    const isOwner = authUser && String(product.sellerId) === String(authUser.id);
+    const isAdmin = authUser && authUser.roles?.includes('admin');
+
+    if (!isOwner && !isAdmin) {
+      res.status(403).json({ success: false, message: 'Forbidden: ownership mismatch' });
+      return;
+    }
+
+    const baseName = `${product.name} - Copy`;
+    const newSlug = await makeUniqueSlug(baseName);
+    const newSku = `DUP-${product.sku.substring(0, 5)}-${Date.now().toString().slice(-4)}`;
+
+    const duplicatedProduct = new Product({
+      sellerId: product.sellerId,
+      sellerType: product.sellerType,
+      name: baseName,
+      slug: newSlug,
+      description: product.description,
+      categoryId: product.categoryId,
+      subCategoryId: product.subCategoryId,
+      childCategoryId: product.childCategoryId,
+      brand: product.brand,
+      sku: newSku,
+      thumbnail: product.thumbnail,
+      images: product.images,
+      attributes: product.attributes,
+      variants: product.variants,
+      baseMrp: product.baseMrp,
+      discountPercent: product.discountPercent,
+      baseSellingPrice: product.baseSellingPrice,
+      stock: product.stock,
+      status: 'Draft',
+      isActive: false,
+      isStoreProduct: product.isStoreProduct,
+      isSubscriptionAvailable: product.isSubscriptionAvailable,
+      badges: product.badges
+    });
+
+    await duplicatedProduct.save();
+    const populated = await populateProduct(Product.findById(duplicatedProduct._id));
+
+    res.status(201).json({
+      message: 'Product duplicated successfully',
+      product: populated
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      message: 'Failed to duplicate product',
+      error: error.message
+    });
+  }
+};
+
+export const archiveProduct = async (req: Request, res: Response) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      res.status(400).json({ success: false, message: 'Invalid ID format' });
+      return;
+    }
+
+    const product = await Product.findById(req.params.id);
+    if (!product) {
+      res.status(404).json({ message: 'Product not found' });
+      return;
+    }
+
+    const authUser = (req as any).user;
+    const isOwner = authUser && String(product.sellerId) === String(authUser.id);
+    const isAdmin = authUser && authUser.roles?.includes('admin');
+
+    if (!isOwner && !isAdmin) {
+      res.status(403).json({ success: false, message: 'Forbidden: ownership mismatch' });
+      return;
+    }
+
+    product.isArchived = true;
+    product.isActive = false; // Disable listing immediately
+    product.status = 'Draft';
+
+    await product.save();
+
+    res.json({
+      message: 'Product archived successfully',
+      product
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      message: 'Failed to archive product',
+      error: error.message
+    });
+  }
+};
+
+export const getAiProductSuggestions = async (req: Request, res: Response) => {
+  try {
+    const { name, categoryId } = req.body;
+    if (!name) {
+      res.status(400).json({ message: 'Product name is required for AI suggestions' });
+      return;
+    }
+
+    let categoryName = 'Premium Product';
+    if (categoryId && mongoose.Types.ObjectId.isValid(categoryId)) {
+      const cat = await Category.findById(categoryId);
+      if (cat) categoryName = cat.name;
+    }
+
+    const desc = `Premium quality ${name} sourced directly from verified local suppliers/farmers. Cleaned, graded, and packed under strict hygiene conditions. Ideal for regular household requirements.`;
+    const teluguDesc = `తాజా మరియు మేలైన ${name}, అధిక నాణ్యత ప్రమాణాలతో ప్యాక్ చేయబడినది. local fresh sourced directly.`;
+    const features = [
+      `100% Organic & Naturally Handpicked`,
+      `Quality tested under strict platform criteria`,
+      `Sustainable local sourcing support`
+    ];
+    const keywords = [
+      name.toLowerCase(),
+      `fresh ${name.toLowerCase()}`,
+      `buy ${name.toLowerCase()} online`,
+      `organic ${categoryName.toLowerCase()}`,
+      'apexbee local',
+      'nellore premium foods'
+    ].join(', ');
+
+    res.json({
+      success: true,
+      data: {
+        description: desc,
+        teluguDescription: `${teluguDesc}\n\nEnglish: ${desc}`,
+        features,
+        keywords
+      }
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      message: 'Failed to generate AI product suggestions',
+      error: error.message
+    });
+  }
+};
+
+export const getInventoryMovements = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const authUser = (req as any).user;
+    if (!authUser) {
+      res.status(401).json({ message: 'Unauthorized' });
+      return;
+    }
+
+    const sellerId = authUser.roles?.includes('admin') ? req.query.sellerId : authUser.id;
+    if (!sellerId) {
+      res.status(400).json({ message: 'Seller ID is required' });
+      return;
+    }
+
+    const InventoryMovement = mongoose.model('InventoryMovement');
+    const movements = await InventoryMovement.find({ sellerId })
+      .populate('productId', 'name sku')
+      .sort({ createdAt: -1 });
+
+    res.json({ success: true, movements });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const createInventoryMovement = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { productId, quantityChanged, type, reason, batchNo } = req.body;
+    const authUser = (req as any).user;
+
+    if (!productId || quantityChanged === undefined || !type) {
+      res.status(400).json({ message: 'productId, quantityChanged, and type are required' });
+      return;
+    }
+
+    const sellerId = authUser.id;
+
+    // Save movement audit
+    const InventoryMovement = mongoose.model('InventoryMovement');
+    const movement = new InventoryMovement({
+      productId,
+      sellerId,
+      quantityChanged,
+      type,
+      reason: reason || 'Manual adjustment',
+      batchNo: batchNo || 'N/A'
+    });
+    await movement.save();
+
+    // Adjust product stock in DB
+    const Product = mongoose.model('Product');
+    const product = await Product.findById(productId);
+    if (product) {
+      const stockChange = Number(quantityChanged);
+      product.stock = Math.max(0, product.stock + stockChange);
+      await product.save();
+    }
+
+    res.status(201).json({ success: true, movement });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
   }
 };

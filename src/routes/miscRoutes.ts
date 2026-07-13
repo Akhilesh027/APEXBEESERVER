@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { protect } from "../middleware/auth";
 import {
   createCourse,
   getCourses,
@@ -41,10 +42,10 @@ router.delete("/campaigns/:id", deleteCampaign);
 
 
 // Coupons
-router.get("/coupons", getCoupons);
-router.post("/coupons", createCoupon);
-router.put("/coupons/:id", updateCoupon);
-router.delete("/coupons/:id", deleteCoupon);
+router.get("/coupons", protect, getCoupons);
+router.post("/coupons", protect, createCoupon);
+router.put("/coupons/:id", protect, updateCoupon);
+router.delete("/coupons/:id", protect, deleteCoupon);
 
 // Support Tickets
 router.get("/support-tickets", getSupportTickets);

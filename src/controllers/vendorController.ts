@@ -18,6 +18,8 @@ import { VendorReview } from '../models/VendorReviews';
 import { FavoriteVendor } from '../models/FavoriteVendors';
 import { VendorVisit } from '../models/VendorVisits';
 import { VendorMarketplaceService } from '../services/VendorMarketplaceService';
+import { requireSelfOrAdmin } from '../utils/authz';
+
 
 
 const getProfileAndModel = async (userId: string) => {
@@ -36,6 +38,10 @@ const getProfileAndModel = async (userId: string) => {
 export const getVendorProfile = async (req: Request, res: Response): Promise<void> => {
   try {
     const { userId } = req.params;
+    if (!requireSelfOrAdmin(req, userId)) {
+      res.status(404).json({ success: false, message: 'Resource not found' });
+      return;
+    }
     const resObj = await getProfileAndModel(userId);
     if (!resObj) {
       res.status(404).json({ message: 'Profile not found' });
@@ -75,6 +81,10 @@ export const getVendorProfile = async (req: Request, res: Response): Promise<voi
 export const updateVendorProfile = async (req: Request, res: Response): Promise<void> => {
   try {
     const { userId } = req.params;
+    if (!requireSelfOrAdmin(req, userId)) {
+      res.status(404).json({ success: false, message: 'Resource not found' });
+      return;
+    }
     const updates = req.body;
 
     const resObj = await getProfileAndModel(userId);
@@ -137,6 +147,10 @@ export const updateVendorProfile = async (req: Request, res: Response): Promise<
 export const getVendorStoreCompletion = async (req: Request, res: Response): Promise<void> => {
   try {
     const { userId } = req.params;
+    if (!requireSelfOrAdmin(req, userId)) {
+      res.status(404).json({ success: false, message: 'Resource not found' });
+      return;
+    }
     const resObj = await getProfileAndModel(userId);
     if (!resObj) {
       res.status(404).json({ success: false, message: 'Profile not found' });
@@ -192,6 +206,10 @@ export const getVendorStoreCompletion = async (req: Request, res: Response): Pro
 export const updateVendorDocument = async (req: Request, res: Response): Promise<void> => {
   try {
     const { userId } = req.params;
+    if (!requireSelfOrAdmin(req, userId)) {
+      res.status(404).json({ success: false, message: 'Resource not found' });
+      return;
+    }
     const { docId, url, fileName } = req.body;
 
     const resObj = await getProfileAndModel(userId);
@@ -237,6 +255,11 @@ export const updateVendorDocument = async (req: Request, res: Response): Promise
 export const requestVendorDocument = async (req: Request, res: Response): Promise<void> => {
   try {
     const { userId } = req.params;
+    const authUser = (req as any).user;
+    if (!authUser?.roles.includes('admin')) {
+      res.status(403).json({ success: false, message: 'Forbidden' });
+      return;
+    }
     const { name } = req.body;
 
     if (!name) {
@@ -286,6 +309,10 @@ export const requestVendorDocument = async (req: Request, res: Response): Promis
 export const getVendorDashboardStats = async (req: Request, res: Response): Promise<void> => {
   try {
     const { userId } = req.params;
+    if (!requireSelfOrAdmin(req, userId)) {
+      res.status(404).json({ success: false, message: 'Resource not found' });
+      return;
+    }
     const wallet = await Wallet.findOne({ userId });
     
     const availableBalance = wallet ? wallet.availableBalance : 0;
@@ -324,6 +351,10 @@ export const getVendorDashboardStats = async (req: Request, res: Response): Prom
 export const getVendorDashboardAnalytics = async (req: Request, res: Response): Promise<void> => {
   try {
     const { userId } = req.params;
+    if (!requireSelfOrAdmin(req, userId)) {
+      res.status(404).json({ success: false, message: 'Resource not found' });
+      return;
+    }
     
     // 1. Fetch wallet balances
     const wallet = await Wallet.findOne({ userId });
@@ -642,6 +673,10 @@ export const getVendorDashboardAnalytics = async (req: Request, res: Response): 
 export const getVendorCommissions = async (req: Request, res: Response): Promise<void> => {
   try {
     const { userId } = req.params;
+    if (!requireSelfOrAdmin(req, userId)) {
+      res.status(404).json({ success: false, message: 'Resource not found' });
+      return;
+    }
 
     const wallet = await Wallet.findOne({ userId });
     const released = wallet ? wallet.availableBalance : 0;
@@ -682,6 +717,10 @@ export const getVendorCommissions = async (req: Request, res: Response): Promise
 export const getVendorEntrepreneurs = async (req: Request, res: Response): Promise<void> => {
   try {
     const { userId } = req.params;
+    if (!requireSelfOrAdmin(req, userId)) {
+      res.status(404).json({ success: false, message: 'Resource not found' });
+      return;
+    }
 
     const entrepreneurs = await Entrepreneur.find({ status: 'active' }).populate('userId', 'name email mobile');
 
@@ -834,6 +873,10 @@ export const getVendorDetails = async (req: Request, res: Response): Promise<voi
 export const updateLiveStatus = async (req: Request, res: Response): Promise<void> => {
   try {
     const { userId } = req.params;
+    if (!requireSelfOrAdmin(req, userId)) {
+      res.status(404).json({ success: false, message: 'Resource not found' });
+      return;
+    }
     const { liveStatus } = req.body;
 
     const vendor = await Vendor.findOne({ userId });
@@ -861,6 +904,10 @@ export const updateLiveStatus = async (req: Request, res: Response): Promise<voi
 export const updateBusinessHours = async (req: Request, res: Response): Promise<void> => {
   try {
     const { userId } = req.params;
+    if (!requireSelfOrAdmin(req, userId)) {
+      res.status(404).json({ success: false, message: 'Resource not found' });
+      return;
+    }
     const { businessHours } = req.body;
 
     const vendor = await Vendor.findOne({ userId });
@@ -1052,6 +1099,147 @@ export const logAnalyticsEvent = async (req: Request, res: Response): Promise<vo
   } catch (error: any) {
     console.error("Log analytics error:", error);
     res.status(500).json({ success: false, message: "Server error logging event", error: error.message });
+  }
+};
+
+export const exportVendorReport = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { userId } = req.params;
+    const { format = 'csv', reportType = 'sales', timeframe = 'monthly' } = req.query;
+
+    if (!requireSelfOrAdmin(req, userId)) {
+      res.status(404).json({ success: false, message: 'Resource not found' });
+      return;
+    }
+
+    // 1. Gather data
+    let headers: string[] = [];
+    let rows: any[] = [];
+    let title = 'ApexBee Report';
+
+    if (reportType === 'sales') {
+      title = 'Sales and Order Fulfillments Report';
+      headers = ['Order Number', 'Customer', 'Total Amount (₹)', 'Order Status', 'Payment Status', 'Created Date'];
+      const orders = await Order.find({ sellerId: userId }).sort({ createdAt: -1 });
+      rows = orders.map(o => [
+        o.orderNumber,
+        o.customerName || 'N/A',
+        o.totalAmount,
+        o.orderStatus,
+        o.paymentStatus,
+        new Date(o.createdAt).toLocaleDateString()
+      ]);
+    } else if (reportType === 'products') {
+      title = 'Product Performance Report';
+      headers = ['Product Name', 'SKU', 'Base MRP (₹)', 'Selling Price (₹)', 'Stock Left', 'Status'];
+      const products = await Product.find({ sellerId: userId }).sort({ createdAt: -1 });
+      rows = products.map(p => [
+        p.name,
+        p.sku,
+        p.baseMrp,
+        p.baseSellingPrice,
+        p.stock,
+        p.status
+      ]);
+    } else if (reportType === 'commission') {
+      title = 'Commission Breakdown Matrix';
+      headers = ['Settlement ID', 'Order Ref', 'Commission Type', 'Gross Amount (₹)', 'Release Status', 'Release Date'];
+      const settlements = await CommissionSettlement.find({ recipientId: userId, settlementType: 'vendor' }).sort({ createdAt: -1 });
+      rows = settlements.map(s => [
+        s._id.toString(),
+        s.orderId ? s.orderId.toString() : 'N/A',
+        s.settlementType,
+        s.amount,
+        s.status,
+        s.releasedAt ? new Date(s.releasedAt).toLocaleDateString() : 'Pending'
+      ]);
+    } else {
+      // Default to sales reports
+      title = 'Generic Activity Statement';
+      headers = ['Activity Timestamp', 'Event Description'];
+      const logs = await Order.find({ sellerId: userId }).limit(10);
+      rows = logs.map(l => [
+        new Date(l.createdAt).toLocaleDateString(),
+        `Order ${l.orderNumber} placed by customer`
+      ]);
+    }
+
+    // 2. Stream formatted document response
+    const formatUpper = String(format).toUpperCase();
+
+    if (formatUpper === 'CSV') {
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename=Report_${reportType}_${timeframe}.csv`);
+      
+      let csvContent = headers.join(',') + '\n';
+      rows.forEach(r => {
+        csvContent += r.map((val: any) => `"${String(val).replace(/"/g, '""')}"`).join(',') + '\n';
+      });
+      res.status(200).send(csvContent);
+      return;
+    } 
+    
+    if (formatUpper === 'EXCEL') {
+      const ExcelJS = require('exceljs');
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet('Report');
+
+      sheet.addRow([title]).font = { bold: true, size: 14 };
+      sheet.addRow([`Generated Timeframe: ${timeframe}`]).font = { italic: true };
+      sheet.addRow([]); // empty row
+
+      sheet.addRow(headers).font = { bold: true };
+      rows.forEach(r => sheet.addRow(r));
+
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename=Report_${reportType}_${timeframe}.xlsx`);
+
+      await workbook.xlsx.write(res);
+      res.end();
+      return;
+    }
+
+    if (formatUpper === 'PDF') {
+      const PDFDocument = require('pdfkit');
+      const doc = new PDFDocument({ margin: 50 });
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename=Report_${reportType}_${timeframe}.pdf`);
+
+      doc.pipe(res);
+
+      doc.fontSize(16).text(title, { align: 'center' }).moveDown(1);
+      doc.fontSize(10).text(`Generated Timeframe: ${timeframe}`, { align: 'center' }).moveDown(2);
+
+      let textY = doc.y;
+      headers.forEach((h, idx) => {
+        doc.fontSize(9).font('Helvetica-Bold').text(h, 50 + idx * 85, textY, { width: 80 });
+      });
+      doc.moveDown(0.5);
+      doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
+      doc.moveDown(0.5);
+      doc.font('Helvetica');
+
+      rows.forEach(r => {
+        let rowY = doc.y;
+        if (rowY > 700) {
+          doc.addPage();
+          rowY = 50;
+        }
+        r.forEach((val: any, idx: number) => {
+          doc.fontSize(8).text(String(val), 50 + idx * 85, rowY, { width: 80 });
+        });
+        doc.y = rowY + 20;
+      });
+
+      doc.end();
+      return;
+    }
+
+    res.status(400).json({ success: false, message: 'Invalid format requested. Valid options: PDF, Excel, CSV' });
+  } catch (error: any) {
+    console.error("Export report error:", error);
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 

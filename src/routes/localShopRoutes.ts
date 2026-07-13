@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { protect, restrictTo } from '../middleware/auth';
 import LocalShopSubscription from '../models/LocalShopSubscription';
 import { Vendor } from '../models/Vendor';
 import { User } from '../models/User';
@@ -12,9 +13,15 @@ import { WalletEngine } from '../services/WalletEngine';
 const router = Router();
 
 // 1. GET /subscriptions/:userId
-router.get('/subscriptions/:userId', async (req: Request, res: Response): Promise<void> => {
+router.get('/subscriptions/:userId', protect, async (req: Request, res: Response): Promise<void> => {
   try {
     const { userId } = req.params;
+    const authUser = (req as any).user;
+    const isAdmin = authUser?.roles.includes('admin');
+    if (!isAdmin && String(userId) !== String(authUser?.id)) {
+      res.status(404).json({ success: false, message: 'Resource not found' });
+      return;
+    }
     const subscriptions = await LocalShopSubscription.find({ userId });
     res.status(200).json({
       success: true,
@@ -26,18 +33,26 @@ router.get('/subscriptions/:userId', async (req: Request, res: Response): Promis
 });
 
 // 1.1 GET /subscriptions/vendor/:vendorId
-router.get('/subscriptions/vendor/:vendorId', async (req: Request, res: Response): Promise<void> => {
+router.get('/subscriptions/vendor/:vendorId', protect, async (req: Request, res: Response): Promise<void> => {
   try {
     const { vendorId } = req.params;
-    
+    const authUser = (req as any).user;
+    const isAdmin = authUser?.roles.includes('admin');
+
+    let targetUserId = vendorId;
+    const vendorDoc = await Vendor.findOne({ userId: vendorId }) || await Vendor.findById(vendorId);
+    if (vendorDoc) {
+      targetUserId = vendorDoc.userId.toString();
+    }
+
+    if (!isAdmin && String(targetUserId) !== String(authUser?.id)) {
+      res.status(404).json({ success: false, message: 'Resource not found' });
+      return;
+    }
+
     let queryVendorId = vendorId;
-    try {
-      const vendor = await Vendor.findOne({ userId: vendorId }) || await Vendor.findById(vendorId);
-      if (vendor) {
-        queryVendorId = vendor._id.toString();
-      }
-    } catch (err) {
-      // Ignore if not a valid ObjectId
+    if (vendorDoc) {
+      queryVendorId = vendorDoc._id.toString();
     }
 
     const subscriptions = await LocalShopSubscription.find({
@@ -107,7 +122,7 @@ router.get('/subscriptions/vendor/:vendorId', async (req: Request, res: Response
 });
 
 // 1.2 GET /subscriptions/admin/all
-router.get('/subscriptions/admin/all', async (req: Request, res: Response): Promise<void> => {
+router.get('/subscriptions/admin/all', protect, restrictTo('admin'), async (req: Request, res: Response): Promise<void> => {
   try {
     const subscriptions = await LocalShopSubscription.find()
       .populate({
@@ -246,9 +261,36 @@ router.post('/subscriptions', async (req: Request, res: Response): Promise<void>
 });
 
 // 3. PATCH /subscriptions/:subId
-router.patch('/subscriptions/:subId', async (req: Request, res: Response): Promise<void> => {
+router.patch('/subscriptions/:subId', protect, async (req: Request, res: Response): Promise<void> => {
   try {
     const { subId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(subId)) {
+      res.status(400).json({ success: false, message: 'Invalid ID format' });
+      return;
+    }
+    const subscription = await LocalShopSubscription.findById(subId);
+    if (!subscription) {
+      res.status(404).json({ success: false, message: 'Resource not found' });
+      return;
+    }
+
+    const authUser = (req as any).user;
+    const isAdmin = authUser?.roles.includes('admin');
+    const isCustomer = authUser && String(subscription.userId) === String(authUser.id);
+    
+    let isVendor = false;
+    if (authUser) {
+      const vendor = await Vendor.findOne({ userId: authUser.id });
+      if (vendor && String(subscription.vendorId) === String(vendor._id)) {
+        isVendor = true;
+      }
+    }
+
+    if (!isAdmin && !isCustomer && !isVendor) {
+      res.status(404).json({ success: false, message: 'Resource not found' });
+      return;
+    }
+
     const { status, autoRenew, deliveryAgentId, deliveryAgentType, deliveryAgentName } = req.body;
 
     const updates: any = {};
@@ -258,13 +300,13 @@ router.patch('/subscriptions/:subId', async (req: Request, res: Response): Promi
     if (deliveryAgentType !== undefined) updates.deliveryAgentType = deliveryAgentType;
     if (deliveryAgentName !== undefined) updates.deliveryAgentName = deliveryAgentName;
 
-    const subscription = await LocalShopSubscription.findByIdAndUpdate(
+    const updatedSubscription = await LocalShopSubscription.findByIdAndUpdate(
       subId,
       { $set: updates },
       { new: true }
     );
 
-    if (!subscription) {
+    if (!updatedSubscription) {
       res.status(404).json({ success: false, message: 'Subscription not found' });
       return;
     }
@@ -272,7 +314,7 @@ router.patch('/subscriptions/:subId', async (req: Request, res: Response): Promi
     res.status(200).json({
       success: true,
       message: 'Subscription updated successfully',
-      subscription
+      subscription: updatedSubscription
     });
   } catch (err: any) {
     res.status(500).json({ success: false, message: err.message });
@@ -280,9 +322,13 @@ router.patch('/subscriptions/:subId', async (req: Request, res: Response): Promi
 });
 
 // 4. POST /subscriptions/:subId/skip
-router.post('/subscriptions/:subId/skip', async (req: Request, res: Response): Promise<void> => {
+router.post('/subscriptions/:subId/skip', protect, async (req: Request, res: Response): Promise<void> => {
   try {
     const { subId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(subId)) {
+      res.status(400).json({ success: false, message: 'Invalid ID format' });
+      return;
+    }
     const { date } = req.body;
 
     if (!date) {
@@ -292,7 +338,24 @@ router.post('/subscriptions/:subId/skip', async (req: Request, res: Response): P
 
     const subscription = await LocalShopSubscription.findById(subId);
     if (!subscription) {
-      res.status(404).json({ success: false, message: 'Subscription not found' });
+      res.status(404).json({ success: false, message: 'Resource not found' });
+      return;
+    }
+
+    const authUser = (req as any).user;
+    const isAdmin = authUser?.roles.includes('admin');
+    const isCustomer = authUser && String(subscription.userId) === String(authUser.id);
+    
+    let isVendor = false;
+    if (authUser) {
+      const vendor = await Vendor.findOne({ userId: authUser.id });
+      if (vendor && String(subscription.vendorId) === String(vendor._id)) {
+        isVendor = true;
+      }
+    }
+
+    if (!isAdmin && !isCustomer && !isVendor) {
+      res.status(404).json({ success: false, message: 'Resource not found' });
       return;
     }
 
@@ -423,9 +486,36 @@ router.patch('/billing/statements/:id/approve', async (req: Request, res: Respon
 });
 
 // 12. GET /subscriptions/:subId/tasks
-router.get('/subscriptions/:subId/tasks', async (req: Request, res: Response): Promise<void> => {
+router.get('/subscriptions/:subId/tasks', protect, async (req: Request, res: Response): Promise<void> => {
   try {
     const { subId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(subId)) {
+      res.status(400).json({ success: false, message: 'Invalid ID format' });
+      return;
+    }
+    const subscription = await LocalShopSubscription.findById(subId);
+    if (!subscription) {
+      res.status(404).json({ success: false, message: 'Resource not found' });
+      return;
+    }
+
+    const authUser = (req as any).user;
+    const isAdmin = authUser?.roles.includes('admin');
+    const isCustomer = authUser && String(subscription.userId) === String(authUser.id);
+    
+    let isVendor = false;
+    if (authUser) {
+      const vendor = await Vendor.findOne({ userId: authUser.id });
+      if (vendor && String(subscription.vendorId) === String(vendor._id)) {
+        isVendor = true;
+      }
+    }
+
+    if (!isAdmin && !isCustomer && !isVendor) {
+      res.status(404).json({ success: false, message: 'Resource not found' });
+      return;
+    }
+
     const { SubscriptionDeliveryTask } = require('../models/SubscriptionDeliveryTask');
     const tasks = await SubscriptionDeliveryTask.find({ subscriptionId: subId }).sort({ date: -1 });
     res.status(200).json({ success: true, tasks });
