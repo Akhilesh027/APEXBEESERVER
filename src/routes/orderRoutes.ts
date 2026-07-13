@@ -7,7 +7,10 @@ import {
   deleteOrder,
   getOrdersByUserId,
   createOrderWithProof,
-  getOrderCountByUserId
+  getOrderCountByUserId,
+  getOrderInvoicePDF,
+  getOrderPackingSlipPDF,
+  updateOrderPackingChecklist
 } from "../controllers/orderController";
 import { uploadAnyDisk } from "../middleware/multer";
 import { protect, restrictTo } from "../middleware/auth";
@@ -17,6 +20,9 @@ const router = Router();
 router.get("/", protect, restrictTo('admin', 'vendor', 'wholesaler', 'manufacturer', 'state_franchise', 'district_franchise', 'mandal_franchise'), getOrders);
 router.get("/user/:userId", protect, getOrdersByUserId);
 router.get("/:userId/count", protect, getOrderCountByUserId);
+router.get("/:id/invoice", protect, getOrderInvoicePDF);
+router.get("/:id/packing-slip", protect, getOrderPackingSlipPDF);
+router.patch("/:id/packing-checklist", protect, updateOrderPackingChecklist);
 router.get("/:id", protect, getOrderById);
 router.post("/", protect, createOrder);
 router.post("/with-proof", protect, uploadAnyDisk.single('paymentProof'), createOrderWithProof);

@@ -1436,3 +1436,162 @@ export const getReferrals = async (req: AuthRequest, res: Response): Promise<voi
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
+export const getDeliverySlots = async (req: Request, res: Response) => {
+  try {
+    const sellerId = req.query.sellerId || (req as any).user?.id;
+    const { date } = req.query;
+
+    if (!sellerId) {
+      res.status(400).json({ message: 'Seller ID is required' });
+      return;
+    }
+
+    const filter: any = { sellerId };
+    if (date) filter.date = date;
+
+    const DeliverySlot = mongoose.model('DeliverySlot');
+    const slots = await DeliverySlot.find(filter);
+
+    res.json({ success: true, slots });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const bookDeliverySlot = async (req: Request, res: Response) => {
+  try {
+    const { sellerId, date, timeSlot } = req.body;
+    if (!sellerId || !date || !timeSlot) {
+      res.status(400).json({ message: 'sellerId, date, and timeSlot are required' });
+      return;
+    }
+
+    const DeliverySlot = mongoose.model('DeliverySlot');
+    let slot = await DeliverySlot.findOne({ sellerId, date, timeSlot });
+
+    if (!slot) {
+      // Initialize a default slot with capacity 20
+      slot = new DeliverySlot({
+        sellerId,
+        date,
+        timeSlot,
+        maxOrders: 20,
+        bookedOrders: 0
+      });
+    }
+
+    if (slot.bookedOrders >= slot.maxOrders) {
+      res.status(400).json({
+        success: false,
+        message: `Selected slot ${timeSlot} on ${date} is fully booked. Capacity reached (${slot.maxOrders}/${slot.maxOrders}).`
+      });
+      return;
+    }
+
+    slot.bookedOrders += 1;
+    await slot.save();
+
+    res.json({
+      success: true,
+      message: 'Delivery slot booked successfully',
+      slot
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const configureSlotLimits = async (req: Request, res: Response) => {
+  try {
+    const { date, timeSlot, maxOrders } = req.body;
+    const sellerId = (req as any).user?.id || req.body.sellerId;
+
+    if (!sellerId || !date || !timeSlot || maxOrders === undefined) {
+      res.status(400).json({ message: 'sellerId, date, timeSlot, and maxOrders are required' });
+      return;
+    }
+
+    const DeliverySlot = mongoose.model('DeliverySlot');
+    let slot = await DeliverySlot.findOne({ sellerId, date, timeSlot });
+
+    if (!slot) {
+      slot = new DeliverySlot({
+        sellerId,
+        date,
+        timeSlot,
+        maxOrders,
+        bookedOrders: 0
+      });
+    } else {
+      slot.maxOrders = maxOrders;
+    }
+
+    await slot.save();
+
+    res.json({
+      success: true,
+      message: 'Delivery slot capacity limits updated',
+      slot
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const triggerCourierFallback = async (req: Request, res: Response) => {
+  try {
+    const { orderId, distanceKm } = req.body;
+    if (!orderId) {
+      res.status(400).json({ message: 'Order ID is required' });
+      return;
+    }
+
+    const order = await Order.findById(orderId);
+    if (!order) {
+      res.status(404).json({ message: 'Order not found' });
+      return;
+    }
+
+    // Run fallback carrier selection rules
+    const distance = Number(distanceKm || 6); // Mock distance
+    let partnerName = 'Delhivery Express';
+    let courierType = 'Logistics Partner';
+
+    if (distance < 3) {
+      // Local self rider first fallback
+      const localRider = await DeliveryPartner.findOne({ status: 'active' });
+      if (localRider) {
+        order.deliveryAgentId = localRider.userId.toString();
+        order.deliveryType = 'Platform';
+        partnerName = localRider.name;
+        courierType = 'Local Rider';
+      }
+    }
+
+    if (order.deliveryType !== 'Platform') {
+      // Fallback to Courier partner API simulator
+      order.deliveryType = 'Independent';
+      order.courierPartner = distance > 15 ? 'Porter Cargo' : 'Delhivery Express';
+      order.trackingId = `TRK-${order.orderNumber}-${Math.floor(1000 + Math.random() * 9000)}`;
+      partnerName = order.courierPartner;
+    }
+
+    order.orderStatus = 'Shipped';
+    order.timeline.push({
+      status: 'Shipped',
+      date: new Date().toISOString(),
+      note: `Package dispatched via ${courierType}: ${partnerName}. Tracking ID: ${order.trackingId || 'N/A'}`
+    });
+
+    await order.save();
+
+    res.json({
+      success: true,
+      message: `Automatic fallback routing completed via ${partnerName}`,
+      order
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};

@@ -22,7 +22,8 @@ import {
   getPopularVendors,
   getRecommendedVendors,
   logAnalyticsEvent,
-  getVendorStoreCompletion
+  getVendorStoreCompletion,
+  exportVendorReport
 } from '../controllers/vendorController';
 
 const router = Router();
@@ -51,6 +52,7 @@ router.put('/profile/:userId/document', protect, updateVendorDocument);
 router.post('/profile/:userId/request-document', protect, requestVendorDocument);
 router.get('/dashboard-stats/:userId', protect, getVendorDashboardStats);
 router.get('/dashboard/analytics/:userId', protect, getVendorDashboardAnalytics);
+router.get('/reports/export/:userId', protect, exportVendorReport);
 router.get('/commissions/:userId', protect, getVendorCommissions);
 router.get('/entrepreneurs/:userId', protect, getVendorEntrepreneurs);
 

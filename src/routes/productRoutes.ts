@@ -12,6 +12,11 @@ import {
   rejectProduct,
   bulkUpdateProducts,
   getProductsByVendor,
+  duplicateProduct,
+  archiveProduct,
+  getAiProductSuggestions,
+  getInventoryMovements,
+  createInventoryMovement,
 } from '../controllers/productController';
 
 import { productUpload } from '../middleware/multer';
@@ -23,17 +28,22 @@ const router = express.Router();
 router.get('/', getAllProducts);
 router.get('/my-products', protect, getMyProducts);
 router.get('/vendor/:vendorId', getProductsByVendor);
+router.post('/ai-generator', protect, restrictTo('vendor', 'wholesaler', 'manufacturer', 'admin'), getAiProductSuggestions);
 router.get('/:id', getProductById);
 
 // Seller/Admin only routes for product creation & edit
 router.post('/', protect, restrictTo('vendor', 'wholesaler', 'manufacturer', 'admin'), productUpload, createProduct);
 router.put('/:id', protect, restrictTo('vendor', 'wholesaler', 'manufacturer', 'admin'), productUpload, updateProduct);
+router.post('/:id/duplicate', protect, restrictTo('vendor', 'wholesaler', 'manufacturer', 'admin'), duplicateProduct);
+router.patch('/:id/archive', protect, restrictTo('vendor', 'wholesaler', 'manufacturer', 'admin'), archiveProduct);
 router.delete('/:id', protect, restrictTo('vendor', 'wholesaler', 'manufacturer', 'admin'), deleteProduct);
 router.post('/bulk-update', protect, restrictTo('vendor', 'wholesaler', 'manufacturer', 'admin'), bulkUpdateProducts);
+router.get('/inventory/movements', protect, getInventoryMovements);
+router.post('/inventory/movements', protect, createInventoryMovement);
 
 // Admin-only pricing actions
-router.patch('/:id/admin-pricing', protect, configureAdminPricing);
-router.patch('/:id/reject', protect, rejectProduct);
+router.patch('/:id/admin-pricing', protect, restrictTo('admin'), configureAdminPricing);
+router.patch('/:id/reject', protect, restrictTo('admin'), rejectProduct);
 
 // Seller-specific pricing acceptance/negotiation
 router.patch('/:id/seller-accept-pricing', protect, restrictTo('vendor', 'wholesaler', 'manufacturer'), sellerAcceptPricing);

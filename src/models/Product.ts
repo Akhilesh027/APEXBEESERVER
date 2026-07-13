@@ -123,6 +123,21 @@ export interface IProduct extends Document {
   isStoreProduct?: boolean;
   isSubscriptionAvailable?: boolean;
   badges?: string[];
+  isArchived?: boolean;
+  batchNo?: string;
+  expiryDate?: Date;
+  manufacturingDate?: Date;
+  reorderLevel?: number;
+  safetyStock?: number;
+  purchasePrice?: number;
+  inventory?: {
+    onHandStock: number;
+    reservedStock: number;
+    quarantineStock: number;
+    damagedStock: number;
+    expiredStock: number;
+  };
+  availableStock?: number;
 }
 
 const CommissionShareSchema = new Schema<ICommissionShare>(
@@ -512,7 +527,6 @@ const ProductSchema = new Schema<IProduct>(
     liveAt: Date,
     returnPeriodDays: {
       type: Number,
-      default: 7,
     },
     referralCommission: {
       level1: { type: Number, default: 0 },
@@ -532,10 +546,51 @@ const ProductSchema = new Schema<IProduct>(
     badges: {
       type: [String],
       default: []
+    },
+    isArchived: {
+      type: Boolean,
+      default: false,
+      index: true
+    },
+    batchNo: {
+      type: String,
+      default: ''
+    },
+    expiryDate: Date,
+    manufacturingDate: Date,
+    reorderLevel: {
+      type: Number,
+      default: 10
+    },
+    safetyStock: {
+      type: Number,
+      default: 5
+    },
+    purchasePrice: {
+      type: Number,
+      default: 0
+    },
+    inventory: {
+      onHandStock: { type: Number, default: 0, min: 0 },
+      reservedStock: { type: Number, default: 0, min: 0 },
+      quarantineStock: { type: Number, default: 0, min: 0 },
+      damagedStock: { type: Number, default: 0, min: 0 },
+      expiredStock: { type: Number, default: 0, min: 0 }
     }
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true }
+  }
 );
+
+ProductSchema.virtual('availableStock').get(function(this: any) {
+  if (this.inventory) {
+    return this.inventory.onHandStock - this.inventory.reservedStock;
+  }
+  return this.stock;
+});
 
 ProductSchema.index({ sellerId: 1, status: 1 });
 ProductSchema.index({ sellerType: 1, status: 1 });

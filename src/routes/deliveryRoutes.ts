@@ -38,7 +38,11 @@ import {
   register,
   applyLeave,
   getLeaves,
-  getReferrals
+  getReferrals,
+  getDeliverySlots,
+  bookDeliverySlot,
+  configureSlotLimits,
+  triggerCourierFallback
 } from '../controllers/deliveryController';
 import { protect } from '../middleware/auth';
 
@@ -64,6 +68,12 @@ router.post('/subscriptions/:subId/run', protect, updateSubscriptionRun);
 router.post('/leaves', protect, applyLeave);
 router.get('/leaves', protect, getLeaves);
 router.get('/referrals', protect, getReferrals);
+
+// Slots & fallback routing routes
+router.get('/slots', protect, getDeliverySlots);
+router.post('/slots/book', protect, bookDeliverySlot);
+router.post('/slots/configure', protect, configureSlotLimits);
+router.post('/orders/fallback', protect, triggerCourierFallback);
 
 // Orders routing
 router.get('/orders', protect, getOrders);
