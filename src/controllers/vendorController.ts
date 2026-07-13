@@ -1243,3 +1243,124 @@ export const exportVendorReport = async (req: Request, res: Response): Promise<v
   }
 };
 
+export const getVendorReportsHeatmap = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { userId } = req.params;
+    if (!requireSelfOrAdmin(req, userId)) {
+      res.status(404).json({ success: false, message: 'Resource not found' });
+      return;
+    }
+
+    const orders = await Order.find({ sellerId: userId });
+    
+    // Aggregation matrices
+    const hourlyData = Array.from({ length: 24 }).map((_, hour) => ({ hour, orders: 0 }));
+    const dailyData: Record<string, number> = { 'Mon': 0, 'Tue': 0, 'Wed': 0, 'Thu': 0, 'Fri': 0, 'Sat': 0, 'Sun': 0 };
+    const daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+    orders.forEach(o => {
+      const d = new Date(o.createdAt);
+      const hour = d.getHours();
+      const dayName = daysOfWeek[d.getDay()];
+
+      hourlyData[hour].orders += 1;
+      dailyData[dayName] = (dailyData[dayName] || 0) + 1;
+    });
+
+    res.status(200).json({
+      success: true,
+      heatmap: {
+        hourly: hourlyData,
+        daily: Object.entries(dailyData).map(([day, count]) => ({ day, count }))
+      }
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const getVendorReportsComparison = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { userId } = req.params;
+    if (!requireSelfOrAdmin(req, userId)) {
+      res.status(404).json({ success: false, message: 'Resource not found' });
+      return;
+    }
+
+    const today = new Date();
+    const currMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+    const prevMonthStart = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+
+    // Fetch this month and last month orders
+    const [currOrders, prevOrders, products] = await Promise.all([
+      Order.find({ sellerId: userId, createdAt: { $gte: currMonthStart } }),
+      Order.find({ sellerId: userId, createdAt: { $gte: prevMonthStart, $lt: currMonthStart } }),
+      Product.find({ sellerId: userId })
+    ]);
+
+    // Product MoM performance calculation
+    const productStats: Record<string, { id: string; name: string; curr: number; prev: number }> = {};
+    products.forEach(p => {
+      productStats[p.id] = { id: p.id, name: p.name, curr: 0, prev: 0 };
+    });
+
+    currOrders.forEach(o => {
+      o.items.forEach((item: any) => {
+        const pId = String(item.productId || item.id);
+        if (productStats[pId]) {
+          productStats[pId].curr += item.price * item.quantity;
+        }
+      });
+    });
+
+    prevOrders.forEach(o => {
+      o.items.forEach((item: any) => {
+        const pId = String(item.productId || item.id);
+        if (productStats[pId]) {
+          productStats[pId].prev += item.price * item.quantity;
+        }
+      });
+    });
+
+    const productComparison = Object.values(productStats).map(p => {
+      const diff = p.curr - p.prev;
+      const pct = p.prev > 0 ? `${diff >= 0 ? '+' : ''}${Math.round((diff / p.prev) * 100)}%` : '+100%';
+      return { ...p, pct };
+    }).sort((a, b) => b.curr - a.curr).slice(0, 8);
+
+    res.status(200).json({
+      success: true,
+      productComparison
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const getVendorDeliveryZones = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { userId } = req.params;
+    const resObj = await getProfileAndModel(userId);
+    if (!resObj) {
+      res.status(404).json({ success: false, message: 'Vendor not found' });
+      return;
+    }
+    const vendor = resObj.doc;
+    
+    // Return delivery zones list (e.g. radius configurations or custom polygons)
+    const zones = [
+      { id: 'zone-self', name: 'Self Local Run', type: 'Self', range: '0-5 KM', status: 'Active' },
+      { id: 'zone-partner', name: 'Logistics Partner Region', type: 'Partner', range: '5 KM+', status: 'Active' }
+    ];
+
+    res.status(200).json({
+      success: true,
+      deliveryMode: vendor.deliveryMode || 'Self',
+      radiusKm: vendor.deliveryRadiusKm || 5,
+      zones
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+

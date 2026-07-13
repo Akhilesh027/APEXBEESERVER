@@ -17,6 +17,7 @@ import {
   getAiProductSuggestions,
   getInventoryMovements,
   createInventoryMovement,
+  getProductBySku
 } from '../controllers/productController';
 
 import { productUpload } from '../middleware/multer';
@@ -29,6 +30,7 @@ router.get('/', getAllProducts);
 router.get('/my-products', protect, getMyProducts);
 router.get('/vendor/:vendorId', getProductsByVendor);
 router.post('/ai-generator', protect, restrictTo('vendor', 'wholesaler', 'manufacturer', 'admin'), getAiProductSuggestions);
+router.get('/sku/:sku', getProductBySku);
 router.get('/:id', getProductById);
 
 // Seller/Admin only routes for product creation & edit

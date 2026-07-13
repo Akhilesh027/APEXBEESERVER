@@ -59,6 +59,7 @@ app.use(
       'http://localhost:5178',
       'http://localhost:5179',
       'http://localhost:5180',
+
       'http://localhost:8080',
       'http://localhost:8081',
       'http://localhost:8082',
@@ -69,7 +70,7 @@ app.use(
       'http://127.0.0.1:5177',
       'http://127.0.0.1:5178',
       'http://127.0.0.1:5179',
-      'http://127.0.0.1:5180',
+
       'http://127.0.0.1:8080',
       'http://127.0.0.1:8081',
       'http://127.0.0.1:8082',

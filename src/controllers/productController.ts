@@ -1147,3 +1147,17 @@ export const createInventoryMovement = async (req: Request, res: Response): Prom
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
+export const getProductBySku = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { sku } = req.params;
+    const product = await Product.findOne({ sku });
+    if (!product) {
+      res.status(404).json({ success: false, message: 'Product not found with specified SKU/barcode.' });
+      return;
+    }
+    res.status(200).json({ success: true, product });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};

@@ -23,7 +23,10 @@ import {
   getRecommendedVendors,
   logAnalyticsEvent,
   getVendorStoreCompletion,
-  exportVendorReport
+  exportVendorReport,
+  getVendorReportsHeatmap,
+  getVendorReportsComparison,
+  getVendorDeliveryZones
 } from '../controllers/vendorController';
 
 const router = Router();
@@ -53,6 +56,9 @@ router.post('/profile/:userId/request-document', protect, requestVendorDocument)
 router.get('/dashboard-stats/:userId', protect, getVendorDashboardStats);
 router.get('/dashboard/analytics/:userId', protect, getVendorDashboardAnalytics);
 router.get('/reports/export/:userId', protect, exportVendorReport);
+router.get('/reports/heatmap/:userId', protect, getVendorReportsHeatmap);
+router.get('/reports/comparison/:userId', protect, getVendorReportsComparison);
+router.get('/reports/delivery-zones/:userId', protect, getVendorDeliveryZones);
 router.get('/commissions/:userId', protect, getVendorCommissions);
 router.get('/entrepreneurs/:userId', protect, getVendorEntrepreneurs);
 
