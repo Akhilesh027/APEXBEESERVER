@@ -16,6 +16,7 @@ import {
   updateBusinessHours,
   getVendorReviews,
   submitVendorReview,
+  replyToVendorReview,
   toggleFavorite,
   getUserFavorites,
   getTrendingVendors,
@@ -26,7 +27,9 @@ import {
   exportVendorReport,
   getVendorReportsHeatmap,
   getVendorReportsComparison,
-  getVendorDeliveryZones
+  getVendorDeliveryZones,
+  updateCustomerNote,
+  getCustomerNote
 } from '../controllers/vendorController';
 
 const router = Router();
@@ -66,5 +69,8 @@ router.get('/entrepreneurs/:userId', protect, getVendorEntrepreneurs);
 router.get('/:vendorId', getVendorDetails);
 router.get('/:vendorId/reviews', getVendorReviews);
 router.post('/:vendorId/reviews', protect, submitVendorReview);
+router.post('/reviews/:reviewId/reply', protect, replyToVendorReview);
+router.put('/customers/:customerId/notes', protect, updateCustomerNote);
+router.get('/customers/:customerId/notes', protect, getCustomerNote);
 
 export default router;

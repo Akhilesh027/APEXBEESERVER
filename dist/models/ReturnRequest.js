@@ -33,36 +33,27 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.Coupon = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
-const CouponSchema = new mongoose_1.Schema({
-    code: { type: String, required: true, unique: true, uppercase: true, trim: true },
-    discountType: {
+const ReturnRequestItemSchema = new mongoose_1.Schema({
+    productId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Product', required: true },
+    quantity: { type: Number, required: true, min: 1 }
+});
+const ReturnRequestSchema = new mongoose_1.Schema({
+    orderId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Order', required: true, index: true },
+    customerId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    vendorId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    requestedItems: { type: [ReturnRequestItemSchema], required: true },
+    reason: { type: String, required: true },
+    images: [{ type: String }],
+    returnStatus: {
         type: String,
-        enum: ['percentage', 'flat', 'Percentage', 'Fixed Amount'],
-        required: true
+        enum: ['None', 'Requested', 'Approved', 'Rejected', 'Pickup Scheduled', 'In Transit', 'Received', 'Under Inspection', 'Completed'],
+        default: 'Requested',
+        index: true
     },
-    discountValue: { type: Number, required: true },
-    minSubtotal: { type: Number, default: 0 },
-    expiryDate: { type: String, required: true },
-    usageCount: { type: Number, default: 0 },
-    status: {
-        type: String,
-        enum: ['Active', 'Inactive', 'Expired'],
-        default: 'Active'
-    },
-    scope: {
-        type: String,
-        enum: ['vendor', 'platform'],
-        default: 'vendor',
-        required: true
-    },
-    vendorId: {
-        type: mongoose_1.Schema.Types.ObjectId,
-        ref: 'User',
-        required: function () {
-            return this.scope === 'vendor';
-        }
-    }
+    pickupScheduledAt: Date,
+    pickupAddress: String,
+    receivedAt: Date,
+    inspectionNotes: String
 }, { timestamps: true });
-exports.Coupon = mongoose_1.default.model("Coupon", CouponSchema);
+exports.default = mongoose_1.default.model('ReturnRequest', ReturnRequestSchema);

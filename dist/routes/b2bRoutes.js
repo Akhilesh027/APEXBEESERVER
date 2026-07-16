@@ -1,0 +1,12 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const b2bController_1 = require("../controllers/b2bController");
+const auth_1 = require("../middleware/auth");
+const router = (0, express_1.Router)();
+router.get("/rfqs", auth_1.protect, b2bController_1.getRfqs);
+router.post("/rfqs", auth_1.protect, b2bController_1.createRfq);
+router.get("/pos", auth_1.protect, b2bController_1.getPos);
+router.post("/pos", auth_1.protect, b2bController_1.createPo);
+router.patch("/pos/:id", auth_1.protect, b2bController_1.updatePo);
+exports.default = router;

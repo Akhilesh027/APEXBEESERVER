@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
+const auth_1 = require("../middleware/auth");
 const miscController_1 = require("../controllers/miscController");
 const router = (0, express_1.Router)();
 // Courses
@@ -17,10 +18,10 @@ router.post("/campaigns", miscController_1.createCampaign);
 router.put("/campaigns/:id", miscController_1.updateCampaign);
 router.delete("/campaigns/:id", miscController_1.deleteCampaign);
 // Coupons
-router.get("/coupons", miscController_1.getCoupons);
-router.post("/coupons", miscController_1.createCoupon);
-router.put("/coupons/:id", miscController_1.updateCoupon);
-router.delete("/coupons/:id", miscController_1.deleteCoupon);
+router.get("/coupons", auth_1.protect, miscController_1.getCoupons);
+router.post("/coupons", auth_1.protect, miscController_1.createCoupon);
+router.put("/coupons/:id", auth_1.protect, miscController_1.updateCoupon);
+router.delete("/coupons/:id", auth_1.protect, miscController_1.deleteCoupon);
 // Support Tickets
 router.get("/support-tickets", miscController_1.getSupportTickets);
 router.post("/support-tickets", miscController_1.createSupportTicket);

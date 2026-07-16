@@ -26,10 +26,17 @@ router.put('/profile/:userId/document', auth_1.protect, vendorController_1.updat
 router.post('/profile/:userId/request-document', auth_1.protect, vendorController_1.requestVendorDocument);
 router.get('/dashboard-stats/:userId', auth_1.protect, vendorController_1.getVendorDashboardStats);
 router.get('/dashboard/analytics/:userId', auth_1.protect, vendorController_1.getVendorDashboardAnalytics);
+router.get('/reports/export/:userId', auth_1.protect, vendorController_1.exportVendorReport);
+router.get('/reports/heatmap/:userId', auth_1.protect, vendorController_1.getVendorReportsHeatmap);
+router.get('/reports/comparison/:userId', auth_1.protect, vendorController_1.getVendorReportsComparison);
+router.get('/reports/delivery-zones/:userId', auth_1.protect, vendorController_1.getVendorDeliveryZones);
 router.get('/commissions/:userId', auth_1.protect, vendorController_1.getVendorCommissions);
 router.get('/entrepreneurs/:userId', auth_1.protect, vendorController_1.getVendorEntrepreneurs);
 // Store detail & feedback routes (placed last)
 router.get('/:vendorId', vendorController_1.getVendorDetails);
 router.get('/:vendorId/reviews', vendorController_1.getVendorReviews);
 router.post('/:vendorId/reviews', auth_1.protect, vendorController_1.submitVendorReview);
+router.post('/reviews/:reviewId/reply', auth_1.protect, vendorController_1.replyToVendorReview);
+router.put('/customers/:customerId/notes', auth_1.protect, vendorController_1.updateCustomerNote);
+router.get('/customers/:customerId/notes', auth_1.protect, vendorController_1.getCustomerNote);
 exports.default = router;

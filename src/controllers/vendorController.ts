@@ -235,8 +235,17 @@ export const updateVendorDocument = async (req: Request, res: Response): Promise
     });
 
     if (!docUpdated) {
-      res.status(404).json({ message: 'Document type not found in profile' });
-      return;
+      let name = docId.replace("DOC-", "").replace("-", " ");
+      if (docId === 'DOC-FSSAI') name = 'FSSAI Licence';
+      else if (docId === 'DOC-DRUG') name = 'Drug License';
+      vendor.documents.push({
+        id: docId,
+        name,
+        status: 'Pending',
+        uploadDate: new Date().toISOString().split('T')[0],
+        fileName,
+        url
+      });
     }
 
     const saved = await vendor.save();
@@ -985,6 +994,34 @@ export const submitVendorReview = async (req: Request, res: Response): Promise<v
   }
 };
 
+export const replyToVendorReview = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { reviewId } = req.params;
+    const { reply } = req.body;
+    const userId = (req as any).user?.id || (req as any).user?._id;
+
+    if (!userId) {
+      res.status(401).json({ success: false, message: "Unauthorized" });
+      return;
+    }
+
+    const review = await VendorReview.findById(reviewId);
+    if (!review) {
+      res.status(404).json({ success: false, message: "Review not found" });
+      return;
+    }
+
+    review.reply = reply || "";
+    await review.save();
+
+    res.status(200).json({ success: true, message: "Reply submitted successfully", review });
+  } catch (error: any) {
+    console.error("Reply to review error:", error);
+    res.status(500).json({ success: false, message: "Server error replying to review", error: error.message });
+  }
+};
+
+
 export const toggleFavorite = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params; // vendorId
@@ -1363,4 +1400,76 @@ export const getVendorDeliveryZones = async (req: Request, res: Response): Promi
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
+export const updateCustomerNote = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const vendorUserId = (req as any).user?.id || (req as any).user?._id;
+    const { customerId } = req.params;
+    const { notes } = req.body;
+
+    if (!vendorUserId) {
+      res.status(401).json({ success: false, message: "Unauthorized" });
+      return;
+    }
+
+    const vendor = await Vendor.findOne({ userId: vendorUserId });
+    if (!vendor) {
+      res.status(404).json({ success: false, message: "Vendor profile not found" });
+      return;
+    }
+
+    let rel = await BusinessRelationship.findOne({
+      businessId: vendor._id,
+      userId: customerId,
+      businessType: "vendor"
+    });
+
+    if (!rel) {
+      rel = new BusinessRelationship({
+        businessId: vendor._id,
+        userId: customerId,
+        businessType: "vendor",
+        status: "active"
+      });
+    }
+
+    rel.notes = notes || "";
+    await rel.save();
+
+    res.status(200).json({ success: true, message: "Customer note updated successfully", notes: rel.notes });
+  } catch (error: any) {
+    console.error("Update customer note error:", error);
+    res.status(500).json({ success: false, message: "Server error updating customer note", error: error.message });
+  }
+};
+
+export const getCustomerNote = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const vendorUserId = (req as any).user?.id || (req as any).user?._id;
+    const { customerId } = req.params;
+
+    if (!vendorUserId) {
+      res.status(401).json({ success: false, message: "Unauthorized" });
+      return;
+    }
+
+    const vendor = await Vendor.findOne({ userId: vendorUserId });
+    if (!vendor) {
+      res.status(404).json({ success: false, message: "Vendor profile not found" });
+      return;
+    }
+
+    const rel = await BusinessRelationship.findOne({
+      businessId: vendor._id,
+      userId: customerId,
+      businessType: "vendor"
+    });
+
+    res.status(200).json({ success: true, notes: rel?.notes || "" });
+  } catch (error: any) {
+    console.error("Get customer note error:", error);
+    res.status(500).json({ success: false, message: "Server error getting customer note", error: error.message });
+  }
+};
+
 

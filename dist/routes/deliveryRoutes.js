@@ -22,6 +22,11 @@ router.post('/subscriptions/:subId/run', auth_1.protect, deliveryController_1.up
 router.post('/leaves', auth_1.protect, deliveryController_1.applyLeave);
 router.get('/leaves', auth_1.protect, deliveryController_1.getLeaves);
 router.get('/referrals', auth_1.protect, deliveryController_1.getReferrals);
+// Slots & fallback routing routes
+router.get('/slots', auth_1.protect, deliveryController_1.getDeliverySlots);
+router.post('/slots/book', auth_1.protect, deliveryController_1.bookDeliverySlot);
+router.post('/slots/configure', auth_1.protect, deliveryController_1.configureSlotLimits);
+router.post('/orders/fallback', auth_1.protect, deliveryController_1.triggerCourierFallback);
 // Orders routing
 router.get('/orders', auth_1.protect, deliveryController_1.getOrders);
 router.get('/orders/:id', auth_1.protect, deliveryController_1.getOrderById);

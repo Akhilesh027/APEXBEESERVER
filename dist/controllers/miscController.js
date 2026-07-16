@@ -141,7 +141,18 @@ exports.deleteCampaign = deleteCampaign;
 // --- Coupon ---
 const createCoupon = async (req, res) => {
     try {
-        const coupon = new Coupon_1.Coupon(req.body);
+        const user = req.user;
+        if (!user) {
+            return res.status(401).json({ success: false, message: "Unauthorized" });
+        }
+        const isAdmin = user.roles.includes('admin');
+        const scope = isAdmin ? (req.body.scope || 'platform') : 'vendor';
+        const vendorId = scope === 'vendor' ? user.id : undefined;
+        const coupon = new Coupon_1.Coupon({
+            ...req.body,
+            scope,
+            vendorId
+        });
         await coupon.save();
         return res.status(201).json({ success: true, coupon });
     }
@@ -152,7 +163,18 @@ const createCoupon = async (req, res) => {
 exports.createCoupon = createCoupon;
 const getCoupons = async (req, res) => {
     try {
-        const coupons = await Coupon_1.Coupon.find();
+        const user = req.user;
+        if (!user) {
+            return res.status(401).json({ success: false, message: "Unauthorized" });
+        }
+        const isAdmin = user.roles.includes('admin');
+        const query = isAdmin ? {} : {
+            $or: [
+                { scope: 'platform' },
+                { scope: 'vendor', vendorId: user.id }
+            ]
+        };
+        const coupons = await Coupon_1.Coupon.find(query);
         return res.status(200).json({ success: true, coupons });
     }
     catch (error) {
@@ -162,9 +184,20 @@ const getCoupons = async (req, res) => {
 exports.getCoupons = getCoupons;
 const deleteCoupon = async (req, res) => {
     try {
-        const coupon = await Coupon_1.Coupon.findByIdAndDelete(req.params.id);
-        if (!coupon)
-            return res.status(404).json({ success: false, message: "Coupon not found" });
+        const user = req.user;
+        if (!user) {
+            return res.status(401).json({ success: false, message: "Unauthorized" });
+        }
+        const isAdmin = user.roles.includes('admin');
+        const coupon = await Coupon_1.Coupon.findById(req.params.id);
+        if (!coupon) {
+            return res.status(404).json({ success: false, message: "Resource not found" });
+        }
+        const isOwner = coupon.scope === 'vendor' && String(coupon.vendorId) === String(user.id);
+        if (!isAdmin && !isOwner) {
+            return res.status(404).json({ success: false, message: "Resource not found" });
+        }
+        await coupon.deleteOne();
         return res.status(200).json({ success: true, message: "Coupon deleted successfully" });
     }
     catch (error) {
@@ -174,9 +207,26 @@ const deleteCoupon = async (req, res) => {
 exports.deleteCoupon = deleteCoupon;
 const updateCoupon = async (req, res) => {
     try {
-        const coupon = await Coupon_1.Coupon.findByIdAndUpdate(req.params.id, req.body, { new: true });
-        if (!coupon)
-            return res.status(404).json({ success: false, message: "Coupon not found" });
+        const user = req.user;
+        if (!user) {
+            return res.status(401).json({ success: false, message: "Unauthorized" });
+        }
+        const isAdmin = user.roles.includes('admin');
+        const coupon = await Coupon_1.Coupon.findById(req.params.id);
+        if (!coupon) {
+            return res.status(404).json({ success: false, message: "Resource not found" });
+        }
+        const isOwner = coupon.scope === 'vendor' && String(coupon.vendorId) === String(user.id);
+        if (!isAdmin && !isOwner) {
+            return res.status(404).json({ success: false, message: "Resource not found" });
+        }
+        // Do not allow vendors to modify scope or owner
+        const receivedKeys = Object.keys(req.body);
+        if (!isAdmin && receivedKeys.some(k => ['scope', 'vendorId'].includes(k))) {
+            return res.status(400).json({ success: false, message: "Modifying coupon scope or owner is not allowed." });
+        }
+        Object.assign(coupon, req.body);
+        await coupon.save();
         return res.status(200).json({ success: true, coupon });
     }
     catch (error) {

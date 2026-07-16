@@ -348,7 +348,6 @@ const ProductSchema = new mongoose_1.Schema({
     liveAt: Date,
     returnPeriodDays: {
         type: Number,
-        default: 7,
     },
     referralCommission: {
         level1: { type: Number, default: 0 },
@@ -368,8 +367,48 @@ const ProductSchema = new mongoose_1.Schema({
     badges: {
         type: [String],
         default: []
+    },
+    isArchived: {
+        type: Boolean,
+        default: false,
+        index: true
+    },
+    batchNo: {
+        type: String,
+        default: ''
+    },
+    expiryDate: Date,
+    manufacturingDate: Date,
+    reorderLevel: {
+        type: Number,
+        default: 10
+    },
+    safetyStock: {
+        type: Number,
+        default: 5
+    },
+    purchasePrice: {
+        type: Number,
+        default: 0
+    },
+    inventory: {
+        onHandStock: { type: Number, default: 0, min: 0 },
+        reservedStock: { type: Number, default: 0, min: 0 },
+        quarantineStock: { type: Number, default: 0, min: 0 },
+        damagedStock: { type: Number, default: 0, min: 0 },
+        expiredStock: { type: Number, default: 0, min: 0 }
     }
-}, { timestamps: true });
+}, {
+    timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true }
+});
+ProductSchema.virtual('availableStock').get(function () {
+    if (this.inventory) {
+        return this.inventory.onHandStock - this.inventory.reservedStock;
+    }
+    return this.stock;
+});
 ProductSchema.index({ sellerId: 1, status: 1 });
 ProductSchema.index({ sellerType: 1, status: 1 });
 ProductSchema.index({ categoryId: 1, status: 1 });

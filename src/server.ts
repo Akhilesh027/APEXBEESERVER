@@ -39,6 +39,7 @@ import businessRoutes from './routes/businessRoutes';
 import deliveryRoutes from './routes/deliveryRoutes';
 import serviceBookingRoutes from './routes/serviceBookingRoutes';
 import localShopRoutes from './routes/localShopRoutes';
+import b2bRoutes from './routes/b2bRoutes';
 
 
 // Load environment variables
@@ -122,6 +123,7 @@ app.use("/api", miscRoutes);
 app.use("/api/delivery", deliveryRoutes);
 app.use("/api/service", serviceBookingRoutes);
 app.use('/api/local-shop', localShopRoutes);
+app.use('/api/b2b', b2bRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {

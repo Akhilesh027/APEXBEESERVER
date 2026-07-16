@@ -33,36 +33,21 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.Coupon = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
-const CouponSchema = new mongoose_1.Schema({
-    code: { type: String, required: true, unique: true, uppercase: true, trim: true },
-    discountType: {
-        type: String,
-        enum: ['percentage', 'flat', 'Percentage', 'Fixed Amount'],
-        required: true
-    },
-    discountValue: { type: Number, required: true },
-    minSubtotal: { type: Number, default: 0 },
-    expiryDate: { type: String, required: true },
-    usageCount: { type: Number, default: 0 },
+const ScheduledDeliverySchema = new mongoose_1.Schema({
+    orderId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Order', required: true, unique: true, index: true },
+    customerId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    vendorId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    slotId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'DeliverySlot', required: true, index: true },
+    deliveryDate: { type: Date, required: true, index: true },
+    deliveryWindow: { type: String, required: true },
     status: {
         type: String,
-        enum: ['Active', 'Inactive', 'Expired'],
-        default: 'Active'
+        enum: ['Booked', 'Confirmed', 'Out for Delivery', 'Delivered', 'Failed', 'Cancelled', 'Rescheduled'],
+        default: 'Booked',
+        index: true
     },
-    scope: {
-        type: String,
-        enum: ['vendor', 'platform'],
-        default: 'vendor',
-        required: true
-    },
-    vendorId: {
-        type: mongoose_1.Schema.Types.ObjectId,
-        ref: 'User',
-        required: function () {
-            return this.scope === 'vendor';
-        }
-    }
+    driverAssignedId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'DeliveryPartner' },
+    notes: String
 }, { timestamps: true });
-exports.Coupon = mongoose_1.default.model("Coupon", CouponSchema);
+exports.default = mongoose_1.default.model('ScheduledDelivery', ScheduledDeliverySchema);

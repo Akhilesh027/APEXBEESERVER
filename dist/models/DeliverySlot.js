@@ -33,36 +33,32 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.Coupon = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
-const CouponSchema = new mongoose_1.Schema({
-    code: { type: String, required: true, unique: true, uppercase: true, trim: true },
-    discountType: {
-        type: String,
-        enum: ['percentage', 'flat', 'Percentage', 'Fixed Amount'],
-        required: true
-    },
-    discountValue: { type: Number, required: true },
-    minSubtotal: { type: Number, default: 0 },
-    expiryDate: { type: String, required: true },
-    usageCount: { type: Number, default: 0 },
-    status: {
-        type: String,
-        enum: ['Active', 'Inactive', 'Expired'],
-        default: 'Active'
-    },
-    scope: {
-        type: String,
-        enum: ['vendor', 'platform'],
-        default: 'vendor',
-        required: true
-    },
-    vendorId: {
+const DeliverySlotSchema = new mongoose_1.Schema({
+    sellerId: {
         type: mongoose_1.Schema.Types.ObjectId,
         ref: 'User',
-        required: function () {
-            return this.scope === 'vendor';
-        }
+        required: true,
+        index: true
+    },
+    date: {
+        type: String,
+        required: true,
+        index: true
+    },
+    timeSlot: {
+        type: String,
+        required: true,
+        index: true
+    },
+    maxOrders: {
+        type: Number,
+        default: 20
+    },
+    bookedOrders: {
+        type: Number,
+        default: 0
     }
 }, { timestamps: true });
-exports.Coupon = mongoose_1.default.model("Coupon", CouponSchema);
+DeliverySlotSchema.index({ sellerId: 1, date: 1, timeSlot: 1 }, { unique: true });
+exports.default = mongoose_1.default.model('DeliverySlot', DeliverySlotSchema);

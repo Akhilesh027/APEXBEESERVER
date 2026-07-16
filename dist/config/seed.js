@@ -1,4 +1,7 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.seedDatabase = void 0;
 const ReferralSettings_1 = require("../models/ReferralSettings");
@@ -8,6 +11,11 @@ const WalletEngine_1 = require("../services/WalletEngine");
 const User_1 = require("../models/User");
 const Campaign_1 = require("../models/Campaign");
 const Lead_1 = require("../models/Lead");
+const Product_1 = __importDefault(require("../models/Product"));
+const LocalShopSubscription_1 = __importDefault(require("../models/LocalShopSubscription"));
+const B2bPo_1 = require("../models/B2bPo");
+const Category_1 = __importDefault(require("../models/Category"));
+const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const seedDatabase = async () => {
     try {
         console.log("Seeding database...");
@@ -81,6 +89,170 @@ const seedDatabase = async () => {
                 { name: "Anil Deshmukh", mobile: "9876543206", email: "anil@gmail.com", source: "Referral", status: "New" }
             ]).then(() => console.log("Seeded default Leads")));
         }
+        // 4. Seed Wholesalers and Manufacturers
+        const seedSuppliersAndProducts = async () => {
+            const wholesalerCount = await User_1.User.countDocuments({ roles: "wholesaler" });
+            if (wholesalerCount === 0) {
+                const salt = await bcryptjs_1.default.genSalt(10);
+                const passwordHash = await bcryptjs_1.default.hash("apexbee123", salt);
+                // Create Wholesaler User
+                const wholesaler = await User_1.User.create({
+                    name: "Nellore Wholesale Ltd",
+                    email: "nellore@wholesaler.com",
+                    passwordHash,
+                    phone: "9100011122",
+                    roles: ["wholesaler"],
+                    status: "active",
+                    isVerified: true,
+                    sellerProfile: {
+                        businessName: "Nellore Wholesale Distributors",
+                        businessType: "Wholesaler",
+                        gstNumber: "37AAAAA0000A1Z5",
+                        panNumber: "ABCDE1234F",
+                        aadhaarNumber: "123456789012",
+                        addressText: "Main Sourcing Hub, Nellore, Andhra Pradesh",
+                        kycStatus: "Approved"
+                    }
+                });
+                console.log("Seeded wholesaler: nellore@wholesaler.com");
+                // Create Manufacturer User
+                const manufacturer = await User_1.User.create({
+                    name: "Buchireddypalem Agro Mill",
+                    email: "agro@manufacturer.com",
+                    passwordHash,
+                    phone: "9100011133",
+                    roles: ["manufacturer"],
+                    status: "active",
+                    isVerified: true,
+                    sellerProfile: {
+                        businessName: "Buchireddypalem Agro Millers",
+                        businessType: "Manufacturer",
+                        gstNumber: "37AAAAA1111A1Z5",
+                        panNumber: "ABCDE5678F",
+                        aadhaarNumber: "123456789013",
+                        addressText: "Mill Zone area, Buchireddypalem, Andhra Pradesh",
+                        kycStatus: "Approved"
+                    }
+                });
+                console.log("Seeded manufacturer: agro@manufacturer.com");
+                // Get or create Category
+                let cat = await Category_1.default.findOne({});
+                if (!cat) {
+                    cat = await Category_1.default.create({
+                        name: "Groceries & Foods",
+                        slug: "groceries",
+                        level: 1,
+                        brands: ["Local"],
+                        attributes: {}
+                    });
+                }
+                // Seed products for Wholesaler
+                const wProd = await Product_1.default.create({
+                    sellerId: wholesaler._id,
+                    sellerType: "wholesaler",
+                    name: "Premium Basmati Rice",
+                    slug: "premium-basmati-rice",
+                    description: "100% long grain premium aromatic basmati rice direct from state sourcing mills.",
+                    categoryId: cat._id,
+                    brand: "Nellore Wholesale Distributors",
+                    sku: "W-RICE-100",
+                    baseMrp: 120,
+                    discountPercent: 30,
+                    baseSellingPrice: 84, // wholesale price
+                    stock: 5000,
+                    status: "Live",
+                    isActive: true,
+                    adminPricingApproved: true,
+                    sellerPricingAccepted: true
+                });
+                console.log("Seeded wholesaler product: Premium Basmati Rice");
+                // Seed products for Manufacturer
+                const mProd = await Product_1.default.create({
+                    sellerId: manufacturer._id,
+                    sellerType: "manufacturer",
+                    name: "Refined Sunflower Oil",
+                    slug: "refined-sunflower-oil",
+                    description: "Pure multi-refined healthy cooking sunflower oil packaged in bulk factory boxes.",
+                    categoryId: cat._id,
+                    brand: "Buchireddypalem Agro Millers",
+                    sku: "M-OIL-500",
+                    baseMrp: 180,
+                    discountPercent: 35,
+                    baseSellingPrice: 117,
+                    stock: 8000,
+                    status: "Live",
+                    isActive: true,
+                    adminPricingApproved: true,
+                    sellerPricingAccepted: true
+                });
+                console.log("Seeded manufacturer product: Refined Sunflower Oil");
+                // Seed Subscriptions for these products
+                const vendorUser = await User_1.User.findOne({ roles: "vendor" }) || await User_1.User.findOne({});
+                const customerUser = await User_1.User.findOne({ roles: "customer" }) || await User_1.User.findOne({});
+                if (vendorUser && customerUser) {
+                    // Add local shop subscription
+                    await LocalShopSubscription_1.default.create([
+                        {
+                            userId: customerUser._id,
+                            productId: wProd._id,
+                            vendorId: vendorUser._id,
+                            productName: "Premium Basmati Daily Rice Run",
+                            productImage: "",
+                            quantity: 2,
+                            unitPrice: 84,
+                            frequency: "daily",
+                            customDays: [],
+                            deliverySlot: "6:00 AM - 7:30 AM",
+                            status: "active",
+                            autoRenew: true,
+                            skippedDates: [new Date().toISOString().split('T')[0]],
+                            startDate: new Date().toISOString().split('T')[0]
+                        },
+                        {
+                            userId: customerUser._id,
+                            productId: mProd._id,
+                            vendorId: vendorUser._id,
+                            productName: "Refined Sunflower Oil Delivery",
+                            productImage: "",
+                            quantity: 1,
+                            unitPrice: 117,
+                            frequency: "alternate",
+                            customDays: [],
+                            deliverySlot: "10:00 AM - 12:00 PM",
+                            status: "active",
+                            autoRenew: true,
+                            skippedDates: [],
+                            startDate: new Date().toISOString().split('T')[0]
+                        }
+                    ]);
+                    console.log("Seeded default subscriptions");
+                    // Seed default Purchase Orders
+                    await B2bPo_1.B2bPo.create([
+                        {
+                            poNumber: "PO-389021",
+                            vendorId: vendorUser._id,
+                            supplierName: "Nellore Wholesale Distributors",
+                            items: [{
+                                    productId: wProd._id,
+                                    productName: "Premium Basmati Rice",
+                                    quantity: 200,
+                                    unitPrice: 84
+                                }],
+                            totalAmount: 16800,
+                            status: "Dispatched",
+                            expectedDelivery: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+                            goodsReceived: {
+                                acceptedUnits: 0,
+                                damagedUnits: 0,
+                                notes: ""
+                            }
+                        }
+                    ]);
+                    console.log("Seeded default B2B purchase orders");
+                }
+            }
+        };
+        seedTasks.push(seedSuppliersAndProducts());
         // Await all parallel seeding tasks
         await Promise.all(seedTasks);
         console.log("Database seeding completed!");

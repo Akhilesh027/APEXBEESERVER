@@ -44,6 +44,7 @@ const businessRoutes_1 = __importDefault(require("./routes/businessRoutes"));
 const deliveryRoutes_1 = __importDefault(require("./routes/deliveryRoutes"));
 const serviceBookingRoutes_1 = __importDefault(require("./routes/serviceBookingRoutes"));
 const localShopRoutes_1 = __importDefault(require("./routes/localShopRoutes"));
+const b2bRoutes_1 = __importDefault(require("./routes/b2bRoutes"));
 // Load environment variables
 dotenv_1.default.config();
 // Initialize express app
@@ -69,7 +70,6 @@ app.use((0, cors_1.default)({
         'http://127.0.0.1:5177',
         'http://127.0.0.1:5178',
         'http://127.0.0.1:5179',
-        'http://127.0.0.1:5180',
         'http://127.0.0.1:8080',
         'http://127.0.0.1:8081',
         'http://127.0.0.1:8082',
@@ -118,6 +118,7 @@ app.use("/api", miscRoutes_1.default);
 app.use("/api/delivery", deliveryRoutes_1.default);
 app.use("/api/service", serviceBookingRoutes_1.default);
 app.use('/api/local-shop', localShopRoutes_1.default);
+app.use('/api/b2b', b2bRoutes_1.default);
 // Health check endpoint
 app.get('/health', (req, res) => {
     res.status(200).json({ status: 'ok', timestamp: new Date() });

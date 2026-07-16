@@ -33,36 +33,38 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.Coupon = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
-const CouponSchema = new mongoose_1.Schema({
-    code: { type: String, required: true, unique: true, uppercase: true, trim: true },
-    discountType: {
-        type: String,
-        enum: ['percentage', 'flat', 'Percentage', 'Fixed Amount'],
-        required: true
-    },
-    discountValue: { type: Number, required: true },
-    minSubtotal: { type: Number, default: 0 },
-    expiryDate: { type: String, required: true },
-    usageCount: { type: Number, default: 0 },
-    status: {
-        type: String,
-        enum: ['Active', 'Inactive', 'Expired'],
-        default: 'Active'
-    },
-    scope: {
-        type: String,
-        enum: ['vendor', 'platform'],
-        default: 'vendor',
-        required: true
-    },
-    vendorId: {
+const InventoryMovementSchema = new mongoose_1.Schema({
+    productId: {
         type: mongoose_1.Schema.Types.ObjectId,
-        ref: 'User',
-        required: function () {
-            return this.scope === 'vendor';
-        }
+        ref: 'Product',
+        required: true,
+        index: true
+    },
+    quantity: {
+        type: Number,
+        required: true
+    },
+    type: {
+        type: String,
+        enum: ['inbound', 'outbound', 'adjustment'],
+        required: true,
+        index: true
+    },
+    reason: {
+        type: String,
+        enum: ['Purchase', 'Sale', 'Damage', 'Theft', 'Expired', 'Sample', 'Correction'],
+        required: true,
+        index: true
+    },
+    timestamp: {
+        type: Date,
+        default: Date.now,
+        index: true
+    },
+    remarks: {
+        type: String,
+        default: ''
     }
 }, { timestamps: true });
-exports.Coupon = mongoose_1.default.model("Coupon", CouponSchema);
+exports.default = mongoose_1.default.model('InventoryMovement', InventoryMovementSchema);

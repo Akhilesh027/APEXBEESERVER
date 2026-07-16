@@ -33,36 +33,20 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.Coupon = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
-const CouponSchema = new mongoose_1.Schema({
-    code: { type: String, required: true, unique: true, uppercase: true, trim: true },
-    discountType: {
-        type: String,
-        enum: ['percentage', 'flat', 'Percentage', 'Fixed Amount'],
-        required: true
-    },
-    discountValue: { type: Number, required: true },
-    minSubtotal: { type: Number, default: 0 },
-    expiryDate: { type: String, required: true },
-    usageCount: { type: Number, default: 0 },
+const InventoryReservationSchema = new mongoose_1.Schema({
+    orderId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Order', required: true, index: true },
+    productId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Product', required: true, index: true },
+    vendorId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    quantity: { type: Number, required: true, min: 1 },
     status: {
         type: String,
-        enum: ['Active', 'Inactive', 'Expired'],
-        default: 'Active'
+        enum: ['Reserved', 'Released', 'Fulfilled'],
+        default: 'Reserved',
+        index: true
     },
-    scope: {
-        type: String,
-        enum: ['vendor', 'platform'],
-        default: 'vendor',
-        required: true
-    },
-    vendorId: {
-        type: mongoose_1.Schema.Types.ObjectId,
-        ref: 'User',
-        required: function () {
-            return this.scope === 'vendor';
-        }
-    }
+    expiresAt: { type: Date, required: true, index: true }
 }, { timestamps: true });
-exports.Coupon = mongoose_1.default.model("Coupon", CouponSchema);
+// Compound unique index to prevent duplicate reservations per order item
+InventoryReservationSchema.index({ orderId: 1, productId: 1 }, { unique: true });
+exports.default = mongoose_1.default.model('InventoryReservation', InventoryReservationSchema);

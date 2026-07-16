@@ -12,6 +12,7 @@ export interface IBusinessRelationship extends Document {
   districtId?: mongoose.Types.ObjectId | null;
   mandalId?: mongoose.Types.ObjectId | null;
   status: string;
+  notes?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -81,6 +82,10 @@ const BusinessRelationshipSchema = new Schema<IBusinessRelationship>(
       type: String,
       default: "active",
       index: true,
+    },
+    notes: {
+      type: String,
+      default: ""
     },
   },
   {

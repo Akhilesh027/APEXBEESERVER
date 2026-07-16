@@ -45,7 +45,10 @@ const OrderItemSchema = new mongoose_1.Schema({
 const OrderTimelineSchema = new mongoose_1.Schema({
     status: { type: String, required: true },
     date: { type: String, required: true },
-    note: { type: String, default: "" }
+    note: { type: String, default: "" },
+    performedBy: { type: mongoose_1.Schema.Types.ObjectId, ref: "User" },
+    performedByRole: { type: String },
+    isAdminOverride: { type: Boolean, default: false }
 });
 const OrderSchema = new mongoose_1.Schema({
     orderNumber: { type: String, required: true, unique: true },
@@ -60,12 +63,20 @@ const OrderSchema = new mongoose_1.Schema({
     },
     orderStatus: {
         type: String,
-        enum: ['Placed', 'Confirmed', 'Packed', 'Shipped', 'Delivered', 'Returned', 'Payment Verified', 'Payment Rejected', 'Cancelled'],
+        enum: ['Placed', 'Confirmed', 'Packed', 'Ready', 'Shipped', 'Out for Delivery', 'Delivered', 'Completed', 'Returned', 'Payment Verified', 'Payment Rejected', 'Cancelled'],
         default: 'Placed'
+    },
+    paymentVerificationStatus: {
+        type: String,
+        enum: ['Not Required', 'Pending Verification', 'Verified', 'Rejected'],
+        default: 'Not Required'
     },
     deliveryType: { type: String },
     deliveryAgentId: { type: String },
     customerNotes: { type: String, default: "" },
+    customerName: { type: String, default: "" },
+    customerPhone: { type: String, default: "" },
+    deliveryAddress: { type: String, default: "" },
     returnReason: { type: String, default: "" },
     refundStatus: {
         type: String,
@@ -103,6 +114,31 @@ const OrderSchema = new mongoose_1.Schema({
         otp: { type: String },
         verified: { type: Boolean, default: false },
         verifiedAt: { type: Date }
+    },
+    priority: {
+        type: String,
+        enum: ['Normal', 'Express', 'Scheduled'],
+        default: 'Normal'
+    },
+    internalNotes: {
+        type: String,
+        default: ""
+    },
+    packingChecklist: {
+        type: [String],
+        default: []
+    },
+    deliverySlot: {
+        type: String,
+        default: ""
+    },
+    trackingId: {
+        type: String,
+        default: ""
+    },
+    courierPartner: {
+        type: String,
+        default: ""
     }
 }, { timestamps: true });
 OrderSchema.index({ sellerId: 1, createdAt: -1 });

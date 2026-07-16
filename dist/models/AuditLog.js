@@ -33,36 +33,15 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.Coupon = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
-const CouponSchema = new mongoose_1.Schema({
-    code: { type: String, required: true, unique: true, uppercase: true, trim: true },
-    discountType: {
-        type: String,
-        enum: ['percentage', 'flat', 'Percentage', 'Fixed Amount'],
-        required: true
-    },
-    discountValue: { type: Number, required: true },
-    minSubtotal: { type: Number, default: 0 },
-    expiryDate: { type: String, required: true },
-    usageCount: { type: Number, default: 0 },
-    status: {
-        type: String,
-        enum: ['Active', 'Inactive', 'Expired'],
-        default: 'Active'
-    },
-    scope: {
-        type: String,
-        enum: ['vendor', 'platform'],
-        default: 'vendor',
-        required: true
-    },
-    vendorId: {
-        type: mongoose_1.Schema.Types.ObjectId,
-        ref: 'User',
-        required: function () {
-            return this.scope === 'vendor';
-        }
-    }
-}, { timestamps: true });
-exports.Coupon = mongoose_1.default.model("Coupon", CouponSchema);
+const AuditLogSchema = new mongoose_1.Schema({
+    userId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', index: true },
+    userRole: String,
+    action: { type: String, required: true, index: true },
+    targetModel: { type: String, required: true, index: true },
+    targetId: { type: mongoose_1.Schema.Types.ObjectId, required: true, index: true },
+    changes: { type: mongoose_1.Schema.Types.Mixed, required: true },
+    ipAddress: String,
+    userAgent: String
+}, { timestamps: { createdAt: true, updatedAt: false } });
+exports.default = mongoose_1.default.model('AuditLog', AuditLogSchema);

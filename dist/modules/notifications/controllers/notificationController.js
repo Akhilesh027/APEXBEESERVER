@@ -20,6 +20,10 @@ const getUserNotifications = async (req, res) => {
             res.status(401).json({ success: false, message: 'Unauthorized' });
             return;
         }
+        if (req.params.userId && req.params.userId !== req.user.id && !req.user.roles.includes('admin')) {
+            res.status(404).json({ success: false, message: 'Resource not found' });
+            return;
+        }
         const userId = req.user.id;
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 20;
@@ -86,14 +90,18 @@ exports.getUnreadCount = getUnreadCount;
 const markNotificationRead = async (req, res) => {
     try {
         const { id } = req.params;
+        if (!mongoose_1.default.Types.ObjectId.isValid(id)) {
+            res.status(400).json({ success: false, message: 'Invalid ID format' });
+            return;
+        }
         const notif = await Notification_1.Notification.findById(id);
         if (!notif) {
-            res.status(404).json({ success: false, message: 'Notification not found' });
+            res.status(404).json({ success: false, message: 'Resource not found' });
             return;
         }
         // Verify ownership
         if (notif.recipientId.toString() !== req.user?.id) {
-            res.status(403).json({ success: false, message: 'Forbidden' });
+            res.status(404).json({ success: false, message: 'Resource not found' });
             return;
         }
         notif.status = 'read';
@@ -133,13 +141,17 @@ exports.markAllRead = markAllRead;
 const archiveNotification = async (req, res) => {
     try {
         const { id } = req.params;
+        if (!mongoose_1.default.Types.ObjectId.isValid(id)) {
+            res.status(400).json({ success: false, message: 'Invalid ID format' });
+            return;
+        }
         const notif = await Notification_1.Notification.findById(id);
         if (!notif) {
-            res.status(404).json({ success: false, message: 'Notification not found' });
+            res.status(404).json({ success: false, message: 'Resource not found' });
             return;
         }
         if (notif.recipientId.toString() !== req.user?.id) {
-            res.status(403).json({ success: false, message: 'Forbidden' });
+            res.status(404).json({ success: false, message: 'Resource not found' });
             return;
         }
         notif.status = 'archived';
@@ -157,13 +169,17 @@ exports.archiveNotification = archiveNotification;
 const deleteNotification = async (req, res) => {
     try {
         const { id } = req.params;
+        if (!mongoose_1.default.Types.ObjectId.isValid(id)) {
+            res.status(400).json({ success: false, message: 'Invalid ID format' });
+            return;
+        }
         const notif = await Notification_1.Notification.findById(id);
         if (!notif) {
-            res.status(404).json({ success: false, message: 'Notification not found' });
+            res.status(404).json({ success: false, message: 'Resource not found' });
             return;
         }
         if (notif.recipientId.toString() !== req.user?.id) {
-            res.status(403).json({ success: false, message: 'Forbidden' });
+            res.status(404).json({ success: false, message: 'Resource not found' });
             return;
         }
         notif.status = 'deleted';

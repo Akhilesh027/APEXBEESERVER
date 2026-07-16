@@ -33,36 +33,17 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.Coupon = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
-const CouponSchema = new mongoose_1.Schema({
-    code: { type: String, required: true, unique: true, uppercase: true, trim: true },
-    discountType: {
-        type: String,
-        enum: ['percentage', 'flat', 'Percentage', 'Fixed Amount'],
-        required: true
-    },
-    discountValue: { type: Number, required: true },
-    minSubtotal: { type: Number, default: 0 },
-    expiryDate: { type: String, required: true },
-    usageCount: { type: Number, default: 0 },
-    status: {
-        type: String,
-        enum: ['Active', 'Inactive', 'Expired'],
-        default: 'Active'
-    },
-    scope: {
-        type: String,
-        enum: ['vendor', 'platform'],
-        default: 'vendor',
-        required: true
-    },
-    vendorId: {
-        type: mongoose_1.Schema.Types.ObjectId,
-        ref: 'User',
-        required: function () {
-            return this.scope === 'vendor';
-        }
-    }
-}, { timestamps: true });
-exports.Coupon = mongoose_1.default.model("Coupon", CouponSchema);
+const ReturnInspectionItemSchema = new mongoose_1.Schema({
+    productId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Product', required: true },
+    quantity: { type: Number, required: true, min: 1 },
+    condition: { type: String, enum: ['Good', 'Damaged', 'Expired'], required: true }
+});
+const ReturnInspectionSchema = new mongoose_1.Schema({
+    returnRequestId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'ReturnRequest', required: true, index: true },
+    inspectedBy: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true },
+    items: { type: [ReturnInspectionItemSchema], required: true },
+    resolution: { type: String, enum: ['Restock', 'Damage', 'Expired', 'Dispose'], required: true },
+    notes: String
+}, { timestamps: { createdAt: true, updatedAt: false } });
+exports.default = mongoose_1.default.model('ReturnInspection', ReturnInspectionSchema);

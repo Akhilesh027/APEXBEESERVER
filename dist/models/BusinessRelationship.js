@@ -100,6 +100,10 @@ const BusinessRelationshipSchema = new mongoose_1.Schema({
         default: "active",
         index: true,
     },
+    notes: {
+        type: String,
+        default: ""
+    },
 }, {
     timestamps: true,
 });

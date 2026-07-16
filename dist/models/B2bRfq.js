@@ -33,36 +33,27 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.Coupon = void 0;
+exports.B2bRfq = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
-const CouponSchema = new mongoose_1.Schema({
-    code: { type: String, required: true, unique: true, uppercase: true, trim: true },
-    discountType: {
-        type: String,
-        enum: ['percentage', 'flat', 'Percentage', 'Fixed Amount'],
-        required: true
-    },
-    discountValue: { type: Number, required: true },
-    minSubtotal: { type: Number, default: 0 },
-    expiryDate: { type: String, required: true },
-    usageCount: { type: Number, default: 0 },
+const B2bRfqSchema = new mongoose_1.Schema({
+    vendorId: { type: mongoose_1.Schema.Types.ObjectId, ref: "User", required: true },
+    productName: { type: String, required: true },
+    category: { type: String, required: true },
+    quantity: { type: Number, required: true },
+    targetPrice: { type: Number, required: true },
+    closingDate: { type: String, required: true },
     status: {
         type: String,
-        enum: ['Active', 'Inactive', 'Expired'],
-        default: 'Active'
+        enum: ['Open', 'Closed', 'Awarded'],
+        default: 'Open'
     },
-    scope: {
-        type: String,
-        enum: ['vendor', 'platform'],
-        default: 'vendor',
-        required: true
-    },
-    vendorId: {
-        type: mongoose_1.Schema.Types.ObjectId,
-        ref: 'User',
-        required: function () {
-            return this.scope === 'vendor';
+    bids: [
+        {
+            supplierName: { type: String, required: true },
+            price: { type: Number, required: true },
+            leadTime: { type: String, required: true },
+            rating: { type: Number, default: 5 }
         }
-    }
+    ]
 }, { timestamps: true });
-exports.Coupon = mongoose_1.default.model("Coupon", CouponSchema);
+exports.B2bRfq = mongoose_1.default.model("B2bRfq", B2bRfqSchema);

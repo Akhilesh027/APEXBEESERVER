@@ -33,36 +33,31 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.Coupon = void 0;
+exports.B2bPo = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
-const CouponSchema = new mongoose_1.Schema({
-    code: { type: String, required: true, unique: true, uppercase: true, trim: true },
-    discountType: {
-        type: String,
-        enum: ['percentage', 'flat', 'Percentage', 'Fixed Amount'],
-        required: true
-    },
-    discountValue: { type: Number, required: true },
-    minSubtotal: { type: Number, default: 0 },
-    expiryDate: { type: String, required: true },
-    usageCount: { type: Number, default: 0 },
+const B2bPoSchema = new mongoose_1.Schema({
+    poNumber: { type: String, required: true, unique: true },
+    vendorId: { type: mongoose_1.Schema.Types.ObjectId, ref: "User", required: true },
+    supplierName: { type: String, required: true },
+    items: [
+        {
+            productId: { type: mongoose_1.Schema.Types.ObjectId, ref: "Product" },
+            productName: { type: String, required: true },
+            quantity: { type: Number, required: true },
+            unitPrice: { type: Number, required: true }
+        }
+    ],
+    totalAmount: { type: Number, required: true },
     status: {
         type: String,
-        enum: ['Active', 'Inactive', 'Expired'],
-        default: 'Active'
+        enum: ['Draft', 'Dispatched', 'Delivered', 'Partial Received'],
+        default: 'Draft'
     },
-    scope: {
-        type: String,
-        enum: ['vendor', 'platform'],
-        default: 'vendor',
-        required: true
+    goodsReceived: {
+        acceptedUnits: { type: Number, default: 0 },
+        damagedUnits: { type: Number, default: 0 },
+        notes: { type: String, default: "" }
     },
-    vendorId: {
-        type: mongoose_1.Schema.Types.ObjectId,
-        ref: 'User',
-        required: function () {
-            return this.scope === 'vendor';
-        }
-    }
+    expectedDelivery: { type: String, required: true }
 }, { timestamps: true });
-exports.Coupon = mongoose_1.default.model("Coupon", CouponSchema);
+exports.B2bPo = mongoose_1.default.model("B2bPo", B2bPoSchema);

@@ -33,36 +33,25 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.Coupon = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
-const CouponSchema = new mongoose_1.Schema({
-    code: { type: String, required: true, unique: true, uppercase: true, trim: true },
-    discountType: {
+const RefundSchema = new mongoose_1.Schema({
+    orderId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Order', required: true, index: true },
+    returnRequestId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'ReturnRequest', index: true },
+    customerId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    amount: { type: Number, required: true, min: 0 },
+    refundDestination: {
         type: String,
-        enum: ['percentage', 'flat', 'Percentage', 'Fixed Amount'],
+        enum: ['OriginalPayment', 'Wallet', 'BankTransfer'],
         required: true
     },
-    discountValue: { type: Number, required: true },
-    minSubtotal: { type: Number, default: 0 },
-    expiryDate: { type: String, required: true },
-    usageCount: { type: Number, default: 0 },
+    paymentReference: String,
     status: {
         type: String,
-        enum: ['Active', 'Inactive', 'Expired'],
-        default: 'Active'
+        enum: ['None', 'Pending', 'Processing', 'Completed', 'Failed', 'Rejected'],
+        default: 'Pending',
+        index: true
     },
-    scope: {
-        type: String,
-        enum: ['vendor', 'platform'],
-        default: 'vendor',
-        required: true
-    },
-    vendorId: {
-        type: mongoose_1.Schema.Types.ObjectId,
-        ref: 'User',
-        required: function () {
-            return this.scope === 'vendor';
-        }
-    }
+    failureReason: String,
+    processedAt: Date
 }, { timestamps: true });
-exports.Coupon = mongoose_1.default.model("Coupon", CouponSchema);
+exports.default = mongoose_1.default.model('Refund', RefundSchema);

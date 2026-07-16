@@ -33,36 +33,17 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.Coupon = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
-const CouponSchema = new mongoose_1.Schema({
-    code: { type: String, required: true, unique: true, uppercase: true, trim: true },
-    discountType: {
+const SystemConfigSchema = new mongoose_1.Schema({
+    key: { type: String, required: true, unique: true, index: true },
+    displayName: { type: String, required: true },
+    value: { type: mongoose_1.Schema.Types.Mixed, required: true },
+    dataType: {
         type: String,
-        enum: ['percentage', 'flat', 'Percentage', 'Fixed Amount'],
+        enum: ['string', 'number', 'boolean', 'array', 'object'],
         required: true
     },
-    discountValue: { type: Number, required: true },
-    minSubtotal: { type: Number, default: 0 },
-    expiryDate: { type: String, required: true },
-    usageCount: { type: Number, default: 0 },
-    status: {
-        type: String,
-        enum: ['Active', 'Inactive', 'Expired'],
-        default: 'Active'
-    },
-    scope: {
-        type: String,
-        enum: ['vendor', 'platform'],
-        default: 'vendor',
-        required: true
-    },
-    vendorId: {
-        type: mongoose_1.Schema.Types.ObjectId,
-        ref: 'User',
-        required: function () {
-            return this.scope === 'vendor';
-        }
-    }
+    description: String,
+    updatedBy: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User' }
 }, { timestamps: true });
-exports.Coupon = mongoose_1.default.model("Coupon", CouponSchema);
+exports.default = mongoose_1.default.model('SystemConfig', SystemConfigSchema);

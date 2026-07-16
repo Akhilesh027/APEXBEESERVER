@@ -310,11 +310,14 @@ export const createProduct = async (req: Request, res: Response) => {
 
 export const getAllProducts = async (req: Request, res: Response) => {
   try {
-    const { category, categoryId, status, isActive, excludeId, limit, sellerId } = req.query;
+    const { category, categoryId, status, isActive, excludeId, limit, sellerId, sellerType } = req.query;
     const filter: any = {};
 
     if (sellerId) {
       filter.sellerId = sellerId;
+    }
+    if (sellerType) {
+      filter.sellerType = sellerType;
     }
     if (status) {
       filter.status = status;

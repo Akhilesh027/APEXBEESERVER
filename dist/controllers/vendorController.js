@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.logAnalyticsEvent = exports.getRecommendedVendors = exports.getPopularVendors = exports.getTrendingVendors = exports.getUserFavorites = exports.toggleFavorite = exports.submitVendorReview = exports.getVendorReviews = exports.updateBusinessHours = exports.updateLiveStatus = exports.getVendorDetails = exports.searchVendors = exports.getNearbyVendors = exports.getVendorEntrepreneurs = exports.getVendorCommissions = exports.getVendorDashboardAnalytics = exports.getVendorDashboardStats = exports.requestVendorDocument = exports.updateVendorDocument = exports.getVendorStoreCompletion = exports.updateVendorProfile = exports.getVendorProfile = void 0;
+exports.getCustomerNote = exports.updateCustomerNote = exports.getVendorDeliveryZones = exports.getVendorReportsComparison = exports.getVendorReportsHeatmap = exports.exportVendorReport = exports.logAnalyticsEvent = exports.getRecommendedVendors = exports.getPopularVendors = exports.getTrendingVendors = exports.getUserFavorites = exports.toggleFavorite = exports.replyToVendorReview = exports.submitVendorReview = exports.getVendorReviews = exports.updateBusinessHours = exports.updateLiveStatus = exports.getVendorDetails = exports.searchVendors = exports.getNearbyVendors = exports.getVendorEntrepreneurs = exports.getVendorCommissions = exports.getVendorDashboardAnalytics = exports.getVendorDashboardStats = exports.requestVendorDocument = exports.updateVendorDocument = exports.getVendorStoreCompletion = exports.updateVendorProfile = exports.getVendorProfile = void 0;
 const mongoose_1 = __importDefault(require("mongoose"));
 const User_1 = require("../models/User");
 const Vendor_1 = require("../models/Vendor");
@@ -23,6 +23,7 @@ const VendorReviews_1 = require("../models/VendorReviews");
 const FavoriteVendors_1 = require("../models/FavoriteVendors");
 const VendorVisits_1 = require("../models/VendorVisits");
 const VendorMarketplaceService_1 = require("../services/VendorMarketplaceService");
+const authz_1 = require("../utils/authz");
 const getProfileAndModel = async (userId) => {
     let doc = await Vendor_1.Vendor.findOne({ userId }).populate('userId', 'referralCode');
     if (doc)
@@ -38,6 +39,10 @@ const getProfileAndModel = async (userId) => {
 const getVendorProfile = async (req, res) => {
     try {
         const { userId } = req.params;
+        if (!(0, authz_1.requireSelfOrAdmin)(req, userId)) {
+            res.status(404).json({ success: false, message: 'Resource not found' });
+            return;
+        }
         const resObj = await getProfileAndModel(userId);
         if (!resObj) {
             res.status(404).json({ message: 'Profile not found' });
@@ -78,6 +83,10 @@ exports.getVendorProfile = getVendorProfile;
 const updateVendorProfile = async (req, res) => {
     try {
         const { userId } = req.params;
+        if (!(0, authz_1.requireSelfOrAdmin)(req, userId)) {
+            res.status(404).json({ success: false, message: 'Resource not found' });
+            return;
+        }
         const updates = req.body;
         const resObj = await getProfileAndModel(userId);
         if (!resObj) {
@@ -168,6 +177,10 @@ exports.updateVendorProfile = updateVendorProfile;
 const getVendorStoreCompletion = async (req, res) => {
     try {
         const { userId } = req.params;
+        if (!(0, authz_1.requireSelfOrAdmin)(req, userId)) {
+            res.status(404).json({ success: false, message: 'Resource not found' });
+            return;
+        }
         const resObj = await getProfileAndModel(userId);
         if (!resObj) {
             res.status(404).json({ success: false, message: 'Profile not found' });
@@ -216,6 +229,10 @@ exports.getVendorStoreCompletion = getVendorStoreCompletion;
 const updateVendorDocument = async (req, res) => {
     try {
         const { userId } = req.params;
+        if (!(0, authz_1.requireSelfOrAdmin)(req, userId)) {
+            res.status(404).json({ success: false, message: 'Resource not found' });
+            return;
+        }
         const { docId, url, fileName } = req.body;
         const resObj = await getProfileAndModel(userId);
         if (!resObj) {
@@ -258,6 +275,11 @@ exports.updateVendorDocument = updateVendorDocument;
 const requestVendorDocument = async (req, res) => {
     try {
         const { userId } = req.params;
+        const authUser = req.user;
+        if (!authUser?.roles.includes('admin')) {
+            res.status(403).json({ success: false, message: 'Forbidden' });
+            return;
+        }
         const { name } = req.body;
         if (!name) {
             res.status(400).json({ message: 'Document name is required' });
@@ -298,6 +320,10 @@ exports.requestVendorDocument = requestVendorDocument;
 const getVendorDashboardStats = async (req, res) => {
     try {
         const { userId } = req.params;
+        if (!(0, authz_1.requireSelfOrAdmin)(req, userId)) {
+            res.status(404).json({ success: false, message: 'Resource not found' });
+            return;
+        }
         const wallet = await Wallet_1.Wallet.findOne({ userId });
         const availableBalance = wallet ? wallet.availableBalance : 0;
         const pendingBalance = wallet ? wallet.pendingBalance : 0;
@@ -334,6 +360,10 @@ exports.getVendorDashboardStats = getVendorDashboardStats;
 const getVendorDashboardAnalytics = async (req, res) => {
     try {
         const { userId } = req.params;
+        if (!(0, authz_1.requireSelfOrAdmin)(req, userId)) {
+            res.status(404).json({ success: false, message: 'Resource not found' });
+            return;
+        }
         // 1. Fetch wallet balances
         const wallet = await Wallet_1.Wallet.findOne({ userId });
         const walletBalance = wallet ? wallet.availableBalance : 0;
@@ -621,6 +651,10 @@ exports.getVendorDashboardAnalytics = getVendorDashboardAnalytics;
 const getVendorCommissions = async (req, res) => {
     try {
         const { userId } = req.params;
+        if (!(0, authz_1.requireSelfOrAdmin)(req, userId)) {
+            res.status(404).json({ success: false, message: 'Resource not found' });
+            return;
+        }
         const wallet = await Wallet_1.Wallet.findOne({ userId });
         const released = wallet ? wallet.availableBalance : 0;
         const pending = wallet ? wallet.pendingBalance : 0;
@@ -657,6 +691,10 @@ exports.getVendorCommissions = getVendorCommissions;
 const getVendorEntrepreneurs = async (req, res) => {
     try {
         const { userId } = req.params;
+        if (!(0, authz_1.requireSelfOrAdmin)(req, userId)) {
+            res.status(404).json({ success: false, message: 'Resource not found' });
+            return;
+        }
         const entrepreneurs = await Entrepreneur_1.Entrepreneur.find({ status: 'active' }).populate('userId', 'name email mobile');
         const mapped = await Promise.all(entrepreneurs.map(async (ent, index) => {
             const referredUsers = await User_1.User.find({ referredBy: ent.userId });
@@ -785,6 +823,10 @@ exports.getVendorDetails = getVendorDetails;
 const updateLiveStatus = async (req, res) => {
     try {
         const { userId } = req.params;
+        if (!(0, authz_1.requireSelfOrAdmin)(req, userId)) {
+            res.status(404).json({ success: false, message: 'Resource not found' });
+            return;
+        }
         const { liveStatus } = req.body;
         const vendor = await Vendor_1.Vendor.findOne({ userId });
         if (!vendor) {
@@ -809,6 +851,10 @@ exports.updateLiveStatus = updateLiveStatus;
 const updateBusinessHours = async (req, res) => {
     try {
         const { userId } = req.params;
+        if (!(0, authz_1.requireSelfOrAdmin)(req, userId)) {
+            res.status(404).json({ success: false, message: 'Resource not found' });
+            return;
+        }
         const { businessHours } = req.body;
         const vendor = await Vendor_1.Vendor.findOne({ userId });
         if (!vendor) {
@@ -878,6 +924,30 @@ const submitVendorReview = async (req, res) => {
     }
 };
 exports.submitVendorReview = submitVendorReview;
+const replyToVendorReview = async (req, res) => {
+    try {
+        const { reviewId } = req.params;
+        const { reply } = req.body;
+        const userId = req.user?.id || req.user?._id;
+        if (!userId) {
+            res.status(401).json({ success: false, message: "Unauthorized" });
+            return;
+        }
+        const review = await VendorReviews_1.VendorReview.findById(reviewId);
+        if (!review) {
+            res.status(404).json({ success: false, message: "Review not found" });
+            return;
+        }
+        review.reply = reply || "";
+        await review.save();
+        res.status(200).json({ success: true, message: "Reply submitted successfully", review });
+    }
+    catch (error) {
+        console.error("Reply to review error:", error);
+        res.status(500).json({ success: false, message: "Server error replying to review", error: error.message });
+    }
+};
+exports.replyToVendorReview = replyToVendorReview;
 const toggleFavorite = async (req, res) => {
     try {
         const { id } = req.params; // vendorId
@@ -990,3 +1060,302 @@ const logAnalyticsEvent = async (req, res) => {
     }
 };
 exports.logAnalyticsEvent = logAnalyticsEvent;
+const exportVendorReport = async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { format = 'csv', reportType = 'sales', timeframe = 'monthly' } = req.query;
+        if (!(0, authz_1.requireSelfOrAdmin)(req, userId)) {
+            res.status(404).json({ success: false, message: 'Resource not found' });
+            return;
+        }
+        // 1. Gather data
+        let headers = [];
+        let rows = [];
+        let title = 'ApexBee Report';
+        if (reportType === 'sales') {
+            title = 'Sales and Order Fulfillments Report';
+            headers = ['Order Number', 'Customer', 'Total Amount (₹)', 'Order Status', 'Payment Status', 'Created Date'];
+            const orders = await Order_1.Order.find({ sellerId: userId }).sort({ createdAt: -1 });
+            rows = orders.map(o => [
+                o.orderNumber,
+                o.customerName || 'N/A',
+                o.totalAmount,
+                o.orderStatus,
+                o.paymentStatus,
+                new Date(o.createdAt).toLocaleDateString()
+            ]);
+        }
+        else if (reportType === 'products') {
+            title = 'Product Performance Report';
+            headers = ['Product Name', 'SKU', 'Base MRP (₹)', 'Selling Price (₹)', 'Stock Left', 'Status'];
+            const products = await Product_1.default.find({ sellerId: userId }).sort({ createdAt: -1 });
+            rows = products.map(p => [
+                p.name,
+                p.sku,
+                p.baseMrp,
+                p.baseSellingPrice,
+                p.stock,
+                p.status
+            ]);
+        }
+        else if (reportType === 'commission') {
+            title = 'Commission Breakdown Matrix';
+            headers = ['Settlement ID', 'Order Ref', 'Commission Type', 'Gross Amount (₹)', 'Release Status', 'Release Date'];
+            const settlements = await CommissionSettlement_1.CommissionSettlement.find({ recipientId: userId, settlementType: 'vendor' }).sort({ createdAt: -1 });
+            rows = settlements.map(s => [
+                s._id.toString(),
+                s.orderId ? s.orderId.toString() : 'N/A',
+                s.settlementType,
+                s.amount,
+                s.status,
+                s.releasedAt ? new Date(s.releasedAt).toLocaleDateString() : 'Pending'
+            ]);
+        }
+        else {
+            // Default to sales reports
+            title = 'Generic Activity Statement';
+            headers = ['Activity Timestamp', 'Event Description'];
+            const logs = await Order_1.Order.find({ sellerId: userId }).limit(10);
+            rows = logs.map(l => [
+                new Date(l.createdAt).toLocaleDateString(),
+                `Order ${l.orderNumber} placed by customer`
+            ]);
+        }
+        // 2. Stream formatted document response
+        const formatUpper = String(format).toUpperCase();
+        if (formatUpper === 'CSV') {
+            res.setHeader('Content-Type', 'text/csv');
+            res.setHeader('Content-Disposition', `attachment; filename=Report_${reportType}_${timeframe}.csv`);
+            let csvContent = headers.join(',') + '\n';
+            rows.forEach(r => {
+                csvContent += r.map((val) => `"${String(val).replace(/"/g, '""')}"`).join(',') + '\n';
+            });
+            res.status(200).send(csvContent);
+            return;
+        }
+        if (formatUpper === 'EXCEL') {
+            const ExcelJS = require('exceljs');
+            const workbook = new ExcelJS.Workbook();
+            const sheet = workbook.addWorksheet('Report');
+            sheet.addRow([title]).font = { bold: true, size: 14 };
+            sheet.addRow([`Generated Timeframe: ${timeframe}`]).font = { italic: true };
+            sheet.addRow([]); // empty row
+            sheet.addRow(headers).font = { bold: true };
+            rows.forEach(r => sheet.addRow(r));
+            res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+            res.setHeader('Content-Disposition', `attachment; filename=Report_${reportType}_${timeframe}.xlsx`);
+            await workbook.xlsx.write(res);
+            res.end();
+            return;
+        }
+        if (formatUpper === 'PDF') {
+            const PDFDocument = require('pdfkit');
+            const doc = new PDFDocument({ margin: 50 });
+            res.setHeader('Content-Type', 'application/pdf');
+            res.setHeader('Content-Disposition', `attachment; filename=Report_${reportType}_${timeframe}.pdf`);
+            doc.pipe(res);
+            doc.fontSize(16).text(title, { align: 'center' }).moveDown(1);
+            doc.fontSize(10).text(`Generated Timeframe: ${timeframe}`, { align: 'center' }).moveDown(2);
+            let textY = doc.y;
+            headers.forEach((h, idx) => {
+                doc.fontSize(9).font('Helvetica-Bold').text(h, 50 + idx * 85, textY, { width: 80 });
+            });
+            doc.moveDown(0.5);
+            doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
+            doc.moveDown(0.5);
+            doc.font('Helvetica');
+            rows.forEach(r => {
+                let rowY = doc.y;
+                if (rowY > 700) {
+                    doc.addPage();
+                    rowY = 50;
+                }
+                r.forEach((val, idx) => {
+                    doc.fontSize(8).text(String(val), 50 + idx * 85, rowY, { width: 80 });
+                });
+                doc.y = rowY + 20;
+            });
+            doc.end();
+            return;
+        }
+        res.status(400).json({ success: false, message: 'Invalid format requested. Valid options: PDF, Excel, CSV' });
+    }
+    catch (error) {
+        console.error("Export report error:", error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+exports.exportVendorReport = exportVendorReport;
+const getVendorReportsHeatmap = async (req, res) => {
+    try {
+        const { userId } = req.params;
+        if (!(0, authz_1.requireSelfOrAdmin)(req, userId)) {
+            res.status(404).json({ success: false, message: 'Resource not found' });
+            return;
+        }
+        const orders = await Order_1.Order.find({ sellerId: userId });
+        // Aggregation matrices
+        const hourlyData = Array.from({ length: 24 }).map((_, hour) => ({ hour, orders: 0 }));
+        const dailyData = { 'Mon': 0, 'Tue': 0, 'Wed': 0, 'Thu': 0, 'Fri': 0, 'Sat': 0, 'Sun': 0 };
+        const daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        orders.forEach(o => {
+            const d = new Date(o.createdAt);
+            const hour = d.getHours();
+            const dayName = daysOfWeek[d.getDay()];
+            hourlyData[hour].orders += 1;
+            dailyData[dayName] = (dailyData[dayName] || 0) + 1;
+        });
+        res.status(200).json({
+            success: true,
+            heatmap: {
+                hourly: hourlyData,
+                daily: Object.entries(dailyData).map(([day, count]) => ({ day, count }))
+            }
+        });
+    }
+    catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+exports.getVendorReportsHeatmap = getVendorReportsHeatmap;
+const getVendorReportsComparison = async (req, res) => {
+    try {
+        const { userId } = req.params;
+        if (!(0, authz_1.requireSelfOrAdmin)(req, userId)) {
+            res.status(404).json({ success: false, message: 'Resource not found' });
+            return;
+        }
+        const today = new Date();
+        const currMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+        const prevMonthStart = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+        // Fetch this month and last month orders
+        const [currOrders, prevOrders, products] = await Promise.all([
+            Order_1.Order.find({ sellerId: userId, createdAt: { $gte: currMonthStart } }),
+            Order_1.Order.find({ sellerId: userId, createdAt: { $gte: prevMonthStart, $lt: currMonthStart } }),
+            Product_1.default.find({ sellerId: userId })
+        ]);
+        // Product MoM performance calculation
+        const productStats = {};
+        products.forEach(p => {
+            productStats[p.id] = { id: p.id, name: p.name, curr: 0, prev: 0 };
+        });
+        currOrders.forEach(o => {
+            o.items.forEach((item) => {
+                const pId = String(item.productId || item.id);
+                if (productStats[pId]) {
+                    productStats[pId].curr += item.price * item.quantity;
+                }
+            });
+        });
+        prevOrders.forEach(o => {
+            o.items.forEach((item) => {
+                const pId = String(item.productId || item.id);
+                if (productStats[pId]) {
+                    productStats[pId].prev += item.price * item.quantity;
+                }
+            });
+        });
+        const productComparison = Object.values(productStats).map(p => {
+            const diff = p.curr - p.prev;
+            const pct = p.prev > 0 ? `${diff >= 0 ? '+' : ''}${Math.round((diff / p.prev) * 100)}%` : '+100%';
+            return { ...p, pct };
+        }).sort((a, b) => b.curr - a.curr).slice(0, 8);
+        res.status(200).json({
+            success: true,
+            productComparison
+        });
+    }
+    catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+exports.getVendorReportsComparison = getVendorReportsComparison;
+const getVendorDeliveryZones = async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const resObj = await getProfileAndModel(userId);
+        if (!resObj) {
+            res.status(404).json({ success: false, message: 'Vendor not found' });
+            return;
+        }
+        const vendor = resObj.doc;
+        // Return delivery zones list (e.g. radius configurations or custom polygons)
+        const zones = [
+            { id: 'zone-self', name: 'Self Local Run', type: 'Self', range: '0-5 KM', status: 'Active' },
+            { id: 'zone-partner', name: 'Logistics Partner Region', type: 'Partner', range: '5 KM+', status: 'Active' }
+        ];
+        res.status(200).json({
+            success: true,
+            deliveryMode: vendor.deliveryMode || 'Self',
+            radiusKm: vendor.deliveryRadiusKm || 5,
+            zones
+        });
+    }
+    catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+exports.getVendorDeliveryZones = getVendorDeliveryZones;
+const updateCustomerNote = async (req, res) => {
+    try {
+        const vendorUserId = req.user?.id || req.user?._id;
+        const { customerId } = req.params;
+        const { notes } = req.body;
+        if (!vendorUserId) {
+            res.status(401).json({ success: false, message: "Unauthorized" });
+            return;
+        }
+        const vendor = await Vendor_1.Vendor.findOne({ userId: vendorUserId });
+        if (!vendor) {
+            res.status(404).json({ success: false, message: "Vendor profile not found" });
+            return;
+        }
+        let rel = await BusinessRelationship_1.BusinessRelationship.findOne({
+            businessId: vendor._id,
+            userId: customerId,
+            businessType: "vendor"
+        });
+        if (!rel) {
+            rel = new BusinessRelationship_1.BusinessRelationship({
+                businessId: vendor._id,
+                userId: customerId,
+                businessType: "vendor",
+                status: "active"
+            });
+        }
+        rel.notes = notes || "";
+        await rel.save();
+        res.status(200).json({ success: true, message: "Customer note updated successfully", notes: rel.notes });
+    }
+    catch (error) {
+        console.error("Update customer note error:", error);
+        res.status(500).json({ success: false, message: "Server error updating customer note", error: error.message });
+    }
+};
+exports.updateCustomerNote = updateCustomerNote;
+const getCustomerNote = async (req, res) => {
+    try {
+        const vendorUserId = req.user?.id || req.user?._id;
+        const { customerId } = req.params;
+        if (!vendorUserId) {
+            res.status(401).json({ success: false, message: "Unauthorized" });
+            return;
+        }
+        const vendor = await Vendor_1.Vendor.findOne({ userId: vendorUserId });
+        if (!vendor) {
+            res.status(404).json({ success: false, message: "Vendor profile not found" });
+            return;
+        }
+        const rel = await BusinessRelationship_1.BusinessRelationship.findOne({
+            businessId: vendor._id,
+            userId: customerId,
+            businessType: "vendor"
+        });
+        res.status(200).json({ success: true, notes: rel?.notes || "" });
+    }
+    catch (error) {
+        console.error("Get customer note error:", error);
+        res.status(500).json({ success: false, message: "Server error getting customer note", error: error.message });
+    }
+};
+exports.getCustomerNote = getCustomerNote;
