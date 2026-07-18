@@ -7,7 +7,7 @@ const isRedisEnabled = env.ENABLE_REDIS_OTP || env.ENABLE_REDIS_RATE_LIMIT || en
 
 const isStagingOrProd = ['staging', 'production'].includes(env.NODE_ENV);
 
-if (isRedisEnabled) {
+if (isRedisEnabled || env.REDIS_URI) {
   try {
     redisClient = new Redis(env.REDIS_URI || 'redis://127.0.0.1:6379', {
       maxRetriesPerRequest: 3,

@@ -9,7 +9,7 @@ const env_1 = require("./env");
 let redisClient = null;
 const isRedisEnabled = env_1.env.ENABLE_REDIS_OTP || env_1.env.ENABLE_REDIS_RATE_LIMIT || env_1.env.ENABLE_SOCKET_REDIS;
 const isStagingOrProd = ['staging', 'production'].includes(env_1.env.NODE_ENV);
-if (isRedisEnabled) {
+if (isRedisEnabled || env_1.env.REDIS_URI) {
     try {
         redisClient = new ioredis_1.default(env_1.env.REDIS_URI || 'redis://127.0.0.1:6379', {
             maxRetriesPerRequest: 3,
