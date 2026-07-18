@@ -80,5 +80,6 @@ const CategorySchema = new Schema<ICategory>(
 
 CategorySchema.index({ parentId: 1 });
 CategorySchema.index({ level: 1 });
+CategorySchema.index({ name: 1 }, { collation: { locale: 'en', strength: 2 } });
 
 export default mongoose.model<ICategory>('Category', CategorySchema);

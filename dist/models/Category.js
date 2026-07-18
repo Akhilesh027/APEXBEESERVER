@@ -74,4 +74,5 @@ const CategorySchema = new mongoose_1.Schema({
 }, { timestamps: true });
 CategorySchema.index({ parentId: 1 });
 CategorySchema.index({ level: 1 });
+CategorySchema.index({ name: 1 }, { collation: { locale: 'en', strength: 2 } });
 exports.default = mongoose_1.default.model('Category', CategorySchema);

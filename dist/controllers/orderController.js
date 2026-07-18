@@ -8,8 +8,6 @@ const mongoose_1 = __importDefault(require("mongoose"));
 const fs_1 = __importDefault(require("fs"));
 const pdfkit_1 = __importDefault(require("pdfkit"));
 const Order_1 = require("../models/Order");
-const Cart_1 = __importDefault(require("../models/Cart"));
-const Product_1 = __importDefault(require("../models/Product"));
 const cloudinary_1 = require("../config/cloudinary");
 const SettlementEngine_1 = require("../services/SettlementEngine");
 const DeliveryAssignment_1 = require("../models/DeliveryAssignment");
@@ -17,6 +15,11 @@ const DeliveryPartner_1 = require("../models/DeliveryPartner");
 const notificationEmitter_1 = require("../modules/notifications/events/notificationEmitter");
 const Franchise_1 = require("../models/Franchise");
 const Vendor_1 = require("../models/Vendor");
+const checkoutService_1 = require("../services/checkoutService");
+const InsufficientStockError_1 = require("../errors/InsufficientStockError");
+const idempotencyService_1 = require("../services/idempotencyService");
+const PaymentAttempt_1 = require("../models/PaymentAttempt");
+const OrderStateMachine_1 = require("../services/OrderStateMachine");
 const activeAssignmentTimeouts = new Map();
 const scheduleAutoAssignmentTimeout = (assignmentId) => {
     if (activeAssignmentTimeouts.has(assignmentId)) {
@@ -72,12 +75,6 @@ const autoAssignDeliveryPartner = async (order, excludedPartnerIds = []) => {
         if (bestPartner) {
             order.deliveryAgentId = bestPartner.userId.toString();
             order.deliveryType = 'Platform';
-            order.orderStatus = 'Confirmed';
-            order.timeline.push({
-                status: 'Confirmed',
-                date: new Date().toISOString(),
-                note: `Auto-assigned delivery partner: ${bestPartner.name} (Score: ${highestScore.toFixed(1)})`
-            });
             if (!order.deliveryVerification || !order.deliveryVerification.otp) {
                 const otpCode = Math.floor(1000 + Math.random() * 9000).toString();
                 order.deliveryVerification = {
@@ -93,6 +90,10 @@ const autoAssignDeliveryPartner = async (order, excludedPartnerIds = []) => {
                 verified: false
             };
             await order.save();
+            // Perform state transition through the state machine
+            await OrderStateMachine_1.OrderStateMachine.transition(order._id, 'Confirmed', {
+                notes: `Auto-assigned delivery partner: ${bestPartner.name} (Score: ${highestScore.toFixed(1)})`
+            });
             // Create Assignment
             const assignment = new DeliveryAssignment_1.DeliveryAssignment({
                 orderId: order._id,
@@ -198,115 +199,155 @@ const triggerReferralOnOrderPlacement = async (order) => {
     }
 };
 const createOrder = async (req, res) => {
-    try {
-        const { userId, orderItems: rawOrderItems, orderSummary, shippingAddress, paymentDetails, isScheduledSubscription, scheduleDetails, preOrder } = req.body;
-        const customerId = userId || req.body.customerId || req.user?.id || req.user?._id;
-        if (!customerId) {
-            return res.status(400).json({ success: false, message: 'Customer ID is required' });
+    const customerId = req.body.userId || req.user?.id || req.user?._id;
+    const idempotencyKey = req.headers['x-idempotency-key'] || req.headers['idempotency-key'];
+    if (!customerId) {
+        return res.status(400).json({ success: false, message: 'Customer ID is required' });
+    }
+    if (idempotencyKey) {
+        try {
+            const idResult = await idempotencyService_1.IdempotencyService.checkOrRecord(customerId, String(idempotencyKey), req.body);
+            if (idResult.status === 'completed') {
+                return res.status(idResult.responseCode || 201).json(idResult.responseBody);
+            }
+            if (idResult.status === 'processing') {
+                return res.status(425).json({ success: false, message: 'A request with this idempotency key is already processing.' });
+            }
+            if (idResult.status === 'conflict') {
+                return res.status(409).json({ success: false, message: 'Idempotency key match, but request payload does not match.' });
+            }
         }
-        if (!rawOrderItems || rawOrderItems.length === 0) {
+        catch (err) {
+            console.error('Idempotency check error:', err);
+        }
+    }
+    let session = null;
+    try {
+        const { orderItems, couponCode, shippingAddress, paymentDetails, isScheduledSubscription, scheduleDetails, preOrder } = req.body;
+        if (!orderItems || orderItems.length === 0) {
+            if (idempotencyKey)
+                await idempotencyService_1.IdempotencyService.failRecord(customerId, String(idempotencyKey));
             return res.status(400).json({ success: false, message: 'Order items are required' });
         }
-        // Correct order item mapping deriving sellerId from Product collection
-        const orderItems = await Promise.all(rawOrderItems.map(async (item) => {
-            const product = await Product_1.default.findById(item.productId);
-            if (!product) {
-                throw new Error(`Product not found: ${item.productId}`);
-            }
-            return {
-                productId: product._id.toString(),
-                name: product.name,
-                price: item.price,
-                originalPrice: item.originalPrice || item.price,
-                image: item.image || product.thumbnail || product.images?.[0] || '/placeholder.png',
-                quantity: item.quantity,
-                color: item.color || 'default',
-                size: item.size || 'One Size',
-                vendorId: product.sellerId.toString(),
-                itemTotal: item.price * item.quantity,
-                deliveryFee: item.deliveryFee || product.adminPricing?.shippingCharge || 0,
-            };
-        }));
-        const firstProduct = await Product_1.default.findById(rawOrderItems[0].productId);
-        if (!firstProduct) {
-            return res.status(400).json({ success: false, message: 'First product not found' });
-        }
-        const sellerId = firstProduct.sellerId;
-        const orderNumber = `AB-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
-        const items = orderItems.map((item) => ({
-            productId: new mongoose_1.default.Types.ObjectId(item.productId),
-            productName: item.name,
-            sku: item.sku || 'SKU-GEN',
-            quantity: item.quantity,
-            price: item.price,
-        }));
-        const totalAmount = orderSummary?.total ?? 0;
-        const timeline = [
-            {
-                status: 'pending',
-                date: new Date().toISOString(),
-                note: 'Order placed successfully'
-            }
-        ];
-        const orderStatusObj = {
-            currentStatus: 'pending',
-            timeline: [
-                {
-                    status: 'pending',
-                    timestamp: new Date().toISOString(),
-                    description: 'Order placed successfully'
-                }
-            ]
-        };
-        const newOrder = new Order_1.Order({
-            orderNumber,
-            customerId,
-            sellerId,
-            items,
-            totalAmount,
-            paymentStatus: paymentDetails?.status === 'completed' ? 'Paid' : 'Pending',
-            orderStatus: 'Placed',
-            timeline,
-            orderItems,
-            shippingAddress,
-            paymentDetails,
-            orderSummary,
-            preOrder,
-            isScheduledSubscription,
-            scheduleDetails,
-            orderStatusObj,
-        });
-        await newOrder.save();
-        await triggerReferralOnOrderPlacement(newOrder);
-        // Clear the cart for the user upon successful order placement
         try {
-            await Cart_1.default.findOneAndDelete({ userId: customerId });
+            session = await mongoose_1.default.startSession();
         }
-        catch (cartErr) {
-            console.warn("Failed to clear cart after placing order:", cartErr);
+        catch (sessionErr) {
+            console.warn("[createOrder] Mongoose sessions/transactions not supported. Proceeding without transaction.");
         }
-        return res.status(201).json({ success: true, order: newOrder });
+        let result;
+        if (session) {
+            session.startTransaction();
+            try {
+                result = await checkoutService_1.CheckoutService.processCheckout({
+                    userId: customerId,
+                    orderItems,
+                    couponCode,
+                    shippingAddress,
+                    paymentDetails,
+                    isScheduledSubscription,
+                    scheduleDetails,
+                    preOrder
+                }, session);
+                await session.commitTransaction();
+            }
+            catch (err) {
+                await session.abortTransaction();
+                throw err;
+            }
+            finally {
+                await session.endSession();
+            }
+        }
+        else {
+            const dummySession = {};
+            result = await checkoutService_1.CheckoutService.processCheckout({
+                userId: customerId,
+                orderItems,
+                couponCode,
+                shippingAddress,
+                paymentDetails,
+                isScheduledSubscription,
+                scheduleDetails,
+                preOrder
+            }, dummySession);
+        }
+        // Trigger hooks outside database transaction (e.g. notifications and referral rewards)
+        if (result && result.order) {
+            await checkoutService_1.CheckoutService.executePostCheckoutHooks(result.order);
+        }
+        const successResponse = { success: true, order: result.order };
+        if (idempotencyKey) {
+            await idempotencyService_1.IdempotencyService.resolveRecord(customerId, String(idempotencyKey), 201, successResponse, result.order._id.toString());
+        }
+        return res.status(201).json(successResponse);
     }
     catch (error) {
+        if (idempotencyKey) {
+            await idempotencyService_1.IdempotencyService.failRecord(customerId, String(idempotencyKey));
+        }
+        if (error.name === 'InsufficientStockError' || error instanceof InsufficientStockError_1.InsufficientStockError) {
+            return res.status(409).json({ success: false, message: error.message, productId: error.productId });
+        }
         console.error('Create order error:', error);
         return res.status(500).json({ success: false, message: error.message });
     }
 };
 exports.createOrder = createOrder;
 const createOrderWithProof = async (req, res) => {
+    let customerId = '';
+    const idempotencyKey = req.headers['x-idempotency-key'] || req.headers['idempotency-key'];
+    let orderData;
     try {
         if (!req.body.orderData) {
             return res.status(400).json({ success: false, message: 'Missing order data' });
         }
-        const orderData = JSON.parse(req.body.orderData);
-        const customerId = orderData.userId || req.user?.id || req.user?._id;
+        orderData = JSON.parse(req.body.orderData);
+        customerId = orderData.userId || req.user?.id || req.user?._id;
         if (!customerId) {
             return res.status(400).json({ success: false, message: 'Customer ID is required' });
         }
+        const rawTxId = req.body.transactionId || orderData.paymentDetails?.upiDetails?.transactionId;
+        if (!rawTxId) {
+            return res.status(400).json({ success: false, message: 'Transaction ID / UTR is required for UPI payments.' });
+        }
+        const txRef = String(rawTxId).replace(/\s+/g, '').toUpperCase();
+        const duplicatePayment = await PaymentAttempt_1.PaymentAttempt.findOne({
+            provider: 'UPI',
+            transactionReference: txRef,
+            status: { $ne: 'failed' }
+        });
+        if (duplicatePayment) {
+            return res.status(400).json({ success: false, message: 'This transaction reference (UTR) has already been submitted.' });
+        }
+        if (idempotencyKey) {
+            const idResult = await idempotencyService_1.IdempotencyService.checkOrRecord(customerId, String(idempotencyKey), orderData);
+            if (idResult.status === 'completed') {
+                return res.status(idResult.responseCode || 201).json(idResult.responseBody);
+            }
+            if (idResult.status === 'processing') {
+                return res.status(425).json({ success: false, message: 'A request with this idempotency key is already processing.' });
+            }
+            if (idResult.status === 'conflict') {
+                return res.status(409).json({ success: false, message: 'Idempotency key match, but request payload does not match.' });
+            }
+        }
+    }
+    catch (err) {
+        console.error('Idempotency parse/check error:', err);
+        return res.status(400).json({ success: false, message: err.message || 'Invalid orderData payload' });
+    }
+    let session = null;
+    try {
         const rawOrderItems = orderData.orderItems;
         if (!rawOrderItems || rawOrderItems.length === 0) {
+            if (idempotencyKey)
+                await idempotencyService_1.IdempotencyService.failRecord(customerId, String(idempotencyKey));
             return res.status(400).json({ success: false, message: 'Order items are required' });
         }
+        const rawTxId = req.body.transactionId || orderData.paymentDetails?.upiDetails?.transactionId;
+        const txRef = String(rawTxId).replace(/\s+/g, '').toUpperCase();
+        // Perform Cloudinary file upload OUTSIDE database transaction block
         let paymentProofUrl = '';
         if (req.file) {
             try {
@@ -324,96 +365,96 @@ const createOrderWithProof = async (req, res) => {
                 paymentProofUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
             }
         }
-        // Correct order item mapping deriving sellerId from Product collection
-        const orderItems = await Promise.all(rawOrderItems.map(async (item) => {
-            const product = await Product_1.default.findById(item.productId);
-            if (!product) {
-                throw new Error(`Product not found: ${item.productId}`);
-            }
-            return {
-                productId: product._id.toString(),
-                name: product.name,
-                price: item.price,
-                originalPrice: item.originalPrice || item.price,
-                image: item.image || product.thumbnail || product.images?.[0] || '/placeholder.png',
-                quantity: item.quantity,
-                color: item.color || 'default',
-                size: item.size || 'One Size',
-                vendorId: product.sellerId.toString(),
-                itemTotal: item.price * item.quantity,
-                deliveryFee: item.deliveryFee || product.adminPricing?.shippingCharge || 0,
-            };
-        }));
-        const firstProduct = await Product_1.default.findById(rawOrderItems[0].productId);
-        if (!firstProduct) {
-            return res.status(400).json({ success: false, message: 'First product not found' });
-        }
-        const sellerId = firstProduct.sellerId;
-        const orderNumber = `AB-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
-        const items = orderItems.map((item) => ({
-            productId: new mongoose_1.default.Types.ObjectId(item.productId),
-            productName: item.name,
-            sku: item.sku || 'SKU-GEN',
-            quantity: item.quantity,
-            price: item.price
-        }));
-        const totalAmount = orderData.orderSummary?.total ?? 0;
-        const timeline = [
-            {
-                status: 'payment_pending',
-                date: new Date().toISOString(),
-                note: 'Order placed, UPI verification pending'
-            }
-        ];
-        const orderStatusObj = {
-            currentStatus: 'payment_pending',
-            timeline: [
-                {
-                    status: 'payment_pending',
-                    timestamp: new Date().toISOString(),
-                    description: 'Order placed, UPI verification pending'
-                }
-            ]
-        };
         if (orderData.paymentDetails) {
             orderData.paymentDetails.status = 'pending_verification';
             if (orderData.paymentDetails.upiDetails) {
                 orderData.paymentDetails.upiDetails.paymentProof = paymentProofUrl;
-                if (req.body.transactionId) {
-                    orderData.paymentDetails.upiDetails.transactionId = req.body.transactionId;
-                }
+                orderData.paymentDetails.upiDetails.transactionId = txRef;
             }
         }
-        const newOrder = new Order_1.Order({
-            orderNumber,
-            customerId,
-            sellerId,
-            items,
-            totalAmount,
-            paymentStatus: 'Pending',
-            orderStatus: 'Placed',
-            timeline,
-            orderItems,
-            shippingAddress: orderData.shippingAddress,
-            paymentDetails: orderData.paymentDetails,
-            orderSummary: orderData.orderSummary,
-            preOrder: orderData.preOrder,
-            isScheduledSubscription: orderData.isScheduledSubscription,
-            scheduleDetails: orderData.scheduleDetails,
-            orderStatusObj,
-        });
-        await newOrder.save();
-        await triggerReferralOnOrderPlacement(newOrder);
-        // Clear the cart
         try {
-            await Cart_1.default.findOneAndDelete({ userId: customerId });
+            session = await mongoose_1.default.startSession();
         }
-        catch (cartErr) {
-            console.warn("Failed to clear cart after placing order:", cartErr);
+        catch (sessionErr) {
+            console.warn("[createOrderWithProof] MongoDB replica set sessions not supported. Proceeding without transaction.");
         }
-        return res.status(201).json({ success: true, order: newOrder });
+        let result;
+        if (session) {
+            session.startTransaction();
+            try {
+                result = await checkoutService_1.CheckoutService.processCheckout({
+                    userId: customerId,
+                    orderItems: rawOrderItems,
+                    couponCode: orderData.couponCode,
+                    shippingAddress: orderData.shippingAddress,
+                    paymentDetails: orderData.paymentDetails,
+                    isScheduledSubscription: orderData.isScheduledSubscription,
+                    scheduleDetails: orderData.scheduleDetails,
+                    preOrder: orderData.preOrder
+                }, session);
+                // Record payment attempt
+                const attemptId = `PAY_${Date.now()}_${Math.floor(100000 + Math.random() * 900000)}`;
+                const attempt = new PaymentAttempt_1.PaymentAttempt({
+                    paymentAttemptId: attemptId,
+                    orderId: result.order._id,
+                    userId: customerId,
+                    provider: 'UPI',
+                    amount: result.order.totalAmount,
+                    transactionReference: txRef,
+                    status: 'pending_verification'
+                });
+                await attempt.save({ session });
+                await session.commitTransaction();
+            }
+            catch (err) {
+                await session.abortTransaction();
+                throw err;
+            }
+            finally {
+                await session.endSession();
+            }
+        }
+        else {
+            const dummySession = {};
+            result = await checkoutService_1.CheckoutService.processCheckout({
+                userId: customerId,
+                orderItems: rawOrderItems,
+                couponCode: orderData.couponCode,
+                shippingAddress: orderData.shippingAddress,
+                paymentDetails: orderData.paymentDetails,
+                isScheduledSubscription: orderData.isScheduledSubscription,
+                scheduleDetails: orderData.scheduleDetails,
+                preOrder: orderData.preOrder
+            }, dummySession);
+            const attemptId = `PAY_${Date.now()}_${Math.floor(100000 + Math.random() * 900000)}`;
+            const attempt = new PaymentAttempt_1.PaymentAttempt({
+                paymentAttemptId: attemptId,
+                orderId: result.order._id,
+                userId: customerId,
+                provider: 'UPI',
+                amount: result.order.totalAmount,
+                transactionReference: txRef,
+                status: 'pending_verification'
+            });
+            await attempt.save();
+        }
+        // Trigger hooks outside database transaction (e.g. notifications and referral rewards)
+        if (result && result.order) {
+            await checkoutService_1.CheckoutService.executePostCheckoutHooks(result.order);
+        }
+        const successResponse = { success: true, order: result.order };
+        if (idempotencyKey) {
+            await idempotencyService_1.IdempotencyService.resolveRecord(customerId, String(idempotencyKey), 201, successResponse, result.order._id.toString());
+        }
+        return res.status(201).json(successResponse);
     }
     catch (error) {
+        if (idempotencyKey) {
+            await idempotencyService_1.IdempotencyService.failRecord(customerId, String(idempotencyKey));
+        }
+        if (error.name === 'InsufficientStockError' || error instanceof InsufficientStockError_1.InsufficientStockError) {
+            return res.status(409).json({ success: false, message: error.message, productId: error.productId });
+        }
         console.error('Create order with proof error:', error);
         return res.status(500).json({ success: false, message: error.message });
     }
@@ -422,7 +463,14 @@ exports.createOrderWithProof = createOrderWithProof;
 const getOrdersByUserId = async (req, res) => {
     try {
         const { userId } = req.params;
-        const orders = await Order_1.Order.find({ customerId: userId }).sort({ createdAt: -1 });
+        const page = Math.max(1, Number(req.query.page) || 1);
+        const limit = Math.max(1, Math.min(100, Number(req.query.limit) || 10));
+        const skip = (page - 1) * limit;
+        const total = await Order_1.Order.countDocuments({ customerId: userId });
+        const orders = await Order_1.Order.find({ customerId: userId })
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit);
         const mappedOrders = orders.map((order) => {
             return {
                 _id: order._id,
@@ -471,7 +519,16 @@ const getOrdersByUserId = async (req, res) => {
                 })()
             };
         });
-        res.status(200).json({ success: true, orders: mappedOrders });
+        res.status(200).json({
+            success: true,
+            orders: mappedOrders,
+            pagination: {
+                total,
+                page,
+                limit,
+                pages: Math.ceil(total / limit)
+            }
+        });
     }
     catch (error) {
         console.error('Get user orders error:', error);
@@ -536,10 +593,26 @@ const getOrders = async (req, res) => {
                 filters.customerId = user.id;
             }
         }
+        const page = Math.max(1, Number(req.query.page) || 1);
+        const limit = Math.max(1, Math.min(100, Number(req.query.limit) || 10));
+        const skip = (page - 1) * limit;
+        const total = await Order_1.Order.countDocuments(filters);
         const orders = await Order_1.Order.find(filters)
             .populate("customerId", "name email")
-            .populate("sellerId", "name email");
-        return res.status(200).json({ success: true, orders });
+            .populate("sellerId", "name email")
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit);
+        return res.status(200).json({
+            success: true,
+            orders,
+            pagination: {
+                total,
+                page,
+                limit,
+                pages: Math.ceil(total / limit)
+            }
+        });
     }
     catch (error) {
         return res.status(500).json({ success: false, message: error.message });
@@ -655,57 +728,24 @@ const updateOrder = async (req, res) => {
             });
             req.body.timeline = timeline;
         }
-        let order;
-        if (req.body.orderStatus === 'Delivered' && currentOrder.orderStatus !== 'Delivered') {
-            let session;
-            try {
-                session = await mongoose_1.default.startSession();
-            }
-            catch (sessErr) {
-                console.warn("[updateOrder] Mongoose sessions/transactions not supported. Falling back to non-transactional execution.");
-            }
-            if (session) {
-                try {
-                    await session.withTransaction(async () => {
-                        await SettlementEngine_1.SettlementEngine.pendSettlements(currentOrder._id, session);
-                        order = await Order_1.Order.findByIdAndUpdate(req.params.id, req.body, { new: true, session });
-                    });
-                }
-                finally {
-                    await session.endSession();
-                }
-            }
-            else {
-                await SettlementEngine_1.SettlementEngine.pendSettlements(currentOrder._id);
-                order = await Order_1.Order.findByIdAndUpdate(req.params.id, req.body, { new: true });
-            }
+        let order = currentOrder;
+        // Apply reviewer fields
+        if (req.body.orderStatus && ['Payment Verified', 'Payment Rejected'].includes(req.body.orderStatus)) {
+            currentOrder.set('paymentReviewerId', user.id || user._id);
+            currentOrder.set('paymentReviewedAt', new Date());
         }
-        else if (['Returned', 'Cancelled'].includes(req.body.orderStatus) && currentOrder.orderStatus !== req.body.orderStatus) {
-            let session;
-            try {
-                session = await mongoose_1.default.startSession();
-            }
-            catch (sessErr) {
-                console.warn("[updateOrder] Mongoose sessions/transactions not supported. Falling back to non-transactional execution.");
-            }
-            if (session) {
-                try {
-                    await session.withTransaction(async () => {
-                        await SettlementEngine_1.SettlementEngine.cancelSettlements(currentOrder._id, session);
-                        order = await Order_1.Order.findByIdAndUpdate(req.params.id, req.body, { new: true, session });
-                    });
-                }
-                finally {
-                    await session.endSession();
-                }
-            }
-            else {
-                await SettlementEngine_1.SettlementEngine.cancelSettlements(currentOrder._id);
-                order = await Order_1.Order.findByIdAndUpdate(req.params.id, req.body, { new: true });
-            }
-        }
-        else {
-            order = await Order_1.Order.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        // Apply other general update fields (exclude status timeline fields as StateMachine handles them)
+        const { orderStatus, orderStatusObj, timeline, ...otherFields } = req.body;
+        Object.keys(otherFields).forEach(key => {
+            currentOrder.set(key, otherFields[key]);
+        });
+        await currentOrder.save();
+        // If status transition is requested, execute state machine
+        if (orderStatus && currentOrder.orderStatus !== orderStatus) {
+            order = await OrderStateMachine_1.OrderStateMachine.transition(currentOrder._id, orderStatus, {
+                userId: user.id || user._id,
+                notes: req.body.notes || `Order status updated to ${orderStatus}`
+            });
         }
         if (order) {
             if (req.body.deliveryAgentId) {
@@ -948,12 +988,10 @@ const updateOrderPackingChecklist = async (req, res) => {
         // Auto update state to 'Packed' if all ordered product IDs are checked off
         const allOrderedIds = order.items.map(item => item.productId.toString());
         const isFullyPacked = allOrderedIds.every(id => checklist.includes(id));
+        await order.save();
         if (isFullyPacked && order.orderStatus === 'Confirmed') {
-            order.orderStatus = 'Packed';
-            order.timeline.push({
-                status: 'Packed',
-                date: new Date().toISOString(),
-                note: 'All items marked as packed. Ready for courier pick up.'
+            await OrderStateMachine_1.OrderStateMachine.transition(order._id, 'Packed', {
+                notes: 'All items marked as packed. Ready for courier pick up.'
             });
             // Emit notification
             try {
@@ -968,7 +1006,6 @@ const updateOrderPackingChecklist = async (req, res) => {
                 console.warn('Failed to emit packed notification:', err);
             }
         }
-        await order.save();
         res.json({
             success: true,
             message: isFullyPacked ? 'Order packed successfully!' : 'Checklist saved',

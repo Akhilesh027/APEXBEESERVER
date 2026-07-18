@@ -46,6 +46,8 @@ const CouponSchema = new mongoose_1.Schema({
     minSubtotal: { type: Number, default: 0 },
     expiryDate: { type: String, required: true },
     usageCount: { type: Number, default: 0 },
+    usageLimit: { type: Number, default: 999999 },
+    userLimit: { type: Number, default: 1 },
     status: {
         type: String,
         enum: ['Active', 'Inactive', 'Expired'],

@@ -34,7 +34,11 @@ import {
   getWallets,
   getReconciliationStats,
   getDeliveryPartners,
-  createDeliveryPartner
+  createDeliveryPartner,
+  cleanupExpiredReservations,
+  getFeatureFlag,
+  setFeatureFlag,
+  getMetrics
 } from '../controllers/adminController';
 import { requestVendorDocument } from '../controllers/vendorController';
 import { processReferralReleases } from '../controllers/referralController';
@@ -83,6 +87,10 @@ router.post('/entrepreneurs/:userId/release-commission', protect, restrictTo('ad
 router.get('/wallets', protect, restrictTo('admin'), getWallets);
 router.get('/reconciliation', protect, restrictTo('admin'), getReconciliationStats);
 router.post('/settlements/release', protect, restrictTo('admin'), processReferralReleases);
+router.post('/inventory/cleanup-expired-reservations', protect, restrictTo('admin'), cleanupExpiredReservations);
+router.get('/feature-flags', protect, restrictTo('admin'), getFeatureFlag);
+router.post('/feature-flags', protect, restrictTo('admin'), setFeatureFlag);
+router.get('/metrics', protect, restrictTo('admin'), getMetrics);
 
 export default router;
 

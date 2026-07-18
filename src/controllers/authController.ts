@@ -6,6 +6,7 @@ import { Wallet } from '../models/Wallet';
 import { Referral } from '../models/Referral';
 import { LoginAudit } from '../models/LoginAudit';
 import { AuthRequest } from '../middleware/auth';
+import { getRedisClient } from '../config/redis';
 
 async function generateReferralCode(name: string): Promise<string> {
   const cleanName = name.replace(/[^a-zA-Z]/g, "").toUpperCase();
@@ -32,10 +33,6 @@ const generateToken = (id: string, email: string, roles: RoleType[]): string => 
   );
 };
 
-// Temporary in-memory OTP stores
-const otpStore = new Map<string, string>();
-const verifiedUsers = new Map<string, boolean>();
-
 export const sendOtp = async (req: Request, res: Response): Promise<void> => {
   try {
     const { phone, email } = req.body;
@@ -45,8 +42,9 @@ export const sendOtp = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Always use '1234' for temporary OTP system
-    otpStore.set(key, '1234');
+    const redis = getRedisClient();
+    const redisKey = `otp:${key}`;
+    await redis.set(redisKey, '1234', 'EX', 300);
     
     console.log(`OTP "1234" sent to: ${key}`);
     res.status(200).json({ success: true, message: 'OTP sent successfully' });
@@ -65,9 +63,13 @@ export const verifyOtp = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    const savedOtp = otpStore.get(key);
+    const redis = getRedisClient();
+    const redisKey = `otp:${key}`;
+    const savedOtp = await redis.get(redisKey);
     if (otp === '1234' || savedOtp === otp) {
-      verifiedUsers.set(key, true);
+      const verifiedKey = `verified:${key}`;
+      await redis.set(verifiedKey, 'true', 'EX', 600);
+      await redis.del(redisKey);
       res.status(200).json({ success: true, message: 'OTP verified successfully' });
     } else {
       res.status(400).json({ message: 'Invalid OTP code' });
@@ -83,7 +85,10 @@ export const register = async (req: Request, res: Response): Promise<void> => {
     const { name, email, password, phone, roles, territory, sellerProfile, entrepreneurProfile, referredByCode, referralCode, otp } = req.body;
 
     // Check OTP verification
-    const isOtpVerified = verifiedUsers.get(phone) || verifiedUsers.get(email) || (otp === '1234');
+    const redis = getRedisClient();
+    const isVerifiedPhone = await redis.get(`verified:${phone}`);
+    const isVerifiedEmail = await redis.get(`verified:${email}`);
+    const isOtpVerified = isVerifiedPhone === 'true' || isVerifiedEmail === 'true' || (otp === '1234');
     if (!isOtpVerified) {
       res.status(400).json({ message: 'Phone/email verification is pending. Please verify OTP first.' });
       return;
@@ -229,8 +234,8 @@ export const register = async (req: Request, res: Response): Promise<void> => {
     const token = generateToken(savedUser._id.toString(), savedUser.email, savedUser.roles);
 
     // Clean up temporary OTP verification state
-    verifiedUsers.delete(phone);
-    verifiedUsers.delete(email);
+    await redis.del(`verified:${phone}`);
+    await redis.del(`verified:${email}`);
 
     res.status(201).json({
       token,

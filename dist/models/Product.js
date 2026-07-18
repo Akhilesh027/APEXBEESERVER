@@ -416,4 +416,5 @@ ProductSchema.index({ subCategoryId: 1, status: 1 });
 ProductSchema.index({ childCategoryId: 1, status: 1 });
 ProductSchema.index({ status: 1, isActive: 1 });
 ProductSchema.index({ createdAt: -1 });
+ProductSchema.index({ name: 'text', description: 'text' });
 exports.default = mongoose_1.default.model('Product', ProductSchema);

@@ -38,7 +38,7 @@ const initNotificationListeners = () => {
             });
             await job.save();
             // Proactively trigger the queue worker to run immediately
-            notificationQueue_1.notificationQueue.triggerWorker();
+            notificationQueue_1.notificationQueue.triggerWorker(job);
             console.log(`[NotificationListener] Queued job for event: ${eventCode} with ${formattedRecipients.length} recipients.`);
         }
         catch (error) {

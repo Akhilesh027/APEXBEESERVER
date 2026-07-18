@@ -33,20 +33,57 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.InventoryReservation = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
 const InventoryReservationSchema = new mongoose_1.Schema({
-    orderId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Order', required: true, index: true },
-    productId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Product', required: true, index: true },
-    vendorId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
-    quantity: { type: Number, required: true, min: 1 },
+    reservationId: {
+        type: String,
+        required: true,
+        unique: true,
+        index: true,
+    },
+    orderId: {
+        type: mongoose_1.Schema.Types.ObjectId,
+        ref: 'Order',
+        required: true,
+        index: true,
+    },
+    userId: {
+        type: mongoose_1.Schema.Types.ObjectId,
+        ref: 'User',
+        required: true,
+        index: true,
+    },
+    productId: {
+        type: mongoose_1.Schema.Types.ObjectId,
+        ref: 'Product',
+        required: true,
+        index: true,
+    },
+    variantId: {
+        type: mongoose_1.Schema.Types.ObjectId,
+        default: null,
+    },
+    quantity: {
+        type: Number,
+        required: true,
+        min: [1, 'quantity must be at least 1'],
+    },
     status: {
         type: String,
-        enum: ['Reserved', 'Released', 'Fulfilled'],
-        default: 'Reserved',
-        index: true
+        enum: ['active', 'committed', 'released', 'expired'],
+        default: 'active',
+        index: true,
     },
-    expiresAt: { type: Date, required: true, index: true }
+    expiresAt: {
+        type: Date,
+        required: true,
+        index: true,
+    },
 }, { timestamps: true });
 // Compound unique index to prevent duplicate reservations per order item
-InventoryReservationSchema.index({ orderId: 1, productId: 1 }, { unique: true });
-exports.default = mongoose_1.default.model('InventoryReservation', InventoryReservationSchema);
+InventoryReservationSchema.index({ orderId: 1, productId: 1, variantId: 1 }, { unique: true });
+// Index for query validation and expiry monitoring
+InventoryReservationSchema.index({ status: 1, expiresAt: 1 });
+exports.InventoryReservation = mongoose_1.default.model('InventoryReservation', InventoryReservationSchema);
+exports.default = exports.InventoryReservation;

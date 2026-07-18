@@ -2,6 +2,9 @@ import { Server as SocketIOServer, Socket } from 'socket.io';
 import http from 'http';
 import jwt from 'jsonwebtoken';
 import { User } from '../../../models/User';
+import { createAdapter } from '@socket.io/redis-adapter';
+import { getRedisClient } from '../../../config/redis';
+import { env } from '../../../config/env';
 
 let ioInstance: SocketIOServer | null = null;
 
@@ -15,6 +18,19 @@ export const initSocketServer = (server: http.Server) => {
       credentials: true
     }
   });
+
+  if (env.ENABLE_SOCKET_REDIS) {
+    const pubClient = getRedisClient();
+    const isMock = !(pubClient.status === 'ready' || pubClient.status === 'connecting');
+    if (!isMock) {
+      const Redis = require('ioredis');
+      const subClient = new Redis(env.REDIS_URI || 'redis://127.0.0.1:6379');
+      ioInstance.adapter(createAdapter(pubClient, subClient));
+      console.log('[WebSocket] Mounted Redis Adapter for horizontal scaling.');
+    } else {
+      console.warn('[WebSocket] Running in Mock Redis mode. Skipping Redis adapter adapter configuration.');
+    }
+  }
 
   ioInstance.on('connection', (socket: Socket) => {
     console.log(`[WebSocket] New socket client connected: ${socket.id}`);

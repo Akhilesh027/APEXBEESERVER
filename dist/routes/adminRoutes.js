@@ -43,4 +43,8 @@ router.post('/entrepreneurs/:userId/release-commission', auth_1.protect, (0, aut
 router.get('/wallets', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.getWallets);
 router.get('/reconciliation', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.getReconciliationStats);
 router.post('/settlements/release', auth_1.protect, (0, auth_1.restrictTo)('admin'), referralController_1.processReferralReleases);
+router.post('/inventory/cleanup-expired-reservations', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.cleanupExpiredReservations);
+router.get('/feature-flags', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.getFeatureFlag);
+router.post('/feature-flags', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.setFeatureFlag);
+router.get('/metrics', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.getMetrics);
 exports.default = router;

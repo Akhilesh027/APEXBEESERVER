@@ -10,6 +10,7 @@ const User_1 = require("../models/User");
 const Wallet_1 = require("../models/Wallet");
 const Referral_1 = require("../models/Referral");
 const LoginAudit_1 = require("../models/LoginAudit");
+const redis_1 = require("../config/redis");
 async function generateReferralCode(name) {
     const cleanName = name.replace(/[^a-zA-Z]/g, "").toUpperCase();
     const prefix = (cleanName.substring(0, 3) + "XXX").substring(0, 3);
@@ -28,9 +29,6 @@ async function generateReferralCode(name) {
 const generateToken = (id, email, roles) => {
     return jsonwebtoken_1.default.sign({ id, email, roles }, process.env.JWT_SECRET || 'supersecretjwtkeyforapexbeebusinessoperatingnetwork', { expiresIn: '30d' });
 };
-// Temporary in-memory OTP stores
-const otpStore = new Map();
-const verifiedUsers = new Map();
 const sendOtp = async (req, res) => {
     try {
         const { phone, email } = req.body;
@@ -39,8 +37,9 @@ const sendOtp = async (req, res) => {
             res.status(400).json({ message: 'Phone or email is required' });
             return;
         }
-        // Always use '1234' for temporary OTP system
-        otpStore.set(key, '1234');
+        const redis = (0, redis_1.getRedisClient)();
+        const redisKey = `otp:${key}`;
+        await redis.set(redisKey, '1234', 'EX', 300);
         console.log(`OTP "1234" sent to: ${key}`);
         res.status(200).json({ success: true, message: 'OTP sent successfully' });
     }
@@ -58,9 +57,13 @@ const verifyOtp = async (req, res) => {
             res.status(400).json({ message: 'Phone/email and OTP are required' });
             return;
         }
-        const savedOtp = otpStore.get(key);
+        const redis = (0, redis_1.getRedisClient)();
+        const redisKey = `otp:${key}`;
+        const savedOtp = await redis.get(redisKey);
         if (otp === '1234' || savedOtp === otp) {
-            verifiedUsers.set(key, true);
+            const verifiedKey = `verified:${key}`;
+            await redis.set(verifiedKey, 'true', 'EX', 600);
+            await redis.del(redisKey);
             res.status(200).json({ success: true, message: 'OTP verified successfully' });
         }
         else {
@@ -77,7 +80,10 @@ const register = async (req, res) => {
     try {
         const { name, email, password, phone, roles, territory, sellerProfile, entrepreneurProfile, referredByCode, referralCode, otp } = req.body;
         // Check OTP verification
-        const isOtpVerified = verifiedUsers.get(phone) || verifiedUsers.get(email) || (otp === '1234');
+        const redis = (0, redis_1.getRedisClient)();
+        const isVerifiedPhone = await redis.get(`verified:${phone}`);
+        const isVerifiedEmail = await redis.get(`verified:${email}`);
+        const isOtpVerified = isVerifiedPhone === 'true' || isVerifiedEmail === 'true' || (otp === '1234');
         if (!isOtpVerified) {
             res.status(400).json({ message: 'Phone/email verification is pending. Please verify OTP first.' });
             return;
@@ -201,8 +207,8 @@ const register = async (req, res) => {
         // Generate JWT
         const token = generateToken(savedUser._id.toString(), savedUser.email, savedUser.roles);
         // Clean up temporary OTP verification state
-        verifiedUsers.delete(phone);
-        verifiedUsers.delete(email);
+        await redis.del(`verified:${phone}`);
+        await redis.del(`verified:${email}`);
         res.status(201).json({
             token,
             user: {

@@ -7,6 +7,9 @@ exports.broadcastRoomNotification = exports.sendRealtimeNotification = exports.i
 const socket_io_1 = require("socket.io");
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const User_1 = require("../../../models/User");
+const redis_adapter_1 = require("@socket.io/redis-adapter");
+const redis_1 = require("../../../config/redis");
+const env_1 = require("../../../config/env");
 let ioInstance = null;
 /**
  * Initializes the Socket.io server connection and registers connection events.
@@ -18,6 +21,19 @@ const initSocketServer = (server) => {
             credentials: true
         }
     });
+    if (env_1.env.ENABLE_SOCKET_REDIS) {
+        const pubClient = (0, redis_1.getRedisClient)();
+        const isMock = !(pubClient.status === 'ready' || pubClient.status === 'connecting');
+        if (!isMock) {
+            const Redis = require('ioredis');
+            const subClient = new Redis(env_1.env.REDIS_URI || 'redis://127.0.0.1:6379');
+            ioInstance.adapter((0, redis_adapter_1.createAdapter)(pubClient, subClient));
+            console.log('[WebSocket] Mounted Redis Adapter for horizontal scaling.');
+        }
+        else {
+            console.warn('[WebSocket] Running in Mock Redis mode. Skipping Redis adapter adapter configuration.');
+        }
+    }
     ioInstance.on('connection', (socket) => {
         console.log(`[WebSocket] New socket client connected: ${socket.id}`);
         // Auth verification & Room Assignment

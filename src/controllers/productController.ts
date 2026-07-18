@@ -310,8 +310,11 @@ export const createProduct = async (req: Request, res: Response) => {
 
 export const getAllProducts = async (req: Request, res: Response) => {
   try {
-    const { category, categoryId, status, isActive, excludeId, limit, sellerId, sellerType } = req.query;
+    const { category, categoryId, status, isActive, excludeId, limit, page, sellerId, sellerType } = req.query;
     const filter: any = {};
+
+    const pageNum = Math.max(1, Number(page) || 1);
+    const limitNum = Math.min(100, Math.max(1, Number(limit) || 20));
 
     if (sellerId) {
       filter.sellerId = sellerId;
@@ -335,10 +338,10 @@ export const getAllProducts = async (req: Request, res: Response) => {
     if (category) {
       const foundCategory = await Category.findOne({
         $or: [
-          { name: new RegExp('^' + String(category).trim() + '$', 'i') },
+          { name: String(category).trim() },
           { slug: String(category).trim().toLowerCase() }
         ]
-      });
+      }).collation({ locale: 'en', strength: 2 });
 
       if (foundCategory) {
         filter.$or = [
@@ -347,7 +350,15 @@ export const getAllProducts = async (req: Request, res: Response) => {
           { childCategoryId: foundCategory._id }
         ];
       } else {
-        return res.json({ products: [] });
+        return res.json({
+          products: [],
+          pagination: {
+            page: pageNum,
+            limit: limitNum,
+            totalPages: 0,
+            totalProducts: 0
+          }
+        });
       }
     }
 
@@ -366,17 +377,26 @@ export const getAllProducts = async (req: Request, res: Response) => {
       selectString = '-adminPricing -commissionShares -sellerNegotiations -purchasePrice -internalNotes -approvalHistory';
     }
 
-    let query = Product.find(filter).sort({
-      createdAt: -1,
-    });
+    const totalProducts = await Product.countDocuments(filter);
+    const totalPages = Math.ceil(totalProducts / limitNum);
 
-    if (limit) {
-      query = query.limit(Number(limit));
-    }
+    let query = Product.find(filter)
+      .sort({ createdAt: -1 })
+      .skip((pageNum - 1) * limitNum)
+      .limit(limitNum);
 
     const products = await populateProduct(query.select(selectString));
 
-    res.json({ products });
+    res.json({
+      success: true,
+      products,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        totalPages,
+        totalProducts
+      }
+    });
   } catch (error: any) {
     res.status(500).json({
       message: 'Failed to fetch products',

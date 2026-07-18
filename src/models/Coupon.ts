@@ -7,6 +7,8 @@ export interface ICoupon extends Document {
   minSubtotal?: number;
   expiryDate: string;
   usageCount?: number;
+  usageLimit?: number;
+  userLimit?: number;
   status: 'Active' | 'Inactive' | 'Expired';
   scope: 'vendor' | 'platform';
   vendorId?: mongoose.Types.ObjectId;
@@ -26,6 +28,8 @@ const CouponSchema = new Schema<ICoupon>(
     minSubtotal: { type: Number, default: 0 },
     expiryDate: { type: String, required: true },
     usageCount: { type: Number, default: 0 },
+    usageLimit: { type: Number, default: 999999 },
+    userLimit: { type: Number, default: 1 },
     status: {
       type: String,
       enum: ['Active', 'Inactive', 'Expired'],

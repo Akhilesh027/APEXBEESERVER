@@ -14,6 +14,7 @@ import { Wallet } from '../models/Wallet';
 import { Order } from '../models/Order';
 import { WalletEngine } from '../services/WalletEngine';
 import { SettlementEngine } from '../services/SettlementEngine';
+import { OrderStateMachine } from '../services/OrderStateMachine';
 import { AuthRequest } from '../middleware/auth';
 import ScheduledPickup from '../models/ScheduledPickup';
 import LocalShopSubscription from '../models/LocalShopSubscription';
@@ -368,17 +369,10 @@ const updateState = async (
   if (extraFields.notes) assignment.notes = extraFields.notes;
   await assignment.save();
 
-  // Keep order's status matching
-  const order = await Order.findById(assignment.orderId);
-  if (order) {
-    order.orderStatus = orderStatus as any;
-    order.timeline.push({
-      status: orderStatus,
-      date: new Date().toISOString(),
-      note: `Delivery partner transitioned assignment to: ${targetStatus}. ${extraFields.notes || ''}`
-    });
-    await order.save();
-  }
+  // Keep order's status matching through state machine
+  await OrderStateMachine.transition(assignment.orderId, orderStatus as any, {
+    notes: `Delivery partner transitioned assignment to: ${targetStatus}. ${extraFields.notes || ''}`
+  });
 
   res.status(200).json({ success: true, message: `Status updated to ${targetStatus}`, assignment });
 };
@@ -503,36 +497,11 @@ export const deliverOrder = async (req: AuthRequest, res: Response): Promise<voi
     order.deliveryVerification.verifiedAt = new Date();
     order.deliveryVerification.verifiedBy = req.user.id as any;
     order.deliveryVerification.verificationMethod = 'OTP';
-    order.orderStatus = 'Delivered';
-    order.timeline.push({
-      status: 'Delivered',
-      date: new Date().toISOString(),
-      note: 'OTP verified successfully. Delivered.'
+    order.orderStatus = 'Delivered'; // local state for return response, saved via state machine below
+    // Transition status to Delivered via state machine
+    await OrderStateMachine.transition(order._id, 'Delivered', {
+      notes: 'OTP verified successfully. Delivered.'
     });
-    await order.save();
-
-    // Transition settlements to pending balance
-    let session;
-    try {
-      session = await mongoose.startSession();
-    } catch (sessErr) {
-      console.warn("[deliveryController] Mongoose sessions/transactions not supported. Falling back to non-transactional execution.");
-    }
-
-    if (session) {
-      try {
-        await session.withTransaction(async () => {
-          await SettlementEngine.pendSettlements(order._id, session);
-        });
-      } catch (txnErr: any) {
-        console.error("[deliveryController] Transaction failed. Attempting non-transactional fallback.", txnErr);
-        await SettlementEngine.pendSettlements(order._id);
-      } finally {
-        session.endSession();
-      }
-    } else {
-      await SettlementEngine.pendSettlements(order._id);
-    }
 
     // Mark assignment status
     assignment.status = 'Delivered';
@@ -657,30 +626,28 @@ export const withdraw = async (req: AuthRequest, res: Response): Promise<void> =
       return;
     }
 
-    const wallet = await WalletEngine.getOrCreateWallet(req.user.id);
-    if (wallet.availableBalance < amount) {
-      res.status(400).json({ message: 'Insufficient available balance' });
-      return;
+    const session = await mongoose.startSession();
+    session.startTransaction();
+    try {
+      const wallet = await WalletEngine.processDirectWithdrawal(
+        req.user.id,
+        amount,
+        {
+          category: 'Delivery Withdrawal',
+          source: 'BANK_TRANSFER',
+          remarks: 'Withdrawal request submitted',
+          referenceType: 'WITHDRAWAL'
+        },
+        session
+      );
+      await session.commitTransaction();
+      session.endSession();
+      res.status(200).json({ success: true, message: 'Withdrawal initiated successfully', wallet });
+    } catch (err: any) {
+      await session.abortTransaction();
+      session.endSession();
+      throw err;
     }
-
-    // Process debit from Wallet
-    const txId = `WD_${Date.now()}`;
-    wallet.availableBalance -= amount;
-    wallet.withdrawnBalance += amount;
-    wallet.ledgerEntries.push({
-      transactionId: txId,
-      type: 'debit',
-      amount,
-      category: 'Delivery Withdrawal',
-      source: 'BANK_TRANSFER',
-      remarks: 'Withdrawal request submitted',
-      status: 'completed',
-      createdAt: new Date(),
-      date: new Date()
-    });
-    await wallet.save();
-
-    res.status(200).json({ success: true, message: 'Withdrawal initiated successfully', wallet });
   } catch (error: any) {
     res.status(500).json({ message: 'Withdrawal request failed', error: error.message });
   }
@@ -1577,19 +1544,17 @@ export const triggerCourierFallback = async (req: Request, res: Response) => {
       partnerName = order.courierPartner;
     }
 
-    order.orderStatus = 'Shipped';
-    order.timeline.push({
-      status: 'Shipped',
-      date: new Date().toISOString(),
-      note: `Package dispatched via ${courierType}: ${partnerName}. Tracking ID: ${order.trackingId || 'N/A'}`
-    });
-
     await order.save();
+
+    // Transition state through state machine
+    const updatedOrder = await OrderStateMachine.transition(order._id, 'Shipped', {
+      notes: `Package dispatched via ${courierType}: ${partnerName}. Tracking ID: ${order.trackingId || 'N/A'}`
+    });
 
     res.json({
       success: true,
       message: `Automatic fallback routing completed via ${partnerName}`,
-      order
+      order: updatedOrder
     });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });

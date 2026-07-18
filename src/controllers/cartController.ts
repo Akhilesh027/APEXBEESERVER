@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import Cart from '../models/Cart';
 import Product from '../models/Product';
 import { User } from '../models/User';
+import { CartService } from '../services/cartService';
 
 export const getCart = async (req: Request, res: Response) => {
   try {
@@ -102,47 +103,24 @@ export const getCart = async (req: Request, res: Response) => {
 
 export const addToCart = async (req: Request, res: Response) => {
   try {
-    const { userId, productId, quantity, color, size, selectedColor, selectedSize } = req.body;
+    const { userId: bodyUserId, productId, quantity, color, size, selectedColor, selectedSize } = req.body;
+    const customerId = (req as any).user?.id || (req as any).user?._id || bodyUserId;
 
-    if (!userId || !productId) {
+    if (!customerId || !productId) {
       return res.status(400).json({ success: false, error: 'User ID and Product ID are required' });
     }
 
-    // Resolve color/size from body or selectedColor/selectedSize fallbacks
     const resolvedColor = color || selectedColor || 'default';
     const resolvedSize = size || selectedSize || 'default';
     const resolvedQty = Number(quantity) || 1;
 
-    // Verify product exists and has stock
+    // Verify product exists
     const product = await Product.findById(productId);
     if (!product) {
       return res.status(404).json({ success: false, error: 'Product not found' });
     }
 
-    let cart = await Cart.findOne({ userId });
-    if (!cart) {
-      cart = new Cart({ userId, items: [] });
-    }
-
-    const itemIndex = cart.items.findIndex(
-      (item) =>
-        item.productId.toString() === productId &&
-        item.color === resolvedColor &&
-        item.size === resolvedSize
-    );
-
-    if (itemIndex > -1) {
-      cart.items[itemIndex].quantity += resolvedQty;
-    } else {
-      cart.items.push({
-        productId: productId as any,
-        quantity: resolvedQty,
-        color: resolvedColor,
-        size: resolvedSize,
-      });
-    }
-
-    await cart.save();
+    const cart = await CartService.addToCart(customerId, productId, resolvedQty, resolvedColor, resolvedSize);
     res.status(200).json({ success: true, message: 'Added to cart successfully', cart });
   } catch (error: any) {
     res.status(500).json({ success: false, error: 'Failed to add to cart', message: error.message });
@@ -151,30 +129,28 @@ export const addToCart = async (req: Request, res: Response) => {
 
 export const updateCartItemQuantity = async (req: Request, res: Response) => {
   try {
-    const { userId } = req.params;
-    const { productId, quantity } = req.body;
+    const { userId: paramUserId } = req.params;
+    const { productId, quantity, color, size } = req.body;
+    const customerId = (req as any).user?.id || (req as any).user?._id || paramUserId;
 
-    if (!userId || !productId) {
+    if (!customerId || !productId) {
       return res.status(400).json({ success: false, message: 'User ID and Product ID are required' });
     }
 
-    const cart = await Cart.findOne({ userId });
-    if (!cart) {
-      return res.status(404).json({ success: false, message: 'Cart not found' });
+    const parsedQty = Number(quantity);
+    if (parsedQty < 1) {
+      return res.status(400).json({ success: false, message: 'Quantity must be at least 1' });
     }
 
-    const itemIndex = cart.items.findIndex((item) => item.productId.toString() === productId);
-    if (itemIndex > -1) {
-      const parsedQty = Number(quantity);
-      if (parsedQty < 1) {
-        return res.status(400).json({ success: false, message: 'Quantity must be at least 1' });
-      }
-      cart.items[itemIndex].quantity = parsedQty;
-      await cart.save();
-      return res.status(200).json({ success: true, message: 'Cart updated successfully', cart });
-    } else {
+    const resolvedColor = color || 'default';
+    const resolvedSize = size || 'default';
+
+    const cart = await CartService.updateQuantity(customerId, productId, parsedQty, resolvedColor, resolvedSize);
+    if (!cart) {
       return res.status(404).json({ success: false, message: 'Item not found in cart' });
     }
+
+    return res.status(200).json({ success: true, message: 'Cart updated successfully', cart });
   } catch (error: any) {
     res.status(500).json({ success: false, message: 'Failed to update cart', error: error.message });
   }
@@ -182,21 +158,18 @@ export const updateCartItemQuantity = async (req: Request, res: Response) => {
 
 export const removeFromCart = async (req: Request, res: Response) => {
   try {
-    const { userId } = req.params;
-    const { productId } = req.body;
+    const { userId: paramUserId } = req.params;
+    const { productId, color, size } = req.body;
+    const customerId = (req as any).user?.id || (req as any).user?._id || paramUserId;
 
-    if (!userId || !productId) {
+    if (!customerId || !productId) {
       return res.status(400).json({ success: false, message: 'User ID and Product ID are required' });
     }
 
-    const cart = await Cart.findOne({ userId });
-    if (!cart) {
-      return res.status(404).json({ success: false, message: 'Cart not found' });
-    }
+    const resolvedColor = color || 'default';
+    const resolvedSize = size || 'default';
 
-    cart.items = cart.items.filter((item) => item.productId.toString() !== productId);
-    await cart.save();
-
+    const cart = await CartService.removeItem(customerId, productId, resolvedColor, resolvedSize);
     res.status(200).json({ success: true, message: 'Removed from cart successfully', cart });
   } catch (error: any) {
     res.status(500).json({ success: false, message: 'Failed to remove from cart', error: error.message });

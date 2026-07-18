@@ -91,8 +91,8 @@ const seedDatabase = async () => {
         }
         // 4. Seed Wholesalers and Manufacturers
         const seedSuppliersAndProducts = async () => {
-            const wholesalerCount = await User_1.User.countDocuments({ roles: "wholesaler" });
-            if (wholesalerCount === 0) {
+            const existingWholesaler = await User_1.User.findOne({ email: "nellore@wholesaler.com" });
+            if (!existingWholesaler) {
                 const salt = await bcryptjs_1.default.genSalt(10);
                 const passwordHash = await bcryptjs_1.default.hash("apexbee123", salt);
                 // Create Wholesaler User
@@ -231,6 +231,7 @@ const seedDatabase = async () => {
                         {
                             poNumber: "PO-389021",
                             vendorId: vendorUser._id,
+                            supplierId: wholesaler._id,
                             supplierName: "Nellore Wholesale Distributors",
                             items: [{
                                     productId: wProd._id,

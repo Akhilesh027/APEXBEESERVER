@@ -56,6 +56,7 @@ const WalletSchema = new mongoose_1.Schema({
     withdrawnBalance: { type: Number, default: 0 },
     totalCredits: { type: Number, default: 0 },
     totalDebits: { type: Number, default: 0 },
-    ledgerEntries: [LedgerEntrySchema]
+    ledgerEntries: [LedgerEntrySchema],
+    version: { type: Number, default: 0, required: true }
 });
 exports.Wallet = mongoose_1.default.model('Wallet', WalletSchema);

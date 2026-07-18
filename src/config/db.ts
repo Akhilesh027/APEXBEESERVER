@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { User } from '../models/User';
 import { ServiceProviderKyc, syncKycFields } from '../models/ServiceProviderKyc';
 import { ServiceProvider } from '../models/ServiceProvider';
+import { env } from './env';
 
 const migrateServiceProviders = async () => {
   try {
@@ -104,11 +105,23 @@ const seedAdmin = async () => {
 };
 
 export const connectDB = async (): Promise<void> => {
-  const mongoURI = process.env.MONGODB_URI;
+  const mongoURI = env.MONGODB_URI;
 
-  if (!mongoURI) {
-    console.error('MONGODB_URI is not defined in .env');
-    process.exit(1);
+  const match = mongoURI.match(/\/([^/?]+)(\?|$)/);
+  const dbName = match ? match[1] : 'default';
+  
+  console.log(`[Database] NODE_ENV: ${env.NODE_ENV}`);
+  console.log(`[Database] Attempting connection to DB: ${dbName}`);
+
+  // Prevent non-prod environments from using prod databases
+  if (env.NODE_ENV !== 'production') {
+    const isProdDb = dbName.toLowerCase().includes('prod') || 
+                     mongoURI.toLowerCase().includes('production') ||
+                     mongoURI.toLowerCase().includes('prod-');
+    if (isProdDb && process.env.ALLOW_PROD_DB_IN_DEV !== 'true') {
+      console.error(`[SECURITY ERROR] Attempted to connect to production database "${dbName}" in non-production mode (${env.NODE_ENV}). Connection aborted.`);
+      process.exit(1);
+    }
   }
 
   try {
@@ -116,9 +129,13 @@ export const connectDB = async (): Promise<void> => {
 
     await mongoose.connect(mongoURI, {
       serverSelectionTimeoutMS: 15000,
+      maxPoolSize: env.MONGO_MAX_POOL_SIZE,
+      minPoolSize: env.MONGO_MIN_POOL_SIZE,
+      socketTimeoutMS: 45000,
+      connectTimeoutMS: 30000,
     });
 
-    console.log('MongoDB Atlas connected successfully!');
+    console.log(`MongoDB Atlas connected successfully to database "${dbName}"!`);
 
     await seedAdmin();
     await migrateServiceProviders();

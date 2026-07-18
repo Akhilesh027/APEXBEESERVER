@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.removeFromCart = exports.updateCartItemQuantity = exports.addToCart = exports.getCart = void 0;
 const Cart_1 = __importDefault(require("../models/Cart"));
 const Product_1 = __importDefault(require("../models/Product"));
+const cartService_1 = require("../services/cartService");
 const getCart = async (req, res) => {
     try {
         const { userId } = req.params;
@@ -96,38 +97,20 @@ const getCart = async (req, res) => {
 exports.getCart = getCart;
 const addToCart = async (req, res) => {
     try {
-        const { userId, productId, quantity, color, size, selectedColor, selectedSize } = req.body;
-        if (!userId || !productId) {
+        const { userId: bodyUserId, productId, quantity, color, size, selectedColor, selectedSize } = req.body;
+        const customerId = req.user?.id || req.user?._id || bodyUserId;
+        if (!customerId || !productId) {
             return res.status(400).json({ success: false, error: 'User ID and Product ID are required' });
         }
-        // Resolve color/size from body or selectedColor/selectedSize fallbacks
         const resolvedColor = color || selectedColor || 'default';
         const resolvedSize = size || selectedSize || 'default';
         const resolvedQty = Number(quantity) || 1;
-        // Verify product exists and has stock
+        // Verify product exists
         const product = await Product_1.default.findById(productId);
         if (!product) {
             return res.status(404).json({ success: false, error: 'Product not found' });
         }
-        let cart = await Cart_1.default.findOne({ userId });
-        if (!cart) {
-            cart = new Cart_1.default({ userId, items: [] });
-        }
-        const itemIndex = cart.items.findIndex((item) => item.productId.toString() === productId &&
-            item.color === resolvedColor &&
-            item.size === resolvedSize);
-        if (itemIndex > -1) {
-            cart.items[itemIndex].quantity += resolvedQty;
-        }
-        else {
-            cart.items.push({
-                productId: productId,
-                quantity: resolvedQty,
-                color: resolvedColor,
-                size: resolvedSize,
-            });
-        }
-        await cart.save();
+        const cart = await cartService_1.CartService.addToCart(customerId, productId, resolvedQty, resolvedColor, resolvedSize);
         res.status(200).json({ success: true, message: 'Added to cart successfully', cart });
     }
     catch (error) {
@@ -137,28 +120,23 @@ const addToCart = async (req, res) => {
 exports.addToCart = addToCart;
 const updateCartItemQuantity = async (req, res) => {
     try {
-        const { userId } = req.params;
-        const { productId, quantity } = req.body;
-        if (!userId || !productId) {
+        const { userId: paramUserId } = req.params;
+        const { productId, quantity, color, size } = req.body;
+        const customerId = req.user?.id || req.user?._id || paramUserId;
+        if (!customerId || !productId) {
             return res.status(400).json({ success: false, message: 'User ID and Product ID are required' });
         }
-        const cart = await Cart_1.default.findOne({ userId });
+        const parsedQty = Number(quantity);
+        if (parsedQty < 1) {
+            return res.status(400).json({ success: false, message: 'Quantity must be at least 1' });
+        }
+        const resolvedColor = color || 'default';
+        const resolvedSize = size || 'default';
+        const cart = await cartService_1.CartService.updateQuantity(customerId, productId, parsedQty, resolvedColor, resolvedSize);
         if (!cart) {
-            return res.status(404).json({ success: false, message: 'Cart not found' });
-        }
-        const itemIndex = cart.items.findIndex((item) => item.productId.toString() === productId);
-        if (itemIndex > -1) {
-            const parsedQty = Number(quantity);
-            if (parsedQty < 1) {
-                return res.status(400).json({ success: false, message: 'Quantity must be at least 1' });
-            }
-            cart.items[itemIndex].quantity = parsedQty;
-            await cart.save();
-            return res.status(200).json({ success: true, message: 'Cart updated successfully', cart });
-        }
-        else {
             return res.status(404).json({ success: false, message: 'Item not found in cart' });
         }
+        return res.status(200).json({ success: true, message: 'Cart updated successfully', cart });
     }
     catch (error) {
         res.status(500).json({ success: false, message: 'Failed to update cart', error: error.message });
@@ -167,17 +145,15 @@ const updateCartItemQuantity = async (req, res) => {
 exports.updateCartItemQuantity = updateCartItemQuantity;
 const removeFromCart = async (req, res) => {
     try {
-        const { userId } = req.params;
-        const { productId } = req.body;
-        if (!userId || !productId) {
+        const { userId: paramUserId } = req.params;
+        const { productId, color, size } = req.body;
+        const customerId = req.user?.id || req.user?._id || paramUserId;
+        if (!customerId || !productId) {
             return res.status(400).json({ success: false, message: 'User ID and Product ID are required' });
         }
-        const cart = await Cart_1.default.findOne({ userId });
-        if (!cart) {
-            return res.status(404).json({ success: false, message: 'Cart not found' });
-        }
-        cart.items = cart.items.filter((item) => item.productId.toString() !== productId);
-        await cart.save();
+        const resolvedColor = color || 'default';
+        const resolvedSize = size || 'default';
+        const cart = await cartService_1.CartService.removeItem(customerId, productId, resolvedColor, resolvedSize);
         res.status(200).json({ success: true, message: 'Removed from cart successfully', cart });
     }
     catch (error) {

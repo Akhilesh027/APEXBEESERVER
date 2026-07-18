@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.requestServiceProviderDocument = exports.updateServiceProviderDocumentStatus = exports.createDeliveryPartner = exports.getDeliveryPartners = exports.getReconciliationStats = exports.getWallets = exports.processEntrepreneurCommissionRelease = exports.processManufacturerDrawdown = exports.processWholesalerDrawdown = exports.processVendorDrawdown = exports.updateEntrepreneurStatus = exports.updateManufacturerStatus = exports.updateWholesalerStatus = exports.updateUserStatus = exports.createTerritory = exports.getTerritories = exports.getFranchises = exports.updateServiceProviderStatus = exports.getServiceProviders = exports.getEntrepreneurs = exports.getManufacturers = exports.getWholesalers = exports.getUsers = exports.updateServiceProviderKycStatus = exports.getServiceProviderKycs = exports.updateVendorStatus = exports.updateVendorDocumentStatus = exports.getVendors = exports.getDashboardStats = exports.reviewApplication = exports.rejectApplication = exports.verifyKycApplication = exports.approveApplication = exports.getApplicationById = exports.getApplications = void 0;
+exports.getMetrics = exports.setFeatureFlag = exports.getFeatureFlag = exports.cleanupExpiredReservations = exports.requestServiceProviderDocument = exports.updateServiceProviderDocumentStatus = exports.createDeliveryPartner = exports.getDeliveryPartners = exports.getReconciliationStats = exports.getWallets = exports.processEntrepreneurCommissionRelease = exports.processManufacturerDrawdown = exports.processWholesalerDrawdown = exports.processVendorDrawdown = exports.updateEntrepreneurStatus = exports.updateManufacturerStatus = exports.updateWholesalerStatus = exports.updateUserStatus = exports.createTerritory = exports.getTerritories = exports.getFranchises = exports.updateServiceProviderStatus = exports.getServiceProviders = exports.getEntrepreneurs = exports.getManufacturers = exports.getWholesalers = exports.getUsers = exports.updateServiceProviderKycStatus = exports.getServiceProviderKycs = exports.updateVendorStatus = exports.updateVendorDocumentStatus = exports.getVendors = exports.getDashboardStats = exports.reviewApplication = exports.rejectApplication = exports.verifyKycApplication = exports.approveApplication = exports.getApplicationById = exports.getApplications = void 0;
 exports.assignTerritoryAndMapFranchises = assignTerritoryAndMapFranchises;
 const mongoose_1 = __importDefault(require("mongoose"));
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
@@ -1538,10 +1538,22 @@ const updateServiceProviderKycStatus = async (req, res) => {
 exports.updateServiceProviderKycStatus = updateServiceProviderKycStatus;
 const getUsers = async (req, res) => {
     try {
-        const users = await User_1.User.find().select("-passwordHash").sort({ createdAt: -1 });
+        const page = Math.max(1, parseInt(req.query.page) || 1);
+        const limit = Math.min(500, Math.max(1, parseInt(req.query.limit) || 200));
+        const skip = (page - 1) * limit;
+        const [users, total] = await Promise.all([
+            User_1.User.find().select("-passwordHash").sort({ createdAt: -1 }).skip(skip).limit(limit),
+            User_1.User.countDocuments()
+        ]);
         res.status(200).json({
             success: true,
             users,
+            pagination: {
+                page,
+                limit,
+                total,
+                totalPages: Math.ceil(total / limit),
+            }
         });
     }
     catch (error) {
@@ -2349,3 +2361,109 @@ const requestServiceProviderDocument = async (req, res) => {
     }
 };
 exports.requestServiceProviderDocument = requestServiceProviderDocument;
+const cleanupExpiredReservations = async (req, res) => {
+    try {
+        const { InventoryService } = require("../services/inventoryService");
+        const expiredCount = await InventoryService.cleanupExpiredReservations();
+        res.status(200).json({
+            success: true,
+            message: `Successfully released ${expiredCount} expired reservations.`,
+            expiredCount
+        });
+    }
+    catch (error) {
+        console.error("Cleanup expired reservations error:", error);
+        res.status(500).json({
+            message: "Server error cleaning up expired reservations",
+            error: error.message,
+        });
+    }
+};
+exports.cleanupExpiredReservations = cleanupExpiredReservations;
+const getFeatureFlag = async (req, res) => {
+    try {
+        const { key, defaultValue } = req.query;
+        if (!key) {
+            res.status(400).json({ message: "Config key is required" });
+            return;
+        }
+        const { ConfigService } = require("../services/ConfigService");
+        const val = await ConfigService.getFlag(String(key), defaultValue === 'true');
+        res.status(200).json({
+            success: true,
+            key,
+            value: val
+        });
+    }
+    catch (error) {
+        console.error("Get feature flag error:", error);
+        res.status(500).json({
+            message: "Server error getting feature flag",
+            error: error.message,
+        });
+    }
+};
+exports.getFeatureFlag = getFeatureFlag;
+const setFeatureFlag = async (req, res) => {
+    try {
+        const { key, value } = req.body;
+        if (!key || value === undefined) {
+            res.status(400).json({ message: "Key and value are required" });
+            return;
+        }
+        const { ConfigService } = require("../services/ConfigService");
+        await ConfigService.setFlag(String(key), Boolean(value));
+        res.status(200).json({
+            success: true,
+            message: `Feature flag '${key}' updated successfully.`
+        });
+    }
+    catch (error) {
+        console.error("Set feature flag error:", error);
+        res.status(500).json({
+            message: "Server error setting feature flag",
+            error: error.message,
+        });
+    }
+};
+exports.setFeatureFlag = setFeatureFlag;
+const getMetrics = async (req, res) => {
+    try {
+        const { NotificationJob } = require('../modules/notifications/models/NotificationJob');
+        const pendingJobsCount = await NotificationJob.countDocuments({ status: 'pending' });
+        const failedJobsCount = await NotificationJob.countDocuments({ status: 'failed' });
+        // DB stats
+        const dbState = mongoose_1.default.connection.readyState;
+        const dbStatesMap = {
+            0: 'disconnected',
+            1: 'connected',
+            2: 'connecting',
+            3: 'disconnecting',
+        };
+        res.status(200).json({
+            success: true,
+            metrics: {
+                uptime: process.uptime(),
+                memory: process.memoryUsage(),
+                database: {
+                    status: dbStatesMap[dbState] || 'unknown',
+                    connectionsCount: mongoose_1.default.connections.length,
+                },
+                queues: {
+                    notificationJobs: {
+                        pending: pendingJobsCount,
+                        failed: failedJobsCount,
+                    }
+                }
+            }
+        });
+    }
+    catch (error) {
+        console.error("Fetch metrics error:", error);
+        res.status(500).json({
+            message: "Server error retrieving metrics",
+            error: error.message,
+        });
+    }
+};
+exports.getMetrics = getMetrics;

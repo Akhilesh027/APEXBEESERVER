@@ -255,8 +255,19 @@ const updateVendorDocument = async (req, res) => {
             return doc;
         });
         if (!docUpdated) {
-            res.status(404).json({ message: 'Document type not found in profile' });
-            return;
+            let name = docId.replace("DOC-", "").replace("-", " ");
+            if (docId === 'DOC-FSSAI')
+                name = 'FSSAI Licence';
+            else if (docId === 'DOC-DRUG')
+                name = 'Drug License';
+            vendor.documents.push({
+                id: docId,
+                name,
+                status: 'Pending',
+                uploadDate: new Date().toISOString().split('T')[0],
+                fileName,
+                url
+            });
         }
         const saved = await vendor.save();
         const vendorObj = saved.toObject();

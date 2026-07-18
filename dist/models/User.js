@@ -143,4 +143,5 @@ const UserSchema = new mongoose_1.Schema({
         totalWithdrawn: { type: Number, default: 0 }
     }
 }, { timestamps: true });
+UserSchema.index({ roles: 1, 'territory.state': 1, 'territory.district': 1, 'territory.mandal': 1 });
 exports.User = mongoose_1.default.model("User", UserSchema);

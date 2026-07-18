@@ -9,6 +9,7 @@ const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const User_1 = require("../models/User");
 const ServiceProviderKyc_1 = require("../models/ServiceProviderKyc");
 const ServiceProvider_1 = require("../models/ServiceProvider");
+const env_1 = require("./env");
 const migrateServiceProviders = async () => {
     try {
         const providers = await ServiceProvider_1.ServiceProvider.find({ providerCode: { $exists: false } });
@@ -109,17 +110,31 @@ const seedAdmin = async () => {
     }
 };
 const connectDB = async () => {
-    const mongoURI = process.env.MONGODB_URI;
-    if (!mongoURI) {
-        console.error('MONGODB_URI is not defined in .env');
-        process.exit(1);
+    const mongoURI = env_1.env.MONGODB_URI;
+    const match = mongoURI.match(/\/([^/?]+)(\?|$)/);
+    const dbName = match ? match[1] : 'default';
+    console.log(`[Database] NODE_ENV: ${env_1.env.NODE_ENV}`);
+    console.log(`[Database] Attempting connection to DB: ${dbName}`);
+    // Prevent non-prod environments from using prod databases
+    if (env_1.env.NODE_ENV !== 'production') {
+        const isProdDb = dbName.toLowerCase().includes('prod') ||
+            mongoURI.toLowerCase().includes('production') ||
+            mongoURI.toLowerCase().includes('prod-');
+        if (isProdDb && process.env.ALLOW_PROD_DB_IN_DEV !== 'true') {
+            console.error(`[SECURITY ERROR] Attempted to connect to production database "${dbName}" in non-production mode (${env_1.env.NODE_ENV}). Connection aborted.`);
+            process.exit(1);
+        }
     }
     try {
         console.log('Connecting to MongoDB Atlas...');
         await mongoose_1.default.connect(mongoURI, {
             serverSelectionTimeoutMS: 15000,
+            maxPoolSize: env_1.env.MONGO_MAX_POOL_SIZE,
+            minPoolSize: env_1.env.MONGO_MIN_POOL_SIZE,
+            socketTimeoutMS: 45000,
+            connectTimeoutMS: 30000,
         });
-        console.log('MongoDB Atlas connected successfully!');
+        console.log(`MongoDB Atlas connected successfully to database "${dbName}"!`);
         await seedAdmin();
         await migrateServiceProviders();
         await migrateServiceProviderKycs();

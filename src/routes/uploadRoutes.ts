@@ -2,9 +2,21 @@ import { Router, Request, Response } from 'express';
 import { uploadDisk } from '../middleware/multer';
 import { uploadToCloudinary } from '../config/cloudinary';
 import { protect } from '../middleware/auth';
+import { CloudinaryUploadService } from '../services/cloudinaryUploadService';
 import fs from 'fs';
 
 const router = Router();
+
+router.get('/signature', protect, (req: Request, res: Response) => {
+  try {
+    const folder = (req.query.folder as string) || 'apexbee/proofs';
+    const credentials = CloudinaryUploadService.generateSignature(folder);
+    res.status(200).json({ success: true, ...credentials });
+  } catch (err: any) {
+    console.error('Failed to generate signature:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
 
 router.post('/', protect, uploadDisk.single('file'), async (req: Request, res: Response): Promise<void> => {
   try {

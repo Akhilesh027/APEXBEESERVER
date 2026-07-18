@@ -55,5 +55,6 @@ const NotificationJobSchema = new mongoose_1.Schema({
     scheduledAt: { type: Date, default: Date.now, index: true },
     errorLogs: [{ type: String }]
 }, { timestamps: true });
+NotificationJobSchema.index({ status: 1, attempts: 1, scheduledAt: 1 });
 exports.NotificationJob = mongoose_1.default.model('NotificationJob', NotificationJobSchema);
 exports.default = exports.NotificationJob;

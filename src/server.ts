@@ -1,14 +1,19 @@
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import path from 'path';
 import http from 'http';
+import mongoose from 'mongoose';
+import { getRedisClient, checkRedisConnected } from './config/redis';
+import { env } from './config/env';
+import { correlationMiddleware } from './middleware/correlation';
+import { ipRateLimiter, userRateLimiter, criticalRateLimiter } from './middleware/rateLimiter';
 import { initSocketServer } from './modules/notifications/websocket/socketServer';
 import { notificationQueue } from './modules/notifications/services/notificationQueue';
 import { initNotificationListeners } from './modules/notifications/events/notificationListeners';
 import { seedNotificationTemplates } from './modules/notifications/config/seedTemplates';
 import { connectDB } from './config/db';
 import { seedDatabase } from './config/seed';
+import { InventoryService } from './services/inventoryService';
 import { User } from './models/User';
 import { ReferralSettings } from './models/ReferralSettings';
 import bcrypt from 'bcryptjs';
@@ -29,6 +34,7 @@ import commissionRuleRoutes from './routes/commissionRuleRoutes';
 import referralRoutes from "./routes/referralRoutes";
 import walletRoutes from "./routes/walletRoutes";
 import productRoutes from "./routes/productRoutes";
+import productReviewRoutes from "./routes/productReviewRoutes";
 import orderRoutes from "./routes/orderRoutes";
 import categoryRoutes from "./routes/categoryRoutes";
 import miscRoutes from "./routes/miscRoutes";
@@ -41,12 +47,10 @@ import serviceBookingRoutes from './routes/serviceBookingRoutes';
 import localShopRoutes from './routes/localShopRoutes';
 import b2bRoutes from './routes/b2bRoutes';
 
-
-// Load environment variables
-dotenv.config();
-
 // Initialize express app
 const app = express();
+
+app.use(correlationMiddleware);
 
 // Apply global middlewares
 app.use(
@@ -92,8 +96,12 @@ app.use(express.urlencoded({ extended: true }));
 // Serve static uploads
 app.use('/uploads', express.static(path.join(__dirname, '../public/uploads')));
 
+// Apply general rate limiters
+app.use(ipRateLimiter);
+app.use(userRateLimiter);
+
 // Routes mapping
-app.use('/api/auth', authRoutes);
+app.use('/api/auth', criticalRateLimiter, authRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/applications', applicationRoutes);
 app.use('/api/business-applications', applicationRoutes);
@@ -113,6 +121,8 @@ app.use('/api/commission-rules', commissionRuleRoutes);
 app.use("/api/referrals", referralRoutes);
 app.use("/api/wallet", walletRoutes);
 app.use("/api/products", productRoutes);
+app.use("/api/reviews", productReviewRoutes);
+app.use("/api/product/reviews", productReviewRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/categories", categoryRoutes);
 app.use("/api/cart", cartRoutes);
@@ -127,11 +137,45 @@ app.use('/api/b2b', b2bRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'ok', timestamp: new Date() });
+  const dbStatus = mongoose.connection.readyState;
+  let redisStatus = 'disconnected';
+  let isHealthy = dbStatus === 1;
+
+  try {
+    const redis = getRedisClient();
+    const isMock = !(redis.status === 'ready' || redis.status === 'connecting');
+
+    if (!isMock) {
+      redisStatus = redis.status;
+      if (redis.status !== 'ready') {
+        isHealthy = false;
+      }
+    } else {
+      redisStatus = 'mock_active';
+    }
+  } catch (err) {
+    isHealthy = false;
+    redisStatus = 'failed';
+  }
+
+  const payload = {
+    status: isHealthy ? 'healthy' : 'unhealthy',
+    timestamp: new Date(),
+    services: {
+      database: dbStatus === 1 ? 'connected' : 'disconnected',
+      cache: redisStatus
+    }
+  };
+
+  if (isHealthy) {
+    res.status(200).json(payload);
+  } else {
+    res.status(503).json(payload);
+  }
 });
 
 // Start listening and database connection
-const PORT = process.env.PORT || 5000;
+const PORT = env.PORT;
 
 const seedReferralDefaults = async () => {
   try {
@@ -181,32 +225,122 @@ const seedReferralDefaults = async () => {
 const startServer = async () => {
   try {
     await connectDB();
+
+    if (['staging', 'production'].includes(env.NODE_ENV)) {
+      console.log('[REDIS] Verifying mandatory connection for staging/production...');
+      let retries = 30;
+      while (retries > 0 && !checkRedisConnected()) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        retries--;
+      }
+      if (!checkRedisConnected()) {
+        throw new Error("Redis is mandatory in staging and production");
+      }
+      console.log('[REDIS] Connection verified successfully.');
+    }
+
     await seedReferralDefaults();
     await seedDatabase();
     await seedNotificationTemplates(); // Seed event notifications templates
     initNotificationListeners(); // Registry listeners for events
 
-    const server = http.createServer(app);
-    initSocketServer(server); // Boot WebSocket connection room engine
-    notificationQueue.startWorker(); // Boot background worker processing loop
+    let server: http.Server | null = null;
 
-    server.listen(PORT, () => {
-      console.log(`ApexBee Core API Server running on port ${PORT}`);
-      console.log('Registered Routes:');
-      app._router.stack.forEach((middleware: any) => {
-        if (middleware.route) {
-          console.log(`${Object.keys(middleware.route.methods).join(',').toUpperCase()} ${middleware.route.path}`);
-        } else if (middleware.name === 'router') {
-          middleware.handle.stack.forEach((handler: any) => {
-            if (handler.route) {
-              const path = handler.route.path;
-              const methods = Object.keys(handler.route.methods).join(',').toUpperCase();
-              console.log(`${methods} ${path}`);
-            }
-          });
-        }
+    if (env.PROCESS_TYPE !== 'worker') {
+      server = http.createServer(app);
+      initSocketServer(server); // Boot WebSocket connection room engine
+      server.listen(PORT, () => {
+        console.log(`ApexBee Core API Server running on port ${PORT} [PROCESS_TYPE=${env.PROCESS_TYPE}]`);
+        console.log('Registered Routes:');
+        app._router.stack.forEach((middleware: any) => {
+          if (middleware.route) {
+            console.log(`${Object.keys(middleware.route.methods).join(',').toUpperCase()} ${middleware.route.path}`);
+          } else if (middleware.name === 'router') {
+            middleware.handle.stack.forEach((handler: any) => {
+              if (handler.route) {
+                const path = handler.route.path;
+                const methods = Object.keys(handler.route.methods).join(',').toUpperCase();
+                console.log(`${methods} ${path}`);
+              }
+            });
+          }
+        });
       });
-    });
+    }
+
+    let reservationExpiryTimer: NodeJS.Timeout | null = null;
+    if (env.PROCESS_TYPE !== 'api') {
+      console.log(`[NotificationQueue] Starting background worker loop... [PROCESS_TYPE=${env.PROCESS_TYPE}]`);
+      notificationQueue.startWorker(); // Boot background worker processing loop
+
+      console.log('[InventoryService] Starting background reservation sweep loop...');
+      reservationExpiryTimer = setInterval(async () => {
+        try {
+          const expiredCount = await InventoryService.cleanupExpiredReservations();
+          if (expiredCount > 0) {
+            console.log(`[InventoryService] Released ${expiredCount} expired reservations in background sweep.`);
+          }
+        } catch (err: any) {
+          console.error('[InventoryService] Error in background reservation sweep:', err.message);
+        }
+      }, 60000); // Check every 60 seconds
+    }
+
+    const shutdown = async (signal: string) => {
+      console.log(`[Shutdown] Received ${signal}. Starting graceful shutdown...`);
+      
+      const cleanConnections = async () => {
+        try {
+          if (env.PROCESS_TYPE !== 'api') {
+            await notificationQueue.stopWorker();
+            console.log('[Shutdown] Background queue worker stopped.');
+
+            if (reservationExpiryTimer) {
+              clearInterval(reservationExpiryTimer);
+              console.log('[Shutdown] Background reservation sweep loop stopped.');
+            }
+          }
+
+          await mongoose.connection.close();
+          console.log('[Shutdown] MongoDB connection closed.');
+
+          try {
+            const redis = getRedisClient();
+            const isMock = !(redis.status === 'ready' || redis.status === 'connecting');
+            if (!isMock) {
+              await redis.quit();
+              console.log('[Shutdown] Redis connection closed.');
+            }
+          } catch (rErr) {
+            // Ignore Redis errors if client isn't fully configured
+          }
+
+          console.log('[Shutdown] Graceful shutdown completed. Exiting.');
+          process.exit(0);
+        } catch (err: any) {
+          console.error('[Shutdown] Error during graceful shutdown:', err.message);
+          process.exit(1);
+        }
+      };
+
+      if (server) {
+        server.close(async () => {
+          console.log('[Shutdown] HTTP server closed.');
+          await cleanConnections();
+        });
+      } else {
+        await cleanConnections();
+      }
+
+      // Force terminate after 10s fallback timeout
+      setTimeout(() => {
+        console.error('[Shutdown] Graceful shutdown timed out. Forcing exit.');
+        process.exit(1);
+      }, 10000);
+    };
+
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT', () => shutdown('SIGINT'));
   } catch (error) {
     console.error('Failed to start server:', error);
     process.exit(1);

@@ -207,4 +207,6 @@ const UserSchema = new Schema<IUser>(
   { timestamps: true }
 );
 
+UserSchema.index({ roles: 1, 'territory.state': 1, 'territory.district': 1, 'territory.mandal': 1 });
+
 export const User = mongoose.model<IUser>("User", UserSchema);

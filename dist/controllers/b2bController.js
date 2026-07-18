@@ -62,11 +62,16 @@ exports.createRfq = createRfq;
 const getPos = async (req, res) => {
     try {
         const userId = req.user?.id || req.user?._id;
+        const userRoles = req.user?.roles || [];
         if (!userId) {
             res.status(401).json({ success: false, message: "Unauthorized" });
             return;
         }
-        const pos = await B2bPo_1.B2bPo.find({ vendorId: userId }).sort({ createdAt: -1 });
+        const isSupplier = userRoles.includes("wholesaler") || userRoles.includes("manufacturer");
+        const query = isSupplier ? { supplierId: userId } : { vendorId: userId };
+        const pos = await B2bPo_1.B2bPo.find(query)
+            .populate("vendorId", "name email mobile phone sellerProfile")
+            .sort({ createdAt: -1 });
         res.status(200).json({ success: true, pos });
     }
     catch (error) {
@@ -78,7 +83,7 @@ exports.getPos = getPos;
 const createPo = async (req, res) => {
     try {
         const userId = req.user?.id || req.user?._id;
-        const { supplierName, items, totalAmount, expectedDelivery } = req.body;
+        const { supplierName, supplierId, items, totalAmount, expectedDelivery } = req.body;
         if (!userId) {
             res.status(401).json({ success: false, message: "Unauthorized" });
             return;
@@ -87,6 +92,7 @@ const createPo = async (req, res) => {
         const po = new B2bPo_1.B2bPo({
             poNumber,
             vendorId: userId,
+            supplierId,
             supplierName,
             items,
             totalAmount: Number(totalAmount),

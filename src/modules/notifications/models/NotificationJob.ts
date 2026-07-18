@@ -40,5 +40,7 @@ const NotificationJobSchema = new Schema<INotificationJob>(
   { timestamps: true }
 );
 
+NotificationJobSchema.index({ status: 1, attempts: 1, scheduledAt: 1 });
+
 export const NotificationJob = mongoose.model<INotificationJob>('NotificationJob', NotificationJobSchema);
 export default NotificationJob;

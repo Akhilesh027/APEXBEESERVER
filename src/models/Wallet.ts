@@ -24,6 +24,7 @@ export interface IWallet extends Document {
   totalCredits: number;
   totalDebits: number;
   ledgerEntries: ILedgerEntry[];
+  version: number;
 }
 
 const LedgerEntrySchema = new Schema<ILedgerEntry>({
@@ -48,7 +49,8 @@ const WalletSchema = new Schema<IWallet>({
   withdrawnBalance: { type: Number, default: 0 },
   totalCredits: { type: Number, default: 0 },
   totalDebits: { type: Number, default: 0 },
-  ledgerEntries: [LedgerEntrySchema]
+  ledgerEntries: [LedgerEntrySchema],
+  version: { type: Number, default: 0, required: true }
 });
 
 

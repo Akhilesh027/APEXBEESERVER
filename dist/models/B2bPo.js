@@ -38,6 +38,7 @@ const mongoose_1 = __importStar(require("mongoose"));
 const B2bPoSchema = new mongoose_1.Schema({
     poNumber: { type: String, required: true, unique: true },
     vendorId: { type: mongoose_1.Schema.Types.ObjectId, ref: "User", required: true },
+    supplierId: { type: mongoose_1.Schema.Types.ObjectId, ref: "User" },
     supplierName: { type: String, required: true },
     items: [
         {
