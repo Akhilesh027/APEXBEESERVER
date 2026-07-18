@@ -2,7 +2,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 
 // Explicitly load .env file
-dotenv.config({ path: path.join(__dirname, '../../../.env') });
+dotenv.config({ path: path.join(__dirname, '../../.env') });
 
 const getBooleanFlag = (val: string | undefined, defaultVal = false): boolean => {
   if (val === undefined) return defaultVal;

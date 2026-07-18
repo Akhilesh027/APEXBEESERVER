@@ -7,7 +7,7 @@ exports.env = void 0;
 const dotenv_1 = __importDefault(require("dotenv"));
 const path_1 = __importDefault(require("path"));
 // Explicitly load .env file
-dotenv_1.default.config({ path: path_1.default.join(__dirname, '../../../.env') });
+dotenv_1.default.config({ path: path_1.default.join(__dirname, '../../.env') });
 const getBooleanFlag = (val, defaultVal = false) => {
     if (val === undefined)
         return defaultVal;
