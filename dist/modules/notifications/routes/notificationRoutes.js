@@ -24,5 +24,6 @@ router.post('/admin/templates', auth_1.protect, (0, auth_1.restrictTo)('admin'),
 router.patch('/admin/templates/:id', auth_1.protect, (0, auth_1.restrictTo)('admin'), notificationController_1.updateTemplate);
 router.delete('/admin/templates/:id', auth_1.protect, (0, auth_1.restrictTo)('admin'), notificationController_1.deleteTemplate);
 router.post('/admin/broadcast', auth_1.protect, (0, auth_1.restrictTo)('admin'), notificationController_1.broadcastNotification);
+router.post('/admin/test-direct-emit', auth_1.protect, (0, auth_1.restrictTo)('admin'), notificationController_1.testDirectEmitNotification);
 router.get('/admin/analytics', auth_1.protect, (0, auth_1.restrictTo)('admin'), notificationController_1.getAnalytics);
 exports.default = router;

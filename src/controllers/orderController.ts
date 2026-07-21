@@ -228,97 +228,41 @@ export const createOrder = async (req: Request, res: Response) => {
     return res.status(400).json({ success: false, message: 'Customer ID is required' });
   }
 
-  if (idempotencyKey) {
-    try {
-      const idResult = await IdempotencyService.checkOrRecord(customerId, String(idempotencyKey), req.body);
-      if (idResult.status === 'completed') {
-        return res.status(idResult.responseCode || 201).json(idResult.responseBody);
-      }
-      if (idResult.status === 'processing') {
-        return res.status(425).json({ success: false, message: 'A request with this idempotency key is already processing.' });
-      }
-      if (idResult.status === 'conflict') {
-        return res.status(409).json({ success: false, message: 'Idempotency key match, but request payload does not match.' });
-      }
-    } catch (err: any) {
-      console.error('Idempotency check error:', err);
-    }
+  const { orderItems, couponCode, shippingAddress, paymentDetails, isScheduledSubscription, scheduleDetails, preOrder } = req.body;
+
+  if (!orderItems || orderItems.length === 0) {
+    return res.status(400).json({ success: false, message: 'Order items are required' });
   }
 
-  let session: mongoose.ClientSession | null = null;
   try {
-    const { orderItems, couponCode, shippingAddress, paymentDetails, isScheduledSubscription, scheduleDetails, preOrder } = req.body;
-
-    if (!orderItems || orderItems.length === 0) {
-      if (idempotencyKey) await IdempotencyService.failRecord(customerId, String(idempotencyKey));
-      return res.status(400).json({ success: false, message: 'Order items are required' });
-    }
-
-    try {
-      session = await mongoose.startSession();
-    } catch (sessionErr) {
-      console.warn("[createOrder] Mongoose sessions/transactions not supported. Proceeding without transaction.");
-    }
-
-    let result;
-
-    if (session) {
-      session.startTransaction();
-      try {
-        result = await CheckoutService.processCheckout(
-          {
-            userId: customerId,
-            orderItems,
-            couponCode,
-            shippingAddress,
-            paymentDetails,
-            isScheduledSubscription,
-            scheduleDetails,
-            preOrder
-          },
-          session
-        );
-        await session.commitTransaction();
-      } catch (err) {
-        await session.abortTransaction();
-        throw err;
-      } finally {
-        await session.endSession();
-      }
-    } else {
-      const dummySession = {} as any;
-      result = await CheckoutService.processCheckout(
-        {
-          userId: customerId,
-          orderItems,
-          couponCode,
-          shippingAddress,
-          paymentDetails,
-          isScheduledSubscription,
-          scheduleDetails,
-          preOrder
-        },
-        dummySession
-      );
-    }
+    const result = await CheckoutService.processCheckoutWithIdempotency(
+      {
+        userId: customerId,
+        orderItems,
+        couponCode,
+        shippingAddress,
+        paymentDetails,
+        isScheduledSubscription,
+        scheduleDetails,
+        preOrder
+      },
+      idempotencyKey ? String(idempotencyKey) : undefined,
+      req.body
+    );
 
     // Trigger hooks outside database transaction (e.g. notifications and referral rewards)
-    if (result && result.order) {
+    if (result && result.order && !result.isDuplicate) {
       await CheckoutService.executePostCheckoutHooks(result.order);
     }
 
     const successResponse = { success: true, order: result.order };
-    if (idempotencyKey) {
-      await IdempotencyService.resolveRecord(customerId, String(idempotencyKey), 201, successResponse, result.order._id.toString());
-    }
-
     return res.status(201).json(successResponse);
   } catch (error: any) {
-    if (idempotencyKey) {
-      await IdempotencyService.failRecord(customerId, String(idempotencyKey));
-    }
     if (error.name === 'InsufficientStockError' || error instanceof InsufficientStockError) {
       return res.status(409).json({ success: false, message: error.message, productId: error.productId });
+    }
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
     }
     console.error('Create order error:', error);
     return res.status(500).json({ success: false, message: error.message });
@@ -358,33 +302,10 @@ export const createOrderWithProof = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'This transaction reference (UTR) has already been submitted.' });
     }
 
-    if (idempotencyKey) {
-      const idResult = await IdempotencyService.checkOrRecord(customerId, String(idempotencyKey), orderData);
-      if (idResult.status === 'completed') {
-        return res.status(idResult.responseCode || 201).json(idResult.responseBody);
-      }
-      if (idResult.status === 'processing') {
-        return res.status(425).json({ success: false, message: 'A request with this idempotency key is already processing.' });
-      }
-      if (idResult.status === 'conflict') {
-        return res.status(409).json({ success: false, message: 'Idempotency key match, but request payload does not match.' });
-      }
-    }
-  } catch (err: any) {
-    console.error('Idempotency parse/check error:', err);
-    return res.status(400).json({ success: false, message: err.message || 'Invalid orderData payload' });
-  }
-
-  let session: mongoose.ClientSession | null = null;
-  try {
     const rawOrderItems = orderData.orderItems;
     if (!rawOrderItems || rawOrderItems.length === 0) {
-      if (idempotencyKey) await IdempotencyService.failRecord(customerId, String(idempotencyKey));
       return res.status(400).json({ success: false, message: 'Order items are required' });
     }
-
-    const rawTxId = req.body.transactionId || orderData.paymentDetails?.upiDetails?.transactionId;
-    const txRef = String(rawTxId).replace(/\s+/g, '').toUpperCase();
 
     // Perform Cloudinary file upload OUTSIDE database transaction block
     let paymentProofUrl = '';
@@ -413,6 +334,7 @@ export const createOrderWithProof = async (req: Request, res: Response) => {
       }
     }
 
+    let session: mongoose.ClientSession | null = null;
     try {
       session = await mongoose.startSession();
     } catch (sessionErr) {
@@ -424,7 +346,7 @@ export const createOrderWithProof = async (req: Request, res: Response) => {
     if (session) {
       session.startTransaction();
       try {
-        result = await CheckoutService.processCheckout(
+        result = await CheckoutService.processCheckoutWithIdempotency(
           {
             userId: customerId,
             orderItems: rawOrderItems,
@@ -435,21 +357,24 @@ export const createOrderWithProof = async (req: Request, res: Response) => {
             scheduleDetails: orderData.scheduleDetails,
             preOrder: orderData.preOrder
           },
+          idempotencyKey ? String(idempotencyKey) : undefined,
+          orderData,
           session
         );
 
-        // Record payment attempt
-        const attemptId = `PAY_${Date.now()}_${Math.floor(100000 + Math.random() * 900000)}`;
-        const attempt = new PaymentAttempt({
-          paymentAttemptId: attemptId,
-          orderId: result.order._id,
-          userId: customerId,
-          provider: 'UPI',
-          amount: result.order.totalAmount,
-          transactionReference: txRef,
-          status: 'pending_verification'
-        });
-        await attempt.save({ session });
+        if (!result.isDuplicate) {
+          const attemptId = `PAY_${Date.now()}_${Math.floor(100000 + Math.random() * 900000)}`;
+          const attempt = new PaymentAttempt({
+            paymentAttemptId: attemptId,
+            orderId: result.order._id,
+            userId: customerId,
+            provider: 'UPI',
+            amount: result.order.totalAmount,
+            transactionReference: txRef,
+            status: 'pending_verification'
+          });
+          await attempt.save({ session });
+        }
 
         await session.commitTransaction();
       } catch (err) {
@@ -459,8 +384,7 @@ export const createOrderWithProof = async (req: Request, res: Response) => {
         await session.endSession();
       }
     } else {
-      const dummySession = {} as any;
-      result = await CheckoutService.processCheckout(
+      result = await CheckoutService.processCheckoutWithIdempotency(
         {
           userId: customerId,
           orderItems: rawOrderItems,
@@ -471,39 +395,38 @@ export const createOrderWithProof = async (req: Request, res: Response) => {
           scheduleDetails: orderData.scheduleDetails,
           preOrder: orderData.preOrder
         },
-        dummySession
+        idempotencyKey ? String(idempotencyKey) : undefined,
+        orderData
       );
 
-      const attemptId = `PAY_${Date.now()}_${Math.floor(100000 + Math.random() * 900000)}`;
-      const attempt = new PaymentAttempt({
-        paymentAttemptId: attemptId,
-        orderId: result.order._id,
-        userId: customerId,
-        provider: 'UPI',
-        amount: result.order.totalAmount,
-        transactionReference: txRef,
-        status: 'pending_verification'
-      });
-      await attempt.save();
+      if (!result.isDuplicate) {
+        const attemptId = `PAY_${Date.now()}_${Math.floor(100000 + Math.random() * 900000)}`;
+        const attempt = new PaymentAttempt({
+          paymentAttemptId: attemptId,
+          orderId: result.order._id,
+          userId: customerId,
+          provider: 'UPI',
+          amount: result.order.totalAmount,
+          transactionReference: txRef,
+          status: 'pending_verification'
+        });
+        await attempt.save();
+      }
     }
 
     // Trigger hooks outside database transaction (e.g. notifications and referral rewards)
-    if (result && result.order) {
+    if (result && result.order && !result.isDuplicate) {
       await CheckoutService.executePostCheckoutHooks(result.order);
     }
 
     const successResponse = { success: true, order: result.order };
-    if (idempotencyKey) {
-      await IdempotencyService.resolveRecord(customerId, String(idempotencyKey), 201, successResponse, result.order._id.toString());
-    }
-
     return res.status(201).json(successResponse);
   } catch (error: any) {
-    if (idempotencyKey) {
-      await IdempotencyService.failRecord(customerId, String(idempotencyKey));
-    }
     if (error.name === 'InsufficientStockError' || error instanceof InsufficientStockError) {
       return res.status(409).json({ success: false, message: error.message, productId: error.productId });
+    }
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
     }
     console.error('Create order with proof error:', error);
     return res.status(500).json({ success: false, message: error.message });
@@ -590,51 +513,71 @@ export const getOrdersByUserId = async (req: Request, res: Response) => {
 
 export const getOrders = async (req: Request, res: Response) => {
   try {
-    const filters: any = {};
-    if (req.query.customerId) filters.customerId = req.query.customerId;
-    if (req.query.sellerId) filters.sellerId = req.query.sellerId;
-    if (req.query.orderStatus) filters.orderStatus = req.query.orderStatus;
-    if (req.query.paymentStatus) filters.paymentStatus = req.query.paymentStatus;
-
-    // Security check: if user is not admin, enforce that they can only access their own data
     const user = (req as any).user;
-    const isAdmin = user && user.roles.includes('admin');
+    
+    // Explicitly define roles and precedence
+    const roles = Array.isArray(user?.roles)
+      ? user.roles
+      : [user?.role].filter(Boolean);
+
+    const isAdmin = roles.includes("admin");
+    const isSeller = roles.includes("vendor") || roles.includes("wholesaler") || roles.includes("manufacturer");
+    const isDeliveryAgent = roles.includes("delivery_partner") || roles.includes("delivery_agent");
+    const isFranchise = roles.includes("state_franchise") || roles.includes("district_franchise") || roles.includes("mandal_franchise");
+    const isCustomer = roles.includes("customer");
+
+    const filters: Record<string, any> = {};
+
+    // Only accept safe non-identity filters (whitelist)
+    if (req.query.orderStatus) {
+      filters.orderStatus = req.query.orderStatus;
+    } else if (req.query.status) {
+      filters.orderStatus = req.query.status;
+    }
+    
+    if (req.query.paymentStatus) {
+      filters.paymentStatus = req.query.paymentStatus;
+    }
 
     if (isAdmin) {
+      // Admins are allowed to query by customerId, sellerId, or other identity fields
       if (req.query.customerId) filters.customerId = req.query.customerId;
       if (req.query.sellerId) filters.sellerId = req.query.sellerId;
-    } else {
-      if (user.roles.includes('vendor') || user.roles.includes('wholesaler') || user.roles.includes('manufacturer')) {
-        filters.sellerId = user.id;
-      } else if (user.roles.includes('delivery_partner')) {
-        filters.deliveryAgentId = user.id;
-      } else if (
-        user.roles.includes('state_franchise') ||
-        user.roles.includes('district_franchise') ||
-        user.roles.includes('mandal_franchise')
-      ) {
-        // Find franchise profile
-        const franchise = await Franchise.findOne({ userId: user.id });
-        if (franchise) {
-          const { state, district, mandal, franchiseLevel } = franchise;
-          let scopeFilter: any = {};
-          if (franchiseLevel === 'state') {
-            scopeFilter = { state };
-          } else if (franchiseLevel === 'district') {
-            scopeFilter = { state, district };
-          } else {
-            scopeFilter = { state, district, mandal };
-          }
-          // Find all vendors in scope
-          const scopedVendors = await Vendor.find(scopeFilter).select('userId');
-          const scopedVendorUserIds = scopedVendors.map(v => v.userId);
-          filters.sellerId = { $in: scopedVendorUserIds };
+    } else if (isSeller) {
+      filters.sellerId = user.id;
+    } else if (isDeliveryAgent) {
+      filters.deliveryAgentId = user.id;
+    } else if (isFranchise) {
+      // Find franchise profile
+      const franchise = await Franchise.findOne({ userId: user.id });
+      if (franchise) {
+        const { state, district, mandal, franchiseLevel } = franchise;
+        let scopeFilter: any = {};
+        if (franchiseLevel === 'state') {
+          scopeFilter = { state };
+        } else if (franchiseLevel === 'district') {
+          scopeFilter = { state, district };
         } else {
-          filters.customerId = user.id;
+          scopeFilter = { state, district, mandal };
         }
+        // Find all vendors in scope
+        const scopedVendors = await Vendor.find(scopeFilter).select('userId');
+        const scopedVendorUserIds = scopedVendors.map(v => v.userId);
+        filters.sellerId = { $in: scopedVendorUserIds };
       } else {
         filters.customerId = user.id;
       }
+    } else if (isCustomer) {
+      // Never trust customer-supplied ownership fields
+      delete filters.customerId;
+      delete filters.userId;
+      delete filters.sellerId;
+      delete filters.vendorId;
+
+      filters.customerId = user.id;
+    } else {
+      // Default fallback
+      filters.customerId = user.id;
     }
 
     const page = Math.max(1, Number(req.query.page) || 1);
@@ -727,7 +670,7 @@ export const updateOrder = async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: "Resource not found" });
     }
 
-    const editableFields = ['orderStatus', 'deliveryAgentId', 'deliveryAgentType', 'deliveryAgentName', 'customerNotes', 'timeline', 'orderStatusObj'];
+    const editableFields = ['orderStatus', 'deliveryAgentId', 'deliveryAgentType', 'deliveryAgentName', 'customerNotes', 'timeline', 'orderStatusObj', 'courierPartner', 'trackingId'];
     const receivedKeys = Object.keys(req.body);
     const hasUnallowed = receivedKeys.some(k => !editableFields.includes(k));
     if (hasUnallowed && !isAdmin) {
@@ -1115,6 +1058,16 @@ export const updateOrderPackingChecklist = async (req: Request, res: Response) =
       message: isFullyPacked ? 'Order packed successfully!' : 'Checklist saved',
       order
     });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const getFirstOrderCheck = async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.params;
+    const orderCount = await Order.countDocuments({ customerId: userId });
+    res.status(200).json({ success: true, isFirstOrder: orderCount === 0 });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
   }

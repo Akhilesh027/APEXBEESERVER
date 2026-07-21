@@ -80,6 +80,8 @@ export interface IUser extends Document {
     totalEarned: number;
     totalWithdrawn: number;
   };
+  hasPets?: boolean;
+  hasKids?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -202,7 +204,9 @@ const UserSchema = new Schema<IUser>(
       holdBalance: { type: Number, default: 0 },
       totalEarned: { type: Number, default: 0 },
       totalWithdrawn: { type: Number, default: 0 }
-    }
+    },
+    hasPets: { type: Boolean, default: true },
+    hasKids: { type: Boolean, default: true }
   },
   { timestamps: true }
 );

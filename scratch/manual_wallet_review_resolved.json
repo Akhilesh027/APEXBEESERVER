@@ -1,0 +1,1331 @@
+[
+  {
+    "walletId": "6a475033fe6b8d23e562f625",
+    "userId": "6a475033fe6b8d23e562f623",
+    "category": "B_OPENING_BALANCE_MIGRATION",
+    "categoryReason": "Wallet has no transaction history but has 3 source records. Opening balance migration required.",
+    "currentBalances": {
+      "availableBalance": 225,
+      "pendingBalance": -225,
+      "withdrawnBalance": 0,
+      "totalCredits": 225,
+      "totalDebits": 0,
+      "version": 0
+    },
+    "expectedBalances": {
+      "availableBalance": 225,
+      "pendingBalance": 450,
+      "withdrawnBalance": 0
+    },
+    "replayedBalances": {
+      "availableBalance": 0,
+      "pendingBalance": 0,
+      "withdrawnBalance": 0
+    },
+    "evidenceSources": [
+      {
+        "type": "CommissionSettlement",
+        "id": "6a4774cafe6b8d23e56bf795",
+        "amount": 225,
+        "direction": "credit",
+        "status": "completed"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a50cec5b6cde5428cdc5f42",
+        "amount": 225,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a50d08fb6cde5428cdeb278",
+        "amount": 225,
+        "direction": "credit",
+        "status": "pending"
+      }
+    ],
+    "action": "REPAIR"
+  },
+  {
+    "walletId": "6a475241c2d2f2e2919ec32f",
+    "userId": "660000000000000000000001",
+    "category": "A_DETERMINISTIC",
+    "categoryReason": "Replay from WalletTransaction produces a non-negative balance that differs from stored. Deterministically repairable.",
+    "currentBalances": {
+      "availableBalance": 349.6,
+      "pendingBalance": 0,
+      "withdrawnBalance": 0,
+      "totalCredits": 1936.7500000000023,
+      "totalDebits": 0,
+      "version": 96
+    },
+    "expectedBalances": {
+      "availableBalance": 349.5999999999999,
+      "pendingBalance": 3182.57,
+      "withdrawnBalance": 0
+    },
+    "replayedBalances": {
+      "availableBalance": 349.6,
+      "pendingBalance": 0,
+      "withdrawnBalance": 0
+    },
+    "evidenceSources": [
+      {
+        "type": "CommissionSettlement",
+        "id": "6a47687220b40299ca8bf9a5",
+        "amount": 10,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a47687520b40299ca8bf9c9",
+        "amount": 9.2,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a4774cafe6b8d23e56bf7d7",
+        "amount": 1248.5,
+        "direction": "credit",
+        "status": "completed"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a4a9c85fe6b8d23e5377d27",
+        "amount": 224.765503578,
+        "direction": "credit",
+        "status": "completed"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a4aaba5fe6b8d23e54b34fd",
+        "amount": 21.875017500000002,
+        "direction": "credit",
+        "status": "completed"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a4fcc1f9f071069a1c3d6f8",
+        "amount": 10,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a4fcc219f071069a1c3d71c",
+        "amount": 9.2,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a50cec5b6cde5428cdc5f52",
+        "amount": 1248.5,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a50d090b6cde5428cdeb288",
+        "amount": 1248.5,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a515c53b6cde5428cec6f39",
+        "amount": 224.765503578,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a5a53cb9a1a777c7f41498d",
+        "amount": 10,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a5a53ce9a1a777c7f4149b1",
+        "amount": 9.2,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a5a54de4d8b2e35f7212f47",
+        "amount": 10,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a5a54e44d8b2e35f7212f6b",
+        "amount": 9.2,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a5a565ec0439292cb0e3446",
+        "amount": 10,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a5a5663c0439292cb0e346a",
+        "amount": 9.2,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a5a5837dd793dc2af1dd89b",
+        "amount": 10,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a5a583add793dc2af1dd8bf",
+        "amount": 9.2,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a5a5a08ddfb9609de60b7a7",
+        "amount": 10,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a5a5a0dddfb9609de60b7cb",
+        "amount": 9.2,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a5a5b3eb6d9c62c19847111",
+        "amount": 10,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a5a5b41b6d9c62c19847135",
+        "amount": 9.2,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a5a5c0941547366d8d76558",
+        "amount": 10,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a5a5c0d41547366d8d7657c",
+        "amount": 9.2,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a5a5d31b9b7cc7aef98244c",
+        "amount": 10,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a5a5d35b9b7cc7aef982470",
+        "amount": 9.2,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a5a5f02cd144b3c6ed6c13a",
+        "amount": 10,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a5a5f07cd144b3c6ed6c15e",
+        "amount": 9.2,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a5a5fbcbdcbec0869f9fc6d",
+        "amount": 10,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a5a5fc0bdcbec0869f9fc91",
+        "amount": 9.2,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a5a676a3c4e8f08707491e7",
+        "amount": 10,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a5a676c3c4e8f087074920b",
+        "amount": 9.2,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a5a67e8c04adfa505cf8c07",
+        "amount": 10,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a5a67e9c04adfa505cf8c2b",
+        "amount": 9.2,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a5a68d1c3ee2a36178c091a",
+        "amount": 10,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a5a68d3c3ee2a36178c093e",
+        "amount": 9.2,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a5a69dfd8ec20ce9d4f2920",
+        "amount": 10,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a5a69e0d8ec20ce9d4f2944",
+        "amount": 9.2,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a5a6ab96e39a2d108ea118b",
+        "amount": 10,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a5a6aba6e39a2d108ea11af",
+        "amount": 9.2,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a5a6bf4d21266e2dee3ce47",
+        "amount": 10,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a5a6bf7d21266e2dee3ce6b",
+        "amount": 9.2,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a5a6ceb8db7326473d0261f",
+        "amount": 10,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a5a6cee8db7326473d02643",
+        "amount": 9.2,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a5a6e8a02a219bbcdec53a0",
+        "amount": 10,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a5a6e8b02a219bbcdec53c4",
+        "amount": 9.2,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a5a6f4033fcd9db36b3f799",
+        "amount": 10,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a5a6f4233fcd9db36b3f7bd",
+        "amount": 9.2,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a5a6f9f9ea3252ce864d6aa",
+        "amount": 10,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a5a6fa09ea3252ce864d6ce",
+        "amount": 9.2,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a5a700e096cb4c173fb0998",
+        "amount": 10,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a5a700f096cb4c173fb09bc",
+        "amount": 9.2,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a5a708f7312deb2c3d858d3",
+        "amount": 10,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a5a70907312deb2c3d858f7",
+        "amount": 9.2,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "LegacyLedgerEntry",
+        "id": "6a47686920b40299ca8bf8ee",
+        "amount": 18.4,
+        "direction": "credit",
+        "status": "completed",
+        "category": "System Commission",
+        "referenceType": "ORDER",
+        "referenceId": "6a47686820b40299ca8bf8d5",
+        "remarks": "Released company payout for order 6a47686420b40299ca8bf857",
+        "date": "2026-07-03T07:44:41.451Z"
+      },
+      {
+        "type": "LegacyLedgerEntry",
+        "id": "6a47686e20b40299ca8bf94d",
+        "amount": 9.2,
+        "direction": "credit",
+        "status": "completed",
+        "category": "System Commission",
+        "referenceType": "ORDER",
+        "referenceId": "6a47686d20b40299ca8bf932",
+        "remarks": "Reversal of pending company payout for order 6a47686b20b40299ca8bf91e",
+        "date": "2026-07-03T07:44:46.070Z"
+      },
+      {
+        "type": "LegacyLedgerEntry",
+        "id": "6a47686e20b40299ca8bf974",
+        "amount": 9.2,
+        "direction": "debit",
+        "status": "completed",
+        "category": "System Commission",
+        "referenceType": "REVERSAL",
+        "referenceId": "6a47686d20b40299ca8bf932",
+        "remarks": "Reversal of pending company payout for order 6a47686b20b40299ca8bf91e",
+        "date": "2026-07-03T07:44:46.546Z"
+      },
+      {
+        "type": "LegacyLedgerEntry",
+        "id": "6a4fcc069f071069a1c3d611",
+        "amount": 18.4,
+        "direction": "credit",
+        "status": "completed",
+        "category": "System Commission",
+        "referenceType": "ORDER",
+        "referenceId": "6a4fcc059f071069a1c3d5f2",
+        "remarks": "Released company payout for order 6a4fcbfb9f071069a1c3d597",
+        "date": "2026-07-09T16:27:50.282Z"
+      },
+      {
+        "type": "LegacyLedgerEntry",
+        "id": "6a4fcc179f071069a1c3d688",
+        "amount": 9.2,
+        "direction": "credit",
+        "status": "completed",
+        "category": "System Commission",
+        "referenceType": "ORDER",
+        "referenceId": "6a4fcc0d9f071069a1c3d667",
+        "remarks": "Reversal of pending company payout for order 6a4fcc0a9f071069a1c3d653",
+        "date": "2026-07-09T16:28:07.135Z"
+      },
+      {
+        "type": "LegacyLedgerEntry",
+        "id": "6a4fcc179f071069a1c3d6c1",
+        "amount": 9.2,
+        "direction": "debit",
+        "status": "completed",
+        "category": "System Commission",
+        "referenceType": "REVERSAL",
+        "referenceId": "6a4fcc0d9f071069a1c3d667",
+        "remarks": "Reversal of pending company payout for order 6a4fcc0a9f071069a1c3d653",
+        "date": "2026-07-09T16:28:07.659Z"
+      },
+      {
+        "type": "LegacyLedgerEntry",
+        "id": "6a5a53c79a1a777c7f414953",
+        "amount": 9.2,
+        "direction": "debit",
+        "status": "completed",
+        "category": "System Commission",
+        "referenceType": "REVERSAL",
+        "referenceId": "6a5a53c39a1a777c7f4148ed",
+        "remarks": "Reversal of pending company payout for order 6a5a53bd9a1a777c7f4148d9",
+        "date": "2026-07-17T16:09:43.943Z"
+      },
+      {
+        "type": "LegacyLedgerEntry",
+        "id": "6a5a54d94d8b2e35f7212f0a",
+        "amount": 9.2,
+        "direction": "debit",
+        "status": "completed",
+        "category": "System Commission",
+        "referenceType": "REVERSAL",
+        "referenceId": "6a5a54d74d8b2e35f7212e98",
+        "remarks": "Reversal of pending company payout for order 6a5a54d44d8b2e35f7212e84",
+        "date": "2026-07-17T16:14:17.452Z"
+      },
+      {
+        "type": "LegacyLedgerEntry",
+        "id": "6a5a5657c0439292cb0e3406",
+        "amount": 9.2,
+        "direction": "debit",
+        "status": "completed",
+        "category": "System Commission",
+        "referenceType": "REVERSAL",
+        "referenceId": "6a5a5655c0439292cb0e3388",
+        "remarks": "Reversal of pending company payout for order 6a5a5652c0439292cb0e3374",
+        "date": "2026-07-17T16:20:39.888Z"
+      }
+    ],
+    "action": "REPAIR"
+  },
+  {
+    "walletId": "6a475241c2d2f2e2919ec331",
+    "userId": "660000000000000000000002",
+    "category": "B_OPENING_BALANCE_MIGRATION",
+    "categoryReason": "Wallet has no transaction history but has 6 source records. Opening balance migration required.",
+    "currentBalances": {
+      "availableBalance": 134.5,
+      "pendingBalance": -112.5,
+      "withdrawnBalance": 0,
+      "totalCredits": 134.5,
+      "totalDebits": 0,
+      "version": 0
+    },
+    "expectedBalances": {
+      "availableBalance": 134.5,
+      "pendingBalance": 245,
+      "withdrawnBalance": 0
+    },
+    "replayedBalances": {
+      "availableBalance": 0,
+      "pendingBalance": 0,
+      "withdrawnBalance": 0
+    },
+    "evidenceSources": [
+      {
+        "type": "CommissionSettlement",
+        "id": "6a4774cafe6b8d23e56bf7c9",
+        "amount": 112.5,
+        "direction": "credit",
+        "status": "completed"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a4a9c85fe6b8d23e5377d1b",
+        "amount": 20.000031050999997,
+        "direction": "credit",
+        "status": "completed"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a4aaba4fe6b8d23e54b346e",
+        "amount": 1.999998,
+        "direction": "credit",
+        "status": "completed"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a50cec5b6cde5428cdc5f4e",
+        "amount": 112.5,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a50d090b6cde5428cdeb284",
+        "amount": 112.5,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a515c52b6cde5428cec6f35",
+        "amount": 20.000031050999997,
+        "direction": "credit",
+        "status": "pending"
+      }
+    ],
+    "action": "REPAIR"
+  },
+  {
+    "walletId": "6a476e6ffe6b8d23e567c4de",
+    "userId": "6a476e6efe6b8d23e567c4cd",
+    "category": "B_OPENING_BALANCE_MIGRATION",
+    "categoryReason": "Wallet has no transaction history but has 3 source records. Opening balance migration required.",
+    "currentBalances": {
+      "availableBalance": 225,
+      "pendingBalance": -225,
+      "withdrawnBalance": 0,
+      "totalCredits": 225,
+      "totalDebits": 0,
+      "version": 0
+    },
+    "expectedBalances": {
+      "availableBalance": 225,
+      "pendingBalance": 450,
+      "withdrawnBalance": 0
+    },
+    "replayedBalances": {
+      "availableBalance": 0,
+      "pendingBalance": 0,
+      "withdrawnBalance": 0
+    },
+    "evidenceSources": [
+      {
+        "type": "CommissionSettlement",
+        "id": "6a4774cafe6b8d23e56bf7ab",
+        "amount": 225,
+        "direction": "credit",
+        "status": "completed"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a50cec5b6cde5428cdc5f46",
+        "amount": 225,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a50d08fb6cde5428cdeb27c",
+        "amount": 225,
+        "direction": "credit",
+        "status": "pending"
+      }
+    ],
+    "action": "REPAIR"
+  },
+  {
+    "walletId": "6a476ec9fe6b8d23e567f38d",
+    "userId": "6a47523fc2d2f2e2919ec2a3",
+    "category": "B_OPENING_BALANCE_MIGRATION",
+    "categoryReason": "Wallet has no transaction history but has 12 source records. Opening balance migration required.",
+    "currentBalances": {
+      "availableBalance": 18026,
+      "pendingBalance": 0,
+      "withdrawnBalance": 0,
+      "totalCredits": 18026,
+      "totalDebits": 0,
+      "version": 0
+    },
+    "expectedBalances": {
+      "availableBalance": 26,
+      "pendingBalance": 622.5,
+      "withdrawnBalance": 0
+    },
+    "replayedBalances": {
+      "availableBalance": 0,
+      "pendingBalance": 0,
+      "withdrawnBalance": 0
+    },
+    "evidenceSources": [
+      {
+        "type": "ReferralTransaction",
+        "id": "6a4a9c83fe6b8d23e5377b89",
+        "amount": 15,
+        "direction": "credit",
+        "status": "completed"
+      },
+      {
+        "type": "ReferralTransaction",
+        "id": "6a4a9c84fe6b8d23e5377c70",
+        "amount": 9.99989452,
+        "direction": "credit",
+        "status": "completed"
+      },
+      {
+        "type": "ReferralTransaction",
+        "id": "6a4aaba4fe6b8d23e54b33c0",
+        "amount": 0.999999,
+        "direction": "credit",
+        "status": "completed"
+      },
+      {
+        "type": "ReferralTransaction",
+        "id": "6a50cec5b6cde5428cdc5f1c",
+        "amount": 50,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "ReferralTransaction",
+        "id": "6a50cec5b6cde5428cdc5f2c",
+        "amount": 112.5,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "ReferralTransaction",
+        "id": "6a50cec5b6cde5428cdc5f36",
+        "amount": 225,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "ReferralTransaction",
+        "id": "6a50d08fb6cde5428cdeb26c",
+        "amount": 225,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "ReferralTransaction",
+        "id": "6a515c52b6cde5428cec6f27",
+        "amount": 9.99989452,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "LegacyLedgerEntry",
+        "id": "6a476ec9fe6b8d23e567f390",
+        "amount": 5000,
+        "direction": "credit",
+        "status": "completed",
+        "category": "Referral Bonus",
+        "referenceType": "REFERRAL",
+        "referenceId": "6a476e6ffe6b8d23e567c4db",
+        "remarks": "DISTRICT FRANCHISE referral approved",
+        "date": "2026-07-03T08:11:53.432Z"
+      },
+      {
+        "type": "LegacyLedgerEntry",
+        "id": "6a476f2efe6b8d23e56828e5",
+        "amount": 2500,
+        "direction": "credit",
+        "status": "completed",
+        "category": "Referral Bonus",
+        "referenceType": "REFERRAL",
+        "referenceId": "6a476ee7fe6b8d23e568038f",
+        "remarks": "MANDAL FRANCHISE referral approved",
+        "date": "2026-07-03T08:13:34.134Z"
+      },
+      {
+        "type": "LegacyLedgerEntry",
+        "id": "6a477099fe6b8d23e568f80f",
+        "amount": 500,
+        "direction": "credit",
+        "status": "completed",
+        "category": "Referral Bonus",
+        "referenceType": "REFERRAL",
+        "referenceId": "6a477021fe6b8d23e568b553",
+        "remarks": "VENDOR referral approved",
+        "date": "2026-07-03T08:19:37.221Z"
+      },
+      {
+        "type": "LegacyLedgerEntry",
+        "id": "6a48f228fe6b8d23e5d310e2",
+        "amount": 10000,
+        "direction": "credit",
+        "status": "completed",
+        "category": "Referral Bonus",
+        "referenceType": "REFERRAL",
+        "referenceId": "6a487770fe6b8d23e5b9e792",
+        "remarks": "STATE FRANCHISE referral approved",
+        "date": "2026-07-04T11:44:40.890Z"
+      }
+    ],
+    "action": "REPAIR"
+  },
+  {
+    "walletId": "6a476ee7fe6b8d23e5680392",
+    "userId": "6a476ee7fe6b8d23e5680389",
+    "category": "B_OPENING_BALANCE_MIGRATION",
+    "categoryReason": "Wallet has no transaction history but has 3 source records. Opening balance migration required.",
+    "currentBalances": {
+      "availableBalance": 225,
+      "pendingBalance": -225,
+      "withdrawnBalance": 0,
+      "totalCredits": 225,
+      "totalDebits": 0,
+      "version": 0
+    },
+    "expectedBalances": {
+      "availableBalance": 225,
+      "pendingBalance": 450,
+      "withdrawnBalance": 0
+    },
+    "replayedBalances": {
+      "availableBalance": 0,
+      "pendingBalance": 0,
+      "withdrawnBalance": 0
+    },
+    "evidenceSources": [
+      {
+        "type": "CommissionSettlement",
+        "id": "6a4774cafe6b8d23e56bf7ba",
+        "amount": 225,
+        "direction": "credit",
+        "status": "completed"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a50cec5b6cde5428cdc5f4a",
+        "amount": 225,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a50d090b6cde5428cdeb280",
+        "amount": 225,
+        "direction": "credit",
+        "status": "pending"
+      }
+    ],
+    "action": "REPAIR"
+  },
+  {
+    "walletId": "6a477021fe6b8d23e568b55b",
+    "userId": "6a477021fe6b8d23e568b53e",
+    "category": "A_DETERMINISTIC",
+    "categoryReason": "Replay from WalletTransaction produces a non-negative balance that differs from stored. Deterministically repairable.",
+    "currentBalances": {
+      "availableBalance": 8.55,
+      "pendingBalance": 0,
+      "withdrawnBalance": 0,
+      "totalCredits": 2258.55,
+      "totalDebits": 0,
+      "version": 1
+    },
+    "expectedBalances": {
+      "availableBalance": 8.55,
+      "pendingBalance": 4500,
+      "withdrawnBalance": 0
+    },
+    "replayedBalances": {
+      "availableBalance": 8.55,
+      "pendingBalance": 0,
+      "withdrawnBalance": 0
+    },
+    "evidenceSources": [
+      {
+        "type": "CommissionSettlement",
+        "id": "6a4774cafe6b8d23e56bf771",
+        "amount": 2250,
+        "direction": "credit",
+        "status": "completed"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a50cec5b6cde5428cdc5f3b",
+        "amount": 2250,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a50d08fb6cde5428cdeb271",
+        "amount": 2250,
+        "direction": "credit",
+        "status": "pending"
+      }
+    ],
+    "action": "REPAIR"
+  },
+  {
+    "walletId": "6a4773fffe6b8d23e56b6967",
+    "userId": "6a4773fffe6b8d23e56b692a",
+    "category": "C_MISSING_RECORD",
+    "categoryReason": "Transaction replay produces negative intermediate balance. Missing credit or duplicate debit suspected.",
+    "currentBalances": {
+      "availableBalance": 118.5,
+      "pendingBalance": -127.5,
+      "withdrawnBalance": 0,
+      "totalCredits": 127.5,
+      "totalDebits": 9,
+      "version": 0
+    },
+    "expectedBalances": {
+      "availableBalance": 118.5,
+      "pendingBalance": 0,
+      "withdrawnBalance": 9
+    },
+    "replayedBalances": {
+      "availableBalance": -9,
+      "pendingBalance": 0,
+      "withdrawnBalance": 0
+    },
+    "evidenceSources": [
+      {
+        "type": "ReferralTransaction",
+        "id": "6a4774c9fe6b8d23e56bf6fe",
+        "amount": 15,
+        "direction": "credit",
+        "status": "completed"
+      },
+      {
+        "type": "ReferralTransaction",
+        "id": "6a4774c9fe6b8d23e56bf74c",
+        "amount": 112.5,
+        "direction": "credit",
+        "status": "completed"
+      }
+    ],
+    "action": "REPAIR"
+  },
+  {
+    "walletId": "6a477429fe6b8d23e56b88a7",
+    "userId": "6a477429fe6b8d23e56b887e",
+    "category": "B_OPENING_BALANCE_MIGRATION",
+    "categoryReason": "Wallet has no transaction history but has 2 source records. Opening balance migration required.",
+    "currentBalances": {
+      "availableBalance": 137.5,
+      "pendingBalance": -137.5,
+      "withdrawnBalance": 0,
+      "totalCredits": 137.5,
+      "totalDebits": 0,
+      "version": 0
+    },
+    "expectedBalances": {
+      "availableBalance": 137.5,
+      "pendingBalance": 0,
+      "withdrawnBalance": 0
+    },
+    "replayedBalances": {
+      "availableBalance": 0,
+      "pendingBalance": 0,
+      "withdrawnBalance": 0
+    },
+    "evidenceSources": [
+      {
+        "type": "ReferralTransaction",
+        "id": "6a4774c9fe6b8d23e56bf6f3",
+        "amount": 25,
+        "direction": "credit",
+        "status": "completed"
+      },
+      {
+        "type": "ReferralTransaction",
+        "id": "6a4774c9fe6b8d23e56bf72f",
+        "amount": 112.5,
+        "direction": "credit",
+        "status": "completed"
+      }
+    ],
+    "action": "REPAIR"
+  },
+  {
+    "walletId": "6a477454fe6b8d23e56ba75a",
+    "userId": "6a477454fe6b8d23e56ba72b",
+    "category": "B_OPENING_BALANCE_MIGRATION",
+    "categoryReason": "Wallet has no transaction history but has 3 source records. Opening balance migration required.",
+    "currentBalances": {
+      "availableBalance": 387.5,
+      "pendingBalance": -387.5,
+      "withdrawnBalance": 0,
+      "totalCredits": 387.5,
+      "totalDebits": 0,
+      "version": 0
+    },
+    "expectedBalances": {
+      "availableBalance": 387.5,
+      "pendingBalance": 0,
+      "withdrawnBalance": 0
+    },
+    "replayedBalances": {
+      "availableBalance": 0,
+      "pendingBalance": 0,
+      "withdrawnBalance": 0
+    },
+    "evidenceSources": [
+      {
+        "type": "ReferralTransaction",
+        "id": "6a4774c9fe6b8d23e56bf6ca",
+        "amount": 50,
+        "direction": "credit",
+        "status": "completed"
+      },
+      {
+        "type": "ReferralTransaction",
+        "id": "6a4774c9fe6b8d23e56bf712",
+        "amount": 112.5,
+        "direction": "credit",
+        "status": "completed"
+      },
+      {
+        "type": "ReferralTransaction",
+        "id": "6a4774c9fe6b8d23e56bf72b",
+        "amount": 225,
+        "direction": "credit",
+        "status": "completed"
+      }
+    ],
+    "action": "REPAIR"
+  },
+  {
+    "walletId": "6a477603fe6b8d23e56cce98",
+    "userId": "6a477603fe6b8d23e56cce7d",
+    "category": "B_OPENING_BALANCE_MIGRATION",
+    "categoryReason": "Wallet has no transaction history but has 3 source records. Opening balance migration required.",
+    "currentBalances": {
+      "availableBalance": 0,
+      "pendingBalance": 150,
+      "withdrawnBalance": 0,
+      "totalCredits": 0,
+      "totalDebits": 0,
+      "version": 0
+    },
+    "expectedBalances": {
+      "availableBalance": 0,
+      "pendingBalance": 0,
+      "withdrawnBalance": 0
+    },
+    "replayedBalances": {
+      "availableBalance": 0,
+      "pendingBalance": 0,
+      "withdrawnBalance": 0
+    },
+    "evidenceSources": [
+      {
+        "type": "LegacyLedgerEntry",
+        "id": "6a477771fe6b8d23e56dd391",
+        "amount": 50,
+        "direction": "credit",
+        "status": "pending",
+        "category": "Delivery Earnings",
+        "referenceType": "ORDER",
+        "referenceId": "6a4774c8fe6b8d23e56bf6a6",
+        "remarks": "Earnings for delivery of order AB-1783067848996-1008",
+        "date": "2026-07-03T08:48:49.477Z"
+      },
+      {
+        "type": "LegacyLedgerEntry",
+        "id": "6a50d1b678e54637fc0807fd",
+        "amount": 50,
+        "direction": "credit",
+        "status": "pending",
+        "category": "Delivery Earnings",
+        "referenceType": "ORDER",
+        "referenceId": "6a50cec5b6cde5428cdc5eb6",
+        "remarks": "Earnings for delivery of order AB-1783680709406-2062",
+        "date": "2026-07-10T11:04:22.149Z"
+      },
+      {
+        "type": "LegacyLedgerEntry",
+        "id": "6a50d39d78e54637fc081eab",
+        "amount": 50,
+        "direction": "credit",
+        "status": "pending",
+        "category": "Delivery Earnings",
+        "referenceType": "ORDER",
+        "referenceId": "6a50d08fb6cde5428cdeb258",
+        "remarks": "Earnings for delivery of order AB-1783681167814-2991",
+        "date": "2026-07-10T11:12:29.964Z"
+      }
+    ],
+    "action": "REPAIR"
+  },
+  {
+    "walletId": "6a487770fe6b8d23e5b9e795",
+    "userId": "6a487770fe6b8d23e5b9e790",
+    "category": "C_MISSING_RECORD",
+    "categoryReason": "Transaction replay produces negative intermediate balance. Missing credit or duplicate debit suspected.",
+    "currentBalances": {
+      "availableBalance": 1849.9899999999998,
+      "pendingBalance": 1000,
+      "withdrawnBalance": 0,
+      "totalCredits": 2849.99,
+      "totalDebits": 0,
+      "version": 1
+    },
+    "expectedBalances": {
+      "availableBalance": 349.99,
+      "pendingBalance": 1000,
+      "withdrawnBalance": 0
+    },
+    "replayedBalances": {
+      "availableBalance": -1000,
+      "pendingBalance": 1000,
+      "withdrawnBalance": 0
+    },
+    "evidenceSources": [
+      {
+        "type": "CommissionSettlement",
+        "id": "6a4a9c84fe6b8d23e5377c8f",
+        "amount": 296.98900000000003,
+        "direction": "credit",
+        "status": "completed"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a4a9c84fe6b8d23e5377ce3",
+        "amount": 4.99994726,
+        "direction": "credit",
+        "status": "completed"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a4aaba4fe6b8d23e54b3458",
+        "amount": 0.999999,
+        "direction": "credit",
+        "status": "completed"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a515c52b6cde5428cec6f2c",
+        "amount": 296.98900000000003,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a515c52b6cde5428cec6f31",
+        "amount": 4.99994726,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "ReferralTransaction",
+        "id": "6a4a9c83fe6b8d23e5377b82",
+        "amount": 25,
+        "direction": "credit",
+        "status": "completed"
+      },
+      {
+        "type": "ReferralTransaction",
+        "id": "6a4a9c84fe6b8d23e5377c63",
+        "amount": 20.000031050999997,
+        "direction": "credit",
+        "status": "completed"
+      },
+      {
+        "type": "ReferralTransaction",
+        "id": "6a4aaba3fe6b8d23e54b339a",
+        "amount": 1.999998,
+        "direction": "credit",
+        "status": "completed"
+      },
+      {
+        "type": "ReferralTransaction",
+        "id": "6a515c52b6cde5428cec6f23",
+        "amount": 20.000031050999997,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "LegacyLedgerEntry",
+        "id": "6a49b36cfe6b8d23e5172087",
+        "amount": 2500,
+        "direction": "credit",
+        "status": "completed",
+        "category": "Referral Bonus",
+        "referenceType": "REFERRAL",
+        "referenceId": "6a49b086fe6b8d23e51662c5",
+        "remarks": "MANDAL FRANCHISE referral approved",
+        "date": "2026-07-05T01:29:16.092Z"
+      }
+    ],
+    "action": "REPAIR"
+  },
+  {
+    "walletId": "6a49b086fe6b8d23e51662c8",
+    "userId": "6a49b086fe6b8d23e51662c2",
+    "category": "B_OPENING_BALANCE_MIGRATION",
+    "categoryReason": "Wallet has no transaction history but has 8 source records. Opening balance migration required.",
+    "currentBalances": {
+      "availableBalance": 5174,
+      "pendingBalance": 0,
+      "withdrawnBalance": 0,
+      "totalCredits": 5174,
+      "totalDebits": 0,
+      "version": 0
+    },
+    "expectedBalances": {
+      "availableBalance": 174,
+      "pendingBalance": 40,
+      "withdrawnBalance": 0
+    },
+    "replayedBalances": {
+      "availableBalance": 0,
+      "pendingBalance": 0,
+      "withdrawnBalance": 0
+    },
+    "evidenceSources": [
+      {
+        "type": "CommissionSettlement",
+        "id": "6a4aaba4fe6b8d23e54b3433",
+        "amount": 63,
+        "direction": "credit",
+        "status": "completed"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a4aaba4fe6b8d23e54b3469",
+        "amount": 2.999997,
+        "direction": "credit",
+        "status": "completed"
+      },
+      {
+        "type": "ReferralTransaction",
+        "id": "6a4a9c83fe6b8d23e5377b7a",
+        "amount": 50,
+        "direction": "credit",
+        "status": "completed"
+      },
+      {
+        "type": "ReferralTransaction",
+        "id": "6a4a9c83fe6b8d23e5377c05",
+        "amount": 15.000083791,
+        "direction": "credit",
+        "status": "completed"
+      },
+      {
+        "type": "ReferralTransaction",
+        "id": "6a4a9c84fe6b8d23e5377c46",
+        "amount": 40.000062101999994,
+        "direction": "credit",
+        "status": "completed"
+      },
+      {
+        "type": "ReferralTransaction",
+        "id": "6a4aaba3fe6b8d23e54b3375",
+        "amount": 2.999997,
+        "direction": "credit",
+        "status": "completed"
+      },
+      {
+        "type": "ReferralTransaction",
+        "id": "6a515c52b6cde5428cec6f1f",
+        "amount": 40.000062101999994,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "LegacyLedgerEntry",
+        "id": "6a4aaa12fe6b8d23e54912b0",
+        "amount": 5000,
+        "direction": "credit",
+        "status": "completed",
+        "category": "Referral Bonus",
+        "referenceType": "REFERRAL",
+        "referenceId": "6a4a6eeffe6b8d23e533e052",
+        "remarks": "DISTRICT FRANCHISE referral approved",
+        "date": "2026-07-05T19:01:38.105Z"
+      }
+    ],
+    "action": "REPAIR"
+  },
+  {
+    "walletId": "6a5b2605a4d43ac24116163e",
+    "userId": "6a547149708737bdfb03427d",
+    "category": "B_OPENING_BALANCE_MIGRATION",
+    "categoryReason": "Wallet has no transaction history but has 2 source records. Opening balance migration required.",
+    "currentBalances": {
+      "availableBalance": 0,
+      "pendingBalance": 0,
+      "withdrawnBalance": 0,
+      "totalCredits": 0,
+      "totalDebits": 0,
+      "version": 0
+    },
+    "expectedBalances": {
+      "availableBalance": 0,
+      "pendingBalance": 1298,
+      "withdrawnBalance": 0
+    },
+    "replayedBalances": {
+      "availableBalance": 0,
+      "pendingBalance": 0,
+      "withdrawnBalance": 0
+    },
+    "evidenceSources": [
+      {
+        "type": "CommissionSettlement",
+        "id": "6a5afb7010ced790f85ff012",
+        "amount": 599,
+        "direction": "credit",
+        "status": "pending"
+      },
+      {
+        "type": "CommissionSettlement",
+        "id": "6a5afbf410ced790f85ff45d",
+        "amount": 699,
+        "direction": "credit",
+        "status": "pending"
+      }
+    ],
+    "action": "REPAIR"
+  }
+]

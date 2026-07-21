@@ -43,6 +43,7 @@ import {
 import { requestVendorDocument } from '../controllers/vendorController';
 import { processReferralReleases } from '../controllers/referralController';
 import { protect, restrictTo } from '../middleware/auth';
+import { importProductsCSV, exportProductsCSV } from '../controllers/bulkController';
 
 const router = Router();
 
@@ -91,6 +92,10 @@ router.post('/inventory/cleanup-expired-reservations', protect, restrictTo('admi
 router.get('/feature-flags', protect, restrictTo('admin'), getFeatureFlag);
 router.post('/feature-flags', protect, restrictTo('admin'), setFeatureFlag);
 router.get('/metrics', protect, restrictTo('admin'), getMetrics);
+
+// Bulk product uploads
+router.post('/bulk/products/import', protect, restrictTo('admin'), importProductsCSV);
+router.get('/bulk/products/export', protect, restrictTo('admin'), exportProductsCSV);
 
 export default router;
 

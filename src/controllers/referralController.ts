@@ -538,3 +538,86 @@ export const getReferralEarningsSummary = async (req: Request, res: Response) =>
     return res.status(500).json({ success: false, message: error.message });
   }
 };
+
+// GET /api/referrals/leaderboard
+export const getReferralLeaderboard = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.id || (req as any).user?._id;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    // Aggregate total earnings from ReferralTransaction
+    const transactions = await ReferralTransaction.aggregate([
+      {
+        $group: {
+          _id: "$recipientUserId",
+          totalEarnings: { $sum: "$amount" },
+          referralCount: { $addToSet: "$referredUserId" }
+        }
+      },
+      {
+        $project: {
+          recipientUserId: "$_id",
+          totalEarnings: 1,
+          referralCount: { $size: "$referralCount" }
+        }
+      },
+      { $sort: { totalEarnings: -1 } }
+    ]);
+
+    // Populate user info for top 20
+    const populated = [];
+    let userRank = -1;
+    let userEarnings = 0;
+    let userCount = 0;
+
+    for (let i = 0; i < transactions.length; i++) {
+      const tx = transactions[i];
+      const isCurrentUser = tx.recipientUserId.toString() === userId.toString();
+      
+      const userInfo = await User.findById(tx.recipientUserId, "name email referralCode");
+      if (userInfo) {
+        if (isCurrentUser) {
+          userRank = i + 1;
+          userEarnings = tx.totalEarnings;
+          userCount = tx.referralCount;
+        }
+
+        // Add to leaderboard if within top 20
+        if (i < 20) {
+          populated.push({
+            rank: i + 1,
+            name: userInfo.name,
+            email: userInfo.email,
+            referralCode: userInfo.referralCode,
+            earnings: tx.totalEarnings,
+            count: tx.referralCount,
+            isCurrentUser
+          });
+        }
+      }
+    }
+
+    // Fallback if current user is not in transactions (i.e. has 0 released earnings)
+    if (userRank === -1) {
+      const currentUser = await User.findById(userId, "name email referralCode");
+      userRank = transactions.length + 1;
+      userEarnings = 0;
+      userCount = await User.countDocuments({ "referralHierarchy.level1UserId": userId });
+    }
+
+    return res.status(200).json({
+      success: true,
+      leaderboard: populated,
+      currentUserRank: {
+        rank: userRank,
+        earnings: userEarnings,
+        count: userCount
+      }
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+

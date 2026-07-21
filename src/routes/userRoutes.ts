@@ -11,7 +11,8 @@ import {
   getUserBankDetails,
   updateUserBankDetails,
   getUserCommissions,
-  getUserWallet
+  getUserWallet,
+  getUserRewards
 } from '../controllers/userController';
 
 const router = Router();
@@ -34,5 +35,6 @@ router.get('/bank-details', protect, getUserBankDetails);
 router.put('/bank-details', protect, updateUserBankDetails);
 router.get('/commissions', protect, getUserCommissions);
 router.get('/wallet/:id', protect, getUserWallet);
+router.get('/rewards/:id', protect, getUserRewards);
 
 export default router;

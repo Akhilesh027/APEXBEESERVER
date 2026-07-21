@@ -139,8 +139,21 @@ const OrderSchema = new mongoose_1.Schema({
     courierPartner: {
         type: String,
         default: ""
-    }
+    },
+    checkoutIdempotencyKey: { type: String, default: null },
+    checkoutRequestHash: { type: String, default: null }
 }, { timestamps: true });
+OrderSchema.index({
+    customerId: 1,
+    checkoutIdempotencyKey: 1,
+}, {
+    name: "uniq_customer_checkout_idempotency",
+    unique: true,
+    partialFilterExpression: {
+        customerId: { $type: "objectId" },
+        checkoutIdempotencyKey: { $type: "string" },
+    },
+});
 OrderSchema.index({ sellerId: 1, createdAt: -1 });
 OrderSchema.index({ customerId: 1, createdAt: -1 });
 OrderSchema.index({ orderStatus: 1, createdAt: -1 });

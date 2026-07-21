@@ -78,10 +78,11 @@ export class InventoryService {
         variantId: vId ? new mongoose.Types.ObjectId(vId) : null,
       };
 
-      // Atomic constraint: onHand - reserved >= quantity
+      // Atomic constraint: availableStock - reservedStock >= quantity
       const update = {
         $inc: {
           reserved: item.quantity,
+          reservedStock: item.quantity,
           version: 1,
         },
       };
@@ -92,7 +93,12 @@ export class InventoryService {
           ...filter,
           $expr: {
             $gte: [
-              { $subtract: ['$onHand', '$reserved'] },
+              {
+                $subtract: [
+                  { $ifNull: ['$availableStock', { $ifNull: ['$onHand', 0] }] },
+                  { $ifNull: ['$reservedStock', { $ifNull: ['$reserved', 0] }] }
+                ]
+              },
               item.quantity,
             ],
           },
@@ -150,13 +156,18 @@ export class InventoryService {
         {
           productId: res.productId,
           variantId: res.variantId || null,
-          reserved: { $gte: res.quantity },
+          $or: [
+            { reserved: { $gte: res.quantity } },
+            { reservedStock: { $gte: res.quantity } }
+          ]
         },
         {
           $inc: {
             reserved: -res.quantity,
+            reservedStock: -res.quantity,
             sold: res.quantity,
             onHand: -res.quantity,
+            availableStock: -res.quantity,
             version: 1,
           },
         },
@@ -194,11 +205,15 @@ export class InventoryService {
         {
           productId: res.productId,
           variantId: res.variantId || null,
-          reserved: { $gte: res.quantity },
+          $or: [
+            { reserved: { $gte: res.quantity } },
+            { reservedStock: { $gte: res.quantity } }
+          ]
         },
         {
           $inc: {
             reserved: -res.quantity,
+            reservedStock: -res.quantity,
             version: 1,
           },
         },

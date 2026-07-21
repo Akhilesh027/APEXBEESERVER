@@ -6,7 +6,9 @@ import {
    rejectWithdrawal,
    getAllWithdrawals,
    getMyWallet,
-   addFunds
+   addFunds,
+   requestWithdrawalOtp,
+   verifyWithdrawalOtp
 } from "../controllers/walletController";
 import { protect, restrictTo } from "../middleware/auth";
 
@@ -16,6 +18,8 @@ router.get("/my-wallet", protect, getMyWallet);
 router.post("/add-funds", protect, addFunds);
 router.post("/withdrawals", protect, createWithdrawalRequest);
 router.get("/withdrawals", protect, getWithdrawalsHistory);
+router.post("/withdraw/request", protect, requestWithdrawalOtp);
+router.post("/withdraw/verify", protect, verifyWithdrawalOtp);
 
 // Admin endpoints
 router.get("/admin/withdrawals", protect, restrictTo("admin"), getAllWithdrawals);

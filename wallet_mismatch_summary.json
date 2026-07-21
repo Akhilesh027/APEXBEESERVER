@@ -1,0 +1,67 @@
+{
+  "Missing transaction history": {
+    "count": 0,
+    "walletIds": [],
+    "userIds": []
+  },
+  "Invalid transaction direction": {
+    "count": 0,
+    "walletIds": [],
+    "userIds": []
+  },
+  "Missing required balance field": {
+    "count": 0,
+    "walletIds": [],
+    "userIds": []
+  },
+  "Available-balance mismatch": {
+    "count": 2,
+    "walletIds": [
+      "6a4773fffe6b8d23e56b6967",
+      "6a487770fe6b8d23e5b9e795"
+    ],
+    "userIds": [
+      "6a4773fffe6b8d23e56b692a",
+      "6a487770fe6b8d23e5b9e790"
+    ]
+  },
+  "Pending-balance mismatch": {
+    "count": 1,
+    "walletIds": [
+      "6a487770fe6b8d23e5b9e795"
+    ],
+    "userIds": [
+      "6a487770fe6b8d23e5b9e790"
+    ]
+  },
+  "Withdrawn-balance mismatch": {
+    "count": 0,
+    "walletIds": [],
+    "userIds": []
+  },
+  "Legacy embedded-ledger mismatch": {
+    "count": 0,
+    "walletIds": [],
+    "userIds": []
+  },
+  "Duplicate transaction reference": {
+    "count": 0,
+    "walletIds": [],
+    "userIds": []
+  },
+  "Transaction ordering problem": {
+    "count": 0,
+    "walletIds": [],
+    "userIds": []
+  },
+  "Likely audit-formula false positive": {
+    "count": 0,
+    "walletIds": [],
+    "userIds": []
+  },
+  "Confirmed wallet corruption": {
+    "count": 0,
+    "walletIds": [],
+    "userIds": []
+  }
+}

@@ -12,6 +12,7 @@ const inventoryService_1 = require("./inventoryService");
 const SettlementEngine_1 = require("./SettlementEngine");
 const couponService_1 = require("./couponService");
 const TransactionalOutbox_1 = require("./TransactionalOutbox");
+const crypto_1 = __importDefault(require("crypto"));
 class CheckoutService {
     /**
      * Main checkout transaction flow orchestrating calculations and database updates.
@@ -69,6 +70,8 @@ class CheckoutService {
             isScheduledSubscription: input.isScheduledSubscription || false,
             scheduleDetails: input.scheduleDetails,
             orderStatusObj,
+            checkoutIdempotencyKey: input.checkoutIdempotencyKey || null,
+            checkoutRequestHash: input.checkoutRequestHash || null,
         });
         // 3. Atomically redeem coupon under the session if present
         if (input.couponCode && input.couponCode.trim()) {
@@ -106,6 +109,96 @@ class CheckoutService {
             order: newOrder,
             pricing,
         };
+    }
+    /**
+     * Safe checkout entry point implementing idempotency checks and MongoDB unique index safeguards.
+     */
+    static async processCheckoutWithIdempotency(input, idempotencyKey, reqBody, session) {
+        const normalizedKey = typeof idempotencyKey === 'string' ? idempotencyKey.trim() : '';
+        if (idempotencyKey !== undefined && !normalizedKey) {
+            const valErr = new Error('Checkout idempotency key is required');
+            valErr.statusCode = 400;
+            throw valErr;
+        }
+        // Generate request fingerprint hash
+        const fingerprintPayload = {
+            orderItems: input.orderItems,
+            couponCode: input.couponCode,
+            shippingAddress: input.shippingAddress,
+            paymentDetails: input.paymentDetails
+        };
+        const hash = crypto_1.default.createHash('sha256').update(JSON.stringify(fingerprintPayload)).digest('hex');
+        if (normalizedKey) {
+            const existing = await Order_1.Order.findOne({
+                customerId: new mongoose_1.default.Types.ObjectId(input.userId),
+                checkoutIdempotencyKey: normalizedKey
+            }).session(session || null);
+            if (existing) {
+                if (existing.checkoutRequestHash === hash) {
+                    return { order: existing, pricing: existing.orderSummary, isDuplicate: true };
+                }
+                else {
+                    const conflictErr = new Error('Idempotency key match, but request payload does not match.');
+                    conflictErr.statusCode = 409;
+                    throw conflictErr;
+                }
+            }
+        }
+        input.checkoutIdempotencyKey = normalizedKey || undefined;
+        input.checkoutRequestHash = normalizedKey ? hash : undefined;
+        try {
+            if (session) {
+                return await this.processCheckout(input, session);
+            }
+            else {
+                let result;
+                let localSession = null;
+                try {
+                    localSession = await mongoose_1.default.startSession();
+                }
+                catch (e) {
+                    // Fallback if Mongoose sessions are unsupported
+                }
+                if (localSession) {
+                    localSession.startTransaction();
+                    try {
+                        result = await this.processCheckout(input, localSession);
+                        await localSession.commitTransaction();
+                    }
+                    catch (err) {
+                        await localSession.abortTransaction();
+                        throw err;
+                    }
+                    finally {
+                        await localSession.endSession();
+                    }
+                }
+                else {
+                    result = await this.processCheckout(input, {});
+                }
+                return result;
+            }
+        }
+        catch (err) {
+            // Catch MongoDB Duplicate Key Exception (Error Code: 11000)
+            if (err.code === 11000 && normalizedKey) {
+                const raceExisting = await Order_1.Order.findOne({
+                    customerId: new mongoose_1.default.Types.ObjectId(input.userId),
+                    checkoutIdempotencyKey: normalizedKey
+                }).session(session || null);
+                if (raceExisting) {
+                    if (raceExisting.checkoutRequestHash === hash) {
+                        return { order: raceExisting, pricing: raceExisting.orderSummary, isDuplicate: true };
+                    }
+                    else {
+                        const conflictErr = new Error('Idempotency key match, but request payload does not match.');
+                        conflictErr.statusCode = 409;
+                        throw conflictErr;
+                    }
+                }
+            }
+            throw err;
+        }
     }
     /**
      * Triggers post-checkout hooks (like referral holds) outside the main transaction.

@@ -3,6 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.app = void 0;
 const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
 const path_1 = __importDefault(require("path"));
@@ -53,6 +54,7 @@ const localShopRoutes_1 = __importDefault(require("./routes/localShopRoutes"));
 const b2bRoutes_1 = __importDefault(require("./routes/b2bRoutes"));
 // Initialize express app
 const app = (0, express_1.default)();
+exports.app = app;
 app.use(correlation_1.correlationMiddleware);
 // Apply global middlewares
 app.use((0, cors_1.default)({
@@ -227,9 +229,14 @@ const startServer = async () => {
             }
             console.log('[REDIS] Connection verified successfully.');
         }
-        await seedReferralDefaults();
-        await (0, seed_1.seedDatabase)();
-        await (0, seedTemplates_1.seedNotificationTemplates)(); // Seed event notifications templates
+        if (process.env.NODE_APP_INSTANCE === undefined || process.env.NODE_APP_INSTANCE === '0') {
+            await seedReferralDefaults();
+            await (0, seed_1.seedDatabase)();
+            await (0, seedTemplates_1.seedNotificationTemplates)(); // Seed event notifications templates
+        }
+        else {
+            console.log(`[Server] Skipping referral defaults, database, and notification template seeding on clustered instance ${process.env.NODE_APP_INSTANCE}`);
+        }
         (0, notificationListeners_1.initNotificationListeners)(); // Registry listeners for events
         let server = null;
         if (env_1.env.PROCESS_TYPE !== 'worker') {
@@ -327,4 +334,6 @@ const startServer = async () => {
         process.exit(1);
     }
 };
-startServer();
+if (process.env.NODE_ENV !== 'test') {
+    startServer();
+}

@@ -7,6 +7,7 @@ import { NotificationTemplate } from '../models/NotificationTemplate';
 import { NotificationJob } from '../models/NotificationJob';
 import { User } from '../../../models/User';
 import { notificationEmitter } from '../events/notificationEmitter';
+import { sendRealtimeNotification } from '../websocket/socketServer';
 
 /**
  * Gets a paginated list of notifications for the logged-in user.
@@ -411,6 +412,36 @@ export const getAnalytics = async (req: AuthRequest, res: Response): Promise<voi
           failedJobs
         }
       }
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * Direct emit test helper for Socket.IO horizontal scaling rehearsal.
+ */
+export const testDirectEmitNotification = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { userId, title, message } = req.body;
+    if (!userId) {
+      res.status(400).json({ success: false, message: 'userId is required' });
+      return;
+    }
+
+    const notification = {
+      title: title || 'Rehearsal Direct Notification',
+      message: message || 'Hello from Socket.IO test!',
+      createdAt: new Date(),
+      status: 'unread'
+    };
+
+    sendRealtimeNotification(userId, notification);
+
+    res.status(200).json({
+      success: true,
+      message: 'Direct notification emit initiated via socket server.',
+      notification
     });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });

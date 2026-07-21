@@ -5,6 +5,8 @@ export interface ICoupon extends Document {
   discountType: 'percentage' | 'flat' | 'Percentage' | 'Fixed Amount';
   discountValue: number;
   minSubtotal?: number;
+  minOrderAmount?: number;
+  maxDiscountAmount?: number;
   expiryDate: string;
   usageCount?: number;
   usageLimit?: number;
@@ -26,6 +28,8 @@ const CouponSchema = new Schema<ICoupon>(
     },
     discountValue: { type: Number, required: true },
     minSubtotal: { type: Number, default: 0 },
+    minOrderAmount: { type: Number, default: 0 },
+    maxDiscountAmount: { type: Number, default: 999999 },
     expiryDate: { type: String, required: true },
     usageCount: { type: Number, default: 0 },
     usageLimit: { type: Number, default: 999999 },

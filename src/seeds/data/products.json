@@ -1,0 +1,90 @@
+[
+  {
+    "seedKey": "prod-jasmine-flowers",
+    "subcategorySeedKey": "subcat-devotional-flowers",
+    "name": "Fresh Jasmine Flowers (Mallepulu)",
+    "slug": "fresh-jasmine-flowers",
+    "description": "Fragrant fresh jasmine flowers locally sourced, perfect for daily prayers and hair styling.",
+    "productType": "physical",
+    "specifications": {
+      "origin": "Local Farms",
+      "freshness": "Harvested Daily"
+    }
+  },
+  {
+    "seedKey": "prod-standard-pooja-kit",
+    "subcategorySeedKey": "subcat-devotional-pooja-kits",
+    "name": "ApexBee Standard Pooja Kit",
+    "slug": "standard-pooja-kit",
+    "description": "Complete daily pooja box containing kumkum, turmeric, incense sticks, ghee wicks, camphor, and matchbox.",
+    "productType": "physical",
+    "specifications": {
+      "itemsCount": "12 essential items",
+      "package": "Eco-friendly Box"
+    }
+  },
+  {
+    "seedKey": "prod-cow-milk-1l",
+    "subcategorySeedKey": "subcat-daily-milk",
+    "name": "Pure Cow Milk (A2) 1L",
+    "slug": "pure-cow-milk-1l",
+    "description": "Pasteurized pure organic cow milk sourced directly from trusted local dairies. Rich in vitamins and nutrients.",
+    "productType": "physical",
+    "specifications": {
+      "fatContent": "3.5%",
+      "volume": "1 Litre",
+      "packaging": "Pouch"
+    }
+  },
+  {
+    "seedKey": "prod-water-can-20l",
+    "subcategorySeedKey": "subcat-daily-water",
+    "name": "Premium Mineral Water Can 20L",
+    "slug": "mineral-water-can-20l",
+    "description": "20 Litre multi-stage filtered pure drinking water can. Standard bubble top bottle matching major household water dispensers.",
+    "productType": "physical",
+    "specifications": {
+      "volume": "20 Litres",
+      "filtration": "RO + UV + Minerals"
+    }
+  },
+  {
+    "seedKey": "prod-fresh-tomatoes",
+    "subcategorySeedKey": "subcat-daily-veg",
+    "name": "Fresh Organic Tomatoes 1kg",
+    "slug": "fresh-tomatoes-1kg",
+    "description": "Farm-fresh ripe red organic tomatoes. Naturally grown, perfect for curries, salads, and soups.",
+    "productType": "physical",
+    "specifications": {
+      "weight": "1 kg",
+      "grade": "Premium A-Grade"
+    }
+  },
+  {
+    "seedKey": "prod-kanchipuram-saree",
+    "subcategorySeedKey": "subcat-shopping-sarees",
+    "name": "Pure Kanchipuram Silk Saree",
+    "slug": "kanchipuram-silk-saree",
+    "description": "Exquisite pure handloom silk saree woven with traditional golden zari threads, suitable for weddings and special occasions.",
+    "productType": "physical",
+    "specifications": {
+      "material": "100% Pure Silk",
+      "zari": "Gold Plated Zari",
+      "length": "6.2 Metres (with blouse piece)"
+    }
+  },
+  {
+    "seedKey": "prod-boat-earbuds",
+    "subcategorySeedKey": "subcat-shopping-electronics",
+    "name": "boAt Airdopes 121v2 Earbuds",
+    "slug": "boat-airdopes-121v2",
+    "description": "True wireless earbuds with 8mm drivers, up to 14 hours total playtime, lightweight design, and Bluetooth 5.0 connection.",
+    "productType": "physical",
+    "specifications": {
+      "driverSize": "8mm",
+      "playtime": "Up to 14 Hours",
+      "bluetoothVersion": "5.0",
+      "ipRating": "IPX4 Sweat Resistant"
+    }
+  }
+]

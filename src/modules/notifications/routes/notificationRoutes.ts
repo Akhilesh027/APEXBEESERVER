@@ -14,7 +14,8 @@ import {
   updateTemplate,
   deleteTemplate,
   broadcastNotification,
-  getAnalytics
+  getAnalytics,
+  testDirectEmitNotification
 } from '../controllers/notificationController';
 
 const router = Router();
@@ -44,6 +45,7 @@ router.patch('/admin/templates/:id', protect, restrictTo('admin'), updateTemplat
 router.delete('/admin/templates/:id', protect, restrictTo('admin'), deleteTemplate);
 
 router.post('/admin/broadcast', protect, restrictTo('admin'), broadcastNotification);
+router.post('/admin/test-direct-emit', protect, restrictTo('admin'), testDirectEmitNotification);
 router.get('/admin/analytics', protect, restrictTo('admin'), getAnalytics);
 
 export default router;

@@ -47,4 +47,5 @@ const ProductReviewSchema = new mongoose_1.Schema({
     reply: { type: String, default: "" },
     isApproved: { type: Boolean, default: true }
 }, { timestamps: true });
+ProductReviewSchema.index({ productId: 1, isApproved: 1, createdAt: -1 });
 exports.ProductReview = mongoose_1.default.model('ProductReview', ProductReviewSchema);

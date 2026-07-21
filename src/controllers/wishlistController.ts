@@ -85,3 +85,28 @@ export const checkWishlistStatus = async (req: Request, res: Response) => {
     res.status(500).json({ success: false, message: 'Failed to check wishlist status', error: error.message });
   }
 };
+
+export const syncWishlist = async (req: Request, res: Response) => {
+  try {
+    const { userId, productIds } = req.body;
+    if (!userId || !Array.isArray(productIds)) {
+      return res.status(400).json({ success: false, message: 'User ID and productIds array are required' });
+    }
+
+    let wishlist = await Wishlist.findOne({ userId });
+    if (!wishlist) {
+      wishlist = new Wishlist({ userId, products: [] });
+    }
+
+    productIds.forEach((id) => {
+      if (!wishlist.products.some((pid) => pid.toString() === String(id))) {
+        wishlist.products.push(id as any);
+      }
+    });
+
+    await wishlist.save();
+    res.status(200).json({ success: true, message: 'Wishlist synced successfully', wishlist });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: 'Failed to sync wishlist', error: error.message });
+  }
+};

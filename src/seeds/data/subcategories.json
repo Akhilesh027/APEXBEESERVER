@@ -1,0 +1,180 @@
+[
+  {
+    "seedKey": "subcat-devotional-flowers",
+    "categorySeedKey": "category-devotional",
+    "name": "Flowers",
+    "slug": "flowers",
+    "displayOrder": 1,
+    "isActive": true,
+    "isFeatured": true
+  },
+  {
+    "seedKey": "subcat-devotional-pooja-kits",
+    "categorySeedKey": "category-devotional",
+    "name": "Pooja Kits",
+    "slug": "pooja-kits",
+    "displayOrder": 2,
+    "isActive": true,
+    "isFeatured": true
+  },
+  {
+    "seedKey": "subcat-daily-milk",
+    "categorySeedKey": "category-daily-needs",
+    "name": "Milk & Dairy",
+    "slug": "milk-dairy",
+    "displayOrder": 1,
+    "isActive": true,
+    "isFeatured": true
+  },
+  {
+    "seedKey": "subcat-daily-water",
+    "categorySeedKey": "category-daily-needs",
+    "name": "Water Cans",
+    "slug": "water-cans",
+    "displayOrder": 2,
+    "isActive": true,
+    "isFeatured": true
+  },
+  {
+    "seedKey": "subcat-daily-veg",
+    "categorySeedKey": "category-daily-needs",
+    "name": "Fresh Vegetables",
+    "slug": "fresh-vegetables",
+    "displayOrder": 3,
+    "isActive": true,
+    "isFeatured": true
+  },
+  {
+    "seedKey": "subcat-food-restaurants",
+    "categorySeedKey": "category-food-dining",
+    "name": "Restaurants",
+    "slug": "restaurants",
+    "displayOrder": 1,
+    "isActive": true,
+    "isFeatured": true
+  },
+  {
+    "seedKey": "subcat-food-bakery",
+    "categorySeedKey": "category-food-dining",
+    "name": "Bakeries & Desserts",
+    "slug": "bakeries-desserts",
+    "displayOrder": 2,
+    "isActive": true,
+    "isFeatured": false
+  },
+  {
+    "seedKey": "subcat-b2b-raw",
+    "categorySeedKey": "category-business-hub",
+    "name": "Raw Materials",
+    "slug": "raw-materials",
+    "displayOrder": 1,
+    "isActive": true,
+    "isFeatured": true
+  },
+  {
+    "seedKey": "subcat-shopping-sarees",
+    "categorySeedKey": "category-shopping",
+    "name": "Sarees & Ethnic",
+    "slug": "sarees-ethnic",
+    "displayOrder": 1,
+    "isActive": true,
+    "isFeatured": true
+  },
+  {
+    "seedKey": "subcat-shopping-electronics",
+    "categorySeedKey": "category-shopping",
+    "name": "Electronics & Appliances",
+    "slug": "electronics-appliances",
+    "displayOrder": 2,
+    "isActive": true,
+  },
+  {
+    "seedKey": "subcat-acad-ent",
+    "categorySeedKey": "category-academy",
+    "name": "Entrepreneurship",
+    "slug": "entrepreneurship",
+    "displayOrder": 1,
+    "isActive": true,
+    "isFeatured": true
+  },
+  {
+    "seedKey": "subcat-services-repair",
+    "categorySeedKey": "category-services",
+    "name": "Electrician & Plumber",
+    "slug": "repair-services",
+    "displayOrder": 1,
+    "isActive": true,
+    "isFeatured": true
+  },
+  {
+    "seedKey": "subcat-finance-loans",
+    "categorySeedKey": "category-finance",
+    "name": "Business Loans",
+    "slug": "business-loans",
+    "displayOrder": 1,
+    "isActive": true,
+    "isFeatured": true
+  },
+  {
+    "seedKey": "subcat-events-planning",
+    "categorySeedKey": "category-events",
+    "name": "Event Organizers",
+    "slug": "event-organizers",
+    "displayOrder": 1,
+    "isActive": true,
+    "isFeatured": true
+  },
+  {
+    "seedKey": "subcat-travel-cabs",
+    "categorySeedKey": "category-tours-travels",
+    "name": "Cab Rentals",
+    "slug": "cab-rentals",
+    "displayOrder": 1,
+    "isActive": true,
+    "isFeatured": true
+  },
+    "seedKey": "subcat-pets-foods",
+    "categorySeedKey": "category-pets",
+    "name": "Pet Foods",
+    "slug": "pet-foods",
+    "displayOrder": 1,
+    "isActive": true,
+    "isFeatured": true
+  },
+  {
+    "seedKey": "subcat-health-organic",
+    "categorySeedKey": "category-health-wellness",
+    "name": "Organic Products",
+    "slug": "organic-products",
+    "displayOrder": 1,
+    "isActive": true,
+    "isFeatured": true
+  },
+  {
+    "seedKey": "subcat-kids-toys",
+    "categorySeedKey": "category-kids-world",
+    "name": "Educational Toys",
+    "slug": "educational-toys",
+    "displayOrder": 1,
+    "isActive": true,
+    "isFeatured": true
+  },
+  {
+    "seedKey": "subcat-women-boutiques",
+    "categorySeedKey": "category-womens-empire",
+    "name": "Boutiques & Tailoring",
+    "slug": "boutiques-tailoring",
+    "displayOrder": 1,
+    "isActive": true,
+    "isFeatured": true
+  },
+  {
+    "seedKey": "subcat-logistics-courier",
+    "categorySeedKey": "category-delivery-logistics",
+    "name": "Instant Courier",
+    "slug": "instant-courier",
+    "displayOrder": 1,
+    "isActive": true,
+    "isFeatured": true
+  }
+]

@@ -10,14 +10,16 @@ import {
   getOrderCountByUserId,
   getOrderInvoicePDF,
   getOrderPackingSlipPDF,
-  updateOrderPackingChecklist
+  updateOrderPackingChecklist,
+  getFirstOrderCheck
 } from "../controllers/orderController";
 import { uploadAnyDisk } from "../middleware/multer";
 import { protect, restrictTo } from "../middleware/auth";
 
 const router = Router();
 
-router.get("/", protect, restrictTo('admin', 'vendor', 'wholesaler', 'manufacturer', 'state_franchise', 'district_franchise', 'mandal_franchise'), getOrders);
+router.get("/", protect, restrictTo('admin', 'vendor', 'wholesaler', 'manufacturer', 'state_franchise', 'district_franchise', 'mandal_franchise', 'customer'), getOrders);
+router.get("/first-order/:userId", protect, getFirstOrderCheck);
 router.get("/user/:userId", protect, getOrdersByUserId);
 router.get("/:userId/count", protect, getOrderCountByUserId);
 router.get("/:id/invoice", protect, getOrderInvoicePDF);

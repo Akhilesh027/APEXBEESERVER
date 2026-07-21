@@ -17,6 +17,7 @@ const Product_1 = __importDefault(require("../models/Product"));
 const BusinessRelationship_1 = require("../models/BusinessRelationship");
 const ReferralSettings_1 = require("../models/ReferralSettings");
 const ReferralTransaction_1 = require("../models/ReferralTransaction");
+const WalletTransaction_1 = require("../models/WalletTransaction");
 require("../models/Franchise");
 require("../models/Entrepreneur");
 require("../models/Vendor");
@@ -36,6 +37,7 @@ async function runTests() {
     const testUserIds = existingTestUsers.map(u => u._id);
     if (testUserIds.length > 0) {
         await Wallet_1.Wallet.deleteMany({ userId: { $in: testUserIds } });
+        await WalletTransaction_1.WalletTransaction.deleteMany({ userId: { $in: testUserIds } });
         await CommissionSettlement_1.CommissionSettlement.deleteMany({ recipientId: { $in: testUserIds } });
         await ReferralTransaction_1.ReferralTransaction.deleteMany({ $or: [
                 { recipientUserId: { $in: testUserIds } },

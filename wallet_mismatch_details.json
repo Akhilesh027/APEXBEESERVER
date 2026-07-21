@@ -1,0 +1,36 @@
+[
+  {
+    "walletId": "6a4773fffe6b8d23e56b6967",
+    "userId": "6a4773fffe6b8d23e56b692a",
+    "storedAvailable": 127.5,
+    "storedPending": 0,
+    "storedWithdrawn": 0,
+    "computedAvailable": 118.5,
+    "computedPending": 0,
+    "computedWithdrawn": 0,
+    "diffAvailable": 9,
+    "diffPending": 0,
+    "diffWithdrawn": 0,
+    "category": "Confirmed wallet corruption",
+    "txCount": 3,
+    "firstTxDate": "2026-07-03T09:12:55.606Z",
+    "lastTxDate": "2026-07-18T07:08:26.711Z"
+  },
+  {
+    "walletId": "6a487770fe6b8d23e5b9e795",
+    "userId": "6a487770fe6b8d23e5b9e790",
+    "storedAvailable": 2849.99,
+    "storedPending": 321.99,
+    "storedWithdrawn": 0,
+    "computedAvailable": 1849.9889753109999,
+    "computedPending": 1321.988978311,
+    "computedWithdrawn": 0,
+    "diffAvailable": 1000.0010246889999,
+    "diffPending": 999.998978311,
+    "diffWithdrawn": 0,
+    "category": "Confirmed wallet corruption",
+    "txCount": 11,
+    "firstTxDate": "2026-07-05T01:29:16.092Z",
+    "lastTxDate": "2026-07-18T07:08:29.702Z"
+  }
+]

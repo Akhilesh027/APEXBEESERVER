@@ -1,604 +1,117 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
-export type SellerType = 'vendor' | 'manufacturer' | 'wholesaler';
-
-export type ProductStatus =
-  | 'Draft'
-  | 'Pending Review'
-  | 'Awaiting Seller Approval'
-  | 'Live'
-  | 'Rejected'
-  | 'Negotiation Requested';
-
-export type CommissionShareType =
-  | 'state'
-  | 'district'
-  | 'mandal'
-  | 'entrepreneur'
-  | 'level1'
-  | 'level2'
-  | 'level3'
-  | 'firstPurchase'
-  | 'wishlink';
-
-export interface ICommissionShare {
-  type: CommissionShareType;
-  label: string;
-  percent: number;
-  amount: number;
-  isActive: boolean;
-}
-
-export interface IAdminPricing {
-  mrp: number;
-  sellingPrice: number;
-
-  platformFeePercent: number;
-  platformFeeAmount: number;
-
-  shippingCharge: number;
-  packingCharge: number;
-
-  commissionShares: ICommissionShare[];
-
-  totalCommissionAmount: number;
-  finalSellerAmount: number;
-  customerSellingAmount: number;
-  platformNetProfit: number;
-
-  remarks?: string;
-  configuredBy?: mongoose.Types.ObjectId;
-  configuredAt?: Date;
-  /** Controls whether MLM referral commissions are calculated from the platform fee or the sale price. Defaults to 'platform_fee' (safe). */
-  commissionBase?: 'platform_fee' | 'sale_price';
-}
-
-export interface IProductVariant {
-  sku: string;
-  attributes: Record<string, any>;
-  mrp: number;
-  discountPercent: number;
-  sellingPrice: number;
-  stock: number;
-  images: string[];
-  isActive: boolean;
-}
-
-export interface ISellerNegotiation {
-  message: string;
-  requestedSellingPrice?: number;
-  requestedPlatformFeePercent?: number;
-  requestedShippingCharge?: number;
-  requestedPackingCharge?: number;
-  createdAt: Date;
-}
+export type ProductModerationStatus = 'draft' | 'pending' | 'approved' | 'rejected';
 
 export interface IProduct extends Document {
-  sellerId: mongoose.Types.ObjectId;
-  sellerType: SellerType;
-
   name: string;
   slug: string;
   description: string;
-
   categoryId: mongoose.Types.ObjectId;
-  subCategoryId?: mongoose.Types.ObjectId | null;
-  childCategoryId?: mongoose.Types.ObjectId | null;
-
-  brand?: string;
+  subcategoryId: mongoose.Types.ObjectId;
+  brandId?: mongoose.Types.ObjectId;
+  productType: 'physical';
+  thumbnailAssetId?: mongoose.Types.ObjectId;
+  galleryAssetIds: mongoose.Types.ObjectId[];
+  specifications: Record<string, any>;
+  taxClassId?: mongoose.Types.ObjectId;
+  returnPolicyId?: mongoose.Types.ObjectId;
+  moderationStatus: ProductModerationStatus;
+  isActive: boolean;
+  createdBy: mongoose.Types.ObjectId;
+  approvedBy?: mongoose.Types.ObjectId;
+  sellerId: mongoose.Types.ObjectId;
+  sellerType?: string;
+  adminPricing?: any;
+  variants: any[];
+  stock: number;
   sku: string;
-
+  baseMrp?: number;
+  baseSellingPrice?: number;
+  status?: string;
   thumbnail?: string;
   images: string[];
-
-  attributes: Record<string, any>;
-  variants: IProductVariant[];
-
-  baseMrp: number;
-  discountPercent: number;
-  baseSellingPrice: number;
-  stock: number;
-
-  adminPricing?: IAdminPricing;
-
-  status: ProductStatus;
-  isActive: boolean;
-
-  adminPricingApproved: boolean;
-  sellerPricingAccepted: boolean;
-
-  rejectionReason?: string;
-  sellerNegotiations: ISellerNegotiation[];
-
-  submittedAt?: Date;
+  subCategoryId?: mongoose.Types.ObjectId | null;
+  childCategoryId?: mongoose.Types.ObjectId | null;
+  brand?: string;
+  discountPercent?: number;
+  attributes?: any;
+  isStoreProduct?: boolean;
+  isSubscriptionAvailable?: boolean;
+  adminPricingApproved?: boolean;
+  sellerPricingAccepted?: boolean;
   approvedByAdminAt?: Date;
   sellerAcceptedAt?: Date;
   liveAt?: Date;
-  returnPeriodDays?: number;
-  referralCommission?: {
-    level1: number;
-    level2: number;
-    level3: number;
-  };
-  isStoreProduct?: boolean;
-  isSubscriptionAvailable?: boolean;
-  badges?: string[];
+  referralCommission?: any;
+  sellerNegotiations: any[];
+  rejectionReason?: string;
+  badges: string[];
   isArchived?: boolean;
-  batchNo?: string;
-  expiryDate?: Date;
-  manufacturingDate?: Date;
-  reorderLevel?: number;
-  safetyStock?: number;
-  purchasePrice?: number;
-  inventory?: {
-    onHandStock: number;
-    reservedStock: number;
-    quarantineStock: number;
-    damagedStock: number;
-    expiredStock: number;
-  };
-  availableStock?: number;
+  createdAt: Date;
+  updatedAt: Date;
 }
-
-const CommissionShareSchema = new Schema<ICommissionShare>(
-  {
-    type: {
-      type: String,
-      enum: [
-        'state',
-        'district',
-        'mandal',
-        'entrepreneur',
-        'level1',
-        'level2',
-        'level3',
-        'firstPurchase',
-        'wishlink',
-      ],
-      required: true,
-    },
-
-    label: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-
-    percent: {
-      type: Number,
-      default: 0,
-      min: 0,
-    },
-
-    amount: {
-      type: Number,
-      default: 0,
-      min: 0,
-    },
-
-    isActive: {
-      type: Boolean,
-      default: true,
-    },
-  },
-  { _id: false }
-);
-
-const AdminPricingSchema = new Schema<IAdminPricing>(
-  {
-    mrp: {
-      type: Number,
-      required: true,
-      min: 0,
-    },
-
-    sellingPrice: {
-      type: Number,
-      required: true,
-      min: 0,
-    },
-
-    platformFeePercent: {
-      type: Number,
-      default: 0,
-      min: 0,
-    },
-
-    platformFeeAmount: {
-      type: Number,
-      default: 0,
-      min: 0,
-    },
-
-    shippingCharge: {
-      type: Number,
-      default: 0,
-      min: 0,
-    },
-
-    packingCharge: {
-      type: Number,
-      default: 0,
-      min: 0,
-    },
-
-    commissionShares: {
-      type: [CommissionShareSchema],
-      default: [],
-    },
-
-    totalCommissionAmount: {
-      type: Number,
-      default: 0,
-      min: 0,
-    },
-
-    finalSellerAmount: {
-      type: Number,
-      default: 0,
-      min: 0,
-    },
-
-    customerSellingAmount: {
-      type: Number,
-      default: 0,
-      min: 0,
-    },
-
-    platformNetProfit: {
-      type: Number,
-      default: 0,
-    },
-
-    remarks: {
-      type: String,
-      default: '',
-    },
-
-    configuredBy: {
-      type: Schema.Types.ObjectId,
-      ref: 'User',
-    },
-
-    configuredAt: {
-      type: Date,
-      default: Date.now,
-    },
-
-    commissionBase: {
-      type: String,
-      enum: ['platform_fee', 'sale_price'],
-      default: 'platform_fee',
-    },
-  },
-  { _id: false }
-);
-
-const ProductVariantSchema = new Schema<IProductVariant>(
-  {
-    sku: {
-      type: String,
-      required: true,
-      trim: true,
-      uppercase: true,
-    },
-
-    attributes: {
-      type: Map,
-      of: Schema.Types.Mixed,
-      default: {},
-    },
-
-    mrp: {
-      type: Number,
-      default: 0,
-      min: 0,
-    },
-
-    discountPercent: {
-      type: Number,
-      default: 0,
-      min: 0,
-    },
-
-    sellingPrice: {
-      type: Number,
-      default: 0,
-      min: 0,
-    },
-
-    stock: {
-      type: Number,
-      default: 0,
-      min: 0,
-    },
-
-    images: [{ type: String }],
-
-    isActive: {
-      type: Boolean,
-      default: true,
-    },
-  },
-  { _id: true }
-);
-
-const SellerNegotiationSchema = new Schema<ISellerNegotiation>(
-  {
-    message: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-
-    requestedSellingPrice: {
-      type: Number,
-      min: 0,
-    },
-
-    requestedPlatformFeePercent: {
-      type: Number,
-      min: 0,
-    },
-
-    requestedShippingCharge: {
-      type: Number,
-      min: 0,
-    },
-
-    requestedPackingCharge: {
-      type: Number,
-      min: 0,
-    },
-
-    createdAt: {
-      type: Date,
-      default: Date.now,
-    },
-  },
-  { _id: true }
-);
 
 const ProductSchema = new Schema<IProduct>(
   {
-    sellerId: {
-      type: Schema.Types.ObjectId,
-      ref: 'User',
+    name: { type: String, required: true, trim: true },
+    slug: { type: String, required: true, unique: true, lowercase: true, trim: true },
+    description: { type: String, required: true, default: '' },
+    categoryId: { type: Schema.Types.ObjectId, ref: 'Category', required: true },
+    subcategoryId: { type: Schema.Types.ObjectId, ref: 'Subcategory', required: true },
+    brandId: { type: Schema.Types.ObjectId, ref: 'Brand' },
+    productType: { type: String, enum: ['physical'], default: 'physical', required: true },
+    thumbnailAssetId: { type: Schema.Types.ObjectId, ref: 'MediaAsset' },
+    galleryAssetIds: [{ type: Schema.Types.ObjectId, ref: 'MediaAsset' }],
+    specifications: { type: Schema.Types.Mixed, default: {} },
+    taxClassId: { type: Schema.Types.ObjectId },
+    returnPolicyId: { type: Schema.Types.ObjectId },
+    moderationStatus: {
+      type: String,
+      enum: ['draft', 'pending', 'approved', 'rejected'],
+      default: 'draft',
       required: true,
-      index: true,
     },
-
-    sellerType: {
-      type: String,
-      enum: ['vendor', 'manufacturer', 'wholesaler'],
-      required: true,
-      index: true,
-    },
-
-    name: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-
-    slug: {
-      type: String,
-      required: true,
-      unique: true,
-      lowercase: true,
-      trim: true,
-    },
-
-    description: {
-      type: String,
-      default: '',
-    },
-
-    categoryId: {
-      type: Schema.Types.ObjectId,
-      ref: 'Category',
-      required: true,
-      index: true,
-    },
-
-    subCategoryId: {
-      type: Schema.Types.ObjectId,
-      ref: 'Category',
-      default: null,
-      index: true,
-    },
-
-    childCategoryId: {
-      type: Schema.Types.ObjectId,
-      ref: 'Category',
-      default: null,
-      index: true,
-    },
-
-    brand: {
-      type: String,
-      default: '',
-      trim: true,
-      index: true,
-    },
-
-    sku: {
-      type: String,
-      required: true,
-      unique: true,
-      trim: true,
-      uppercase: true,
-    },
-
-    thumbnail: {
-      type: String,
-      default: '',
-    },
-
+    isActive: { type: Boolean, default: true },
+    createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    approvedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+    sellerId: { type: Schema.Types.ObjectId, ref: 'User' },
+    sellerType: { type: String },
+    adminPricing: { type: Schema.Types.Mixed },
+    variants: [Schema.Types.Mixed],
+    stock: { type: Number, default: 0 },
+    sku: { type: String, required: true },
+    baseMrp: { type: Number, default: 0 },
+    baseSellingPrice: { type: Number, default: 0 },
+    status: { type: String, default: 'Draft' },
+    thumbnail: { type: String },
     images: [{ type: String }],
-
-    attributes: {
-      type: Map,
-      of: Schema.Types.Mixed,
-      default: {},
-    },
-
-    variants: {
-      type: [ProductVariantSchema],
-      default: [],
-    },
-
-    baseMrp: {
-      type: Number,
-      default: 0,
-      min: 0,
-    },
-
-    discountPercent: {
-      type: Number,
-      default: 0,
-      min: 0,
-    },
-
-    baseSellingPrice: {
-      type: Number,
-      default: 0,
-      min: 0,
-    },
-
-    stock: {
-      type: Number,
-      default: 0,
-      min: 0,
-    },
-
-    adminPricing: {
-      type: AdminPricingSchema,
-      default: undefined,
-    },
-
-    status: {
-      type: String,
-      enum: [
-        'Draft',
-        'Pending Review',
-        'Awaiting Seller Approval',
-        'Live',
-        'Rejected',
-        'Negotiation Requested',
-      ],
-      default: 'Pending Review',
-      index: true,
-    },
-
-    isActive: {
-      type: Boolean,
-      default: false,
-      index: true,
-    },
-
-    adminPricingApproved: {
-      type: Boolean,
-      default: false,
-    },
-
-    sellerPricingAccepted: {
-      type: Boolean,
-      default: false,
-    },
-
-    rejectionReason: {
-      type: String,
-      default: '',
-    },
-
-    sellerNegotiations: {
-      type: [SellerNegotiationSchema],
-      default: [],
-    },
-
-    submittedAt: {
-      type: Date,
-      default: Date.now,
-    },
-
-    approvedByAdminAt: Date,
-    sellerAcceptedAt: Date,
-    liveAt: Date,
-    returnPeriodDays: {
-      type: Number,
-    },
-    referralCommission: {
-      level1: { type: Number, default: 0 },
-      level2: { type: Number, default: 0 },
-      level3: { type: Number, default: 0 }
-    },
-    isStoreProduct: {
-      type: Boolean,
-      default: false,
-      index: true
-    },
-    isSubscriptionAvailable: {
-      type: Boolean,
-      default: false,
-      index: true
-    },
-    badges: {
-      type: [String],
-      default: []
-    },
-    isArchived: {
-      type: Boolean,
-      default: false,
-      index: true
-    },
-    batchNo: {
-      type: String,
-      default: ''
-    },
-    expiryDate: Date,
-    manufacturingDate: Date,
-    reorderLevel: {
-      type: Number,
-      default: 10
-    },
-    safetyStock: {
-      type: Number,
-      default: 5
-    },
-    purchasePrice: {
-      type: Number,
-      default: 0
-    },
-    inventory: {
-      onHandStock: { type: Number, default: 0, min: 0 },
-      reservedStock: { type: Number, default: 0, min: 0 },
-      quarantineStock: { type: Number, default: 0, min: 0 },
-      damagedStock: { type: Number, default: 0, min: 0 },
-      expiredStock: { type: Number, default: 0, min: 0 }
-    }
+    subCategoryId: { type: Schema.Types.ObjectId, ref: 'Subcategory' },
+    childCategoryId: { type: Schema.Types.ObjectId },
+    brand: { type: String },
+    discountPercent: { type: Number, default: 0 },
+    attributes: { type: Schema.Types.Mixed },
+    isStoreProduct: { type: Boolean, default: false },
+    isSubscriptionAvailable: { type: Boolean, default: false },
+    adminPricingApproved: { type: Boolean, default: false },
+    sellerPricingAccepted: { type: Boolean, default: false },
+    approvedByAdminAt: { type: Date },
+    sellerAcceptedAt: { type: Date },
+    liveAt: { type: Date },
+    referralCommission: { type: Schema.Types.Mixed },
+    sellerNegotiations: [Schema.Types.Mixed],
+    rejectionReason: { type: String },
+    badges: [{ type: String }],
+    isArchived: { type: Boolean, default: false },
   },
-  {
-    timestamps: true,
-    toJSON: { virtuals: true },
-    toObject: { virtuals: true }
-  }
+  { timestamps: true }
 );
 
-ProductSchema.virtual('availableStock').get(function(this: any) {
-  if (this.inventory) {
-    return this.inventory.onHandStock - this.inventory.reservedStock;
-  }
-  return this.stock;
-});
+ProductSchema.index({ name: 1 });
+ProductSchema.index({ slug: 1 });
+ProductSchema.index({ categoryId: 1 });
+ProductSchema.index({ subcategoryId: 1 });
+ProductSchema.index({ moderationStatus: 1 });
+ProductSchema.index({ isActive: 1 });
 
-ProductSchema.index({ sellerId: 1, status: 1 });
-ProductSchema.index({ sellerType: 1, status: 1 });
-ProductSchema.index({ categoryId: 1, status: 1 });
-ProductSchema.index({ subCategoryId: 1, status: 1 });
-ProductSchema.index({ childCategoryId: 1, status: 1 });
-ProductSchema.index({ status: 1, isActive: 1 });
-ProductSchema.index({ createdAt: -1 });
-ProductSchema.index({ name: 'text', description: 'text' });
-
-export default mongoose.model<IProduct>('Product', ProductSchema);
+export const Product = mongoose.model<IProduct>('Product', ProductSchema);
+export default Product;

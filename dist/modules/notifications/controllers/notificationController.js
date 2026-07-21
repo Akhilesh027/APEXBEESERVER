@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getAnalytics = exports.broadcastNotification = exports.deleteTemplate = exports.updateTemplate = exports.createTemplate = exports.getTemplates = exports.updatePreferences = exports.getPreferences = exports.deleteNotification = exports.archiveNotification = exports.markAllRead = exports.markNotificationRead = exports.getUnreadCount = exports.getUserNotifications = void 0;
+exports.testDirectEmitNotification = exports.getAnalytics = exports.broadcastNotification = exports.deleteTemplate = exports.updateTemplate = exports.createTemplate = exports.getTemplates = exports.updatePreferences = exports.getPreferences = exports.deleteNotification = exports.archiveNotification = exports.markAllRead = exports.markNotificationRead = exports.getUnreadCount = exports.getUserNotifications = void 0;
 const mongoose_1 = __importDefault(require("mongoose"));
 const Notification_1 = require("../models/Notification");
 const NotificationPreference_1 = require("../models/NotificationPreference");
@@ -11,6 +11,7 @@ const NotificationTemplate_1 = require("../models/NotificationTemplate");
 const NotificationJob_1 = require("../models/NotificationJob");
 const User_1 = require("../../../models/User");
 const notificationEmitter_1 = require("../events/notificationEmitter");
+const socketServer_1 = require("../websocket/socketServer");
 /**
  * Gets a paginated list of notifications for the logged-in user.
  */
@@ -389,3 +390,31 @@ const getAnalytics = async (req, res) => {
     }
 };
 exports.getAnalytics = getAnalytics;
+/**
+ * Direct emit test helper for Socket.IO horizontal scaling rehearsal.
+ */
+const testDirectEmitNotification = async (req, res) => {
+    try {
+        const { userId, title, message } = req.body;
+        if (!userId) {
+            res.status(400).json({ success: false, message: 'userId is required' });
+            return;
+        }
+        const notification = {
+            title: title || 'Rehearsal Direct Notification',
+            message: message || 'Hello from Socket.IO test!',
+            createdAt: new Date(),
+            status: 'unread'
+        };
+        (0, socketServer_1.sendRealtimeNotification)(userId, notification);
+        res.status(200).json({
+            success: true,
+            message: 'Direct notification emit initiated via socket server.',
+            notification
+        });
+    }
+    catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+exports.testDirectEmitNotification = testDirectEmitNotification;

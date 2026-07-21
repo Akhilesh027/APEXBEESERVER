@@ -1,46 +1,47 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
-export interface ICategoryAttribute {
-  name: string;
-  type: 'text' | 'number' | 'select' | 'boolean';
-  required: boolean;
-  isVariant: boolean;
-  options?: string[];
-}
+export type SupportedItemType =
+  | 'product'
+  | 'service'
+  | 'restaurant'
+  | 'course'
+  | 'event'
+  | 'travel'
+  | 'finance'
+  | 'logistics';
 
 export interface ICategory extends Document {
   name: string;
   slug: string;
   description?: string;
+  iconAssetId?: mongoose.Types.ObjectId;
+  hexAssetId?: mongoose.Types.ObjectId;
+  bannerAssetId?: mongoose.Types.ObjectId;
+  mobileBannerAssetId?: mongoose.Types.ObjectId;
+  displayOrder: number;
+  isActive: boolean;
+  isFeatured: boolean;
+  isSeasonal: boolean;
+  supportedItemTypes: SupportedItemType[];
+  seo: {
+    title?: string;
+    description?: string;
+    keywords?: string[];
+  };
+  level: number;
+  parentId?: mongoose.Types.ObjectId | null;
   image?: string;
   banner?: string;
-  parentId?: mongoose.Types.ObjectId | null;
-  level: 1 | 2 | 3;
-  isActive: boolean;
+  brands?: any[];
+  attributes: any[];
   sortOrder: number;
-  brands: string[];
-  attributes: ICategoryAttribute[];
+  createdAt: Date;
+  updatedAt: Date;
 }
-
-const CategoryAttributeSchema = new Schema<ICategoryAttribute>(
-  {
-    name: { type: String, required: true, trim: true },
-    type: {
-      type: String,
-      enum: ['text', 'number', 'select', 'boolean'],
-      default: 'text',
-    },
-    required: { type: Boolean, default: false },
-    isVariant: { type: Boolean, default: false },
-    options: [{ type: String, trim: true }],
-  },
-  { _id: true }
-);
 
 const CategorySchema = new Schema<ICategory>(
   {
     name: { type: String, required: true, trim: true },
-
     slug: {
       type: String,
       required: true,
@@ -48,38 +49,51 @@ const CategorySchema = new Schema<ICategory>(
       lowercase: true,
       trim: true,
     },
-
     description: { type: String, default: '' },
-
-    image: { type: String, default: '' },
-
-    banner: { type: String, default: '' },
-
-    parentId: {
-      type: Schema.Types.ObjectId,
-      ref: 'Category',
-      default: null,
-    },
-
-    level: {
-      type: Number,
-      enum: [1, 2, 3],
-      default: 1,
-    },
-
+    iconAssetId: { type: Schema.Types.ObjectId, ref: 'MediaAsset' },
+    hexAssetId: { type: Schema.Types.ObjectId, ref: 'MediaAsset' },
+    bannerAssetId: { type: Schema.Types.ObjectId, ref: 'MediaAsset' },
+    mobileBannerAssetId: { type: Schema.Types.ObjectId, ref: 'MediaAsset' },
+    displayOrder: { type: Number, default: 0 },
     isActive: { type: Boolean, default: true },
-
+    isFeatured: { type: Boolean, default: false },
+    isSeasonal: { type: Boolean, default: false },
+    supportedItemTypes: [
+      {
+        type: String,
+        enum: [
+          'product',
+          'service',
+          'restaurant',
+          'course',
+          'event',
+          'travel',
+          'finance',
+          'logistics',
+        ],
+        default: 'product',
+      },
+    ],
+    seo: {
+      title: { type: String, default: '' },
+      description: { type: String, default: '' },
+      keywords: [{ type: String }],
+    },
+    level: { type: Number, default: 1 },
+    parentId: { type: Schema.Types.ObjectId, ref: 'Category', default: null },
+    image: { type: String },
+    banner: { type: String },
+    brands: [{ type: Schema.Types.Mixed }],
+    attributes: [Schema.Types.Mixed],
     sortOrder: { type: Number, default: 0 },
-
-    brands: [{ type: String, trim: true }],
-
-    attributes: [CategoryAttributeSchema],
   },
   { timestamps: true }
 );
 
-CategorySchema.index({ parentId: 1 });
-CategorySchema.index({ level: 1 });
-CategorySchema.index({ name: 1 }, { collation: { locale: 'en', strength: 2 } });
+CategorySchema.index({ name: 1 });
+CategorySchema.index({ slug: 1 });
+CategorySchema.index({ isActive: 1 });
+CategorySchema.index({ isSeasonal: 1 });
 
-export default mongoose.model<ICategory>('Category', CategorySchema);
+export const Category = mongoose.model<ICategory>('Category', CategorySchema);
+export default Category;

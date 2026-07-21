@@ -6,6 +6,7 @@ import { InventoryService } from './inventoryService';
 import { SettlementEngine } from './SettlementEngine';
 import { CouponService } from './couponService';
 import { TransactionalOutbox } from './TransactionalOutbox';
+import crypto from 'crypto';
 
 export interface CheckoutInput {
   userId: string;
@@ -16,6 +17,8 @@ export interface CheckoutInput {
   isScheduledSubscription?: boolean;
   scheduleDetails?: any;
   preOrder?: any;
+  checkoutIdempotencyKey?: string;
+  checkoutRequestHash?: string;
 }
 
 export class CheckoutService {
@@ -87,6 +90,8 @@ export class CheckoutService {
       isScheduledSubscription: input.isScheduledSubscription || false,
       scheduleDetails: input.scheduleDetails,
       orderStatusObj,
+      checkoutIdempotencyKey: input.checkoutIdempotencyKey || null,
+      checkoutRequestHash: input.checkoutRequestHash || null,
     });
 
     // 3. Atomically redeem coupon under the session if present
@@ -144,6 +149,102 @@ export class CheckoutService {
       order: newOrder,
       pricing,
     };
+  }
+
+  /**
+   * Safe checkout entry point implementing idempotency checks and MongoDB unique index safeguards.
+   */
+  static async processCheckoutWithIdempotency(
+    input: CheckoutInput,
+    idempotencyKey: string | undefined,
+    reqBody: any,
+    session?: ClientSession
+  ): Promise<any> {
+    const normalizedKey = typeof idempotencyKey === 'string' ? idempotencyKey.trim() : '';
+
+    if (idempotencyKey !== undefined && !normalizedKey) {
+      const valErr = new Error('Checkout idempotency key is required');
+      (valErr as any).statusCode = 400;
+      throw valErr;
+    }
+
+    // Generate request fingerprint hash
+    const fingerprintPayload = {
+      orderItems: input.orderItems,
+      couponCode: input.couponCode,
+      shippingAddress: input.shippingAddress,
+      paymentDetails: input.paymentDetails
+    };
+    const hash = crypto.createHash('sha256').update(JSON.stringify(fingerprintPayload)).digest('hex');
+
+    if (normalizedKey) {
+      const existing = await Order.findOne({
+        customerId: new mongoose.Types.ObjectId(input.userId),
+        checkoutIdempotencyKey: normalizedKey
+      }).session(session || null);
+
+      if (existing) {
+        if (existing.checkoutRequestHash === hash) {
+          return { order: existing, pricing: existing.orderSummary, isDuplicate: true };
+        } else {
+          const conflictErr = new Error('Idempotency key match, but request payload does not match.');
+          (conflictErr as any).statusCode = 409;
+          throw conflictErr;
+        }
+      }
+    }
+
+    input.checkoutIdempotencyKey = normalizedKey || undefined;
+    input.checkoutRequestHash = normalizedKey ? hash : undefined;
+
+    try {
+      if (session) {
+        return await this.processCheckout(input, session);
+      } else {
+        let result;
+        let localSession: mongoose.ClientSession | null = null;
+        try {
+          localSession = await mongoose.startSession();
+        } catch (e) {
+          // Fallback if Mongoose sessions are unsupported
+        }
+
+        if (localSession) {
+          localSession.startTransaction();
+          try {
+            result = await this.processCheckout(input, localSession);
+            await localSession.commitTransaction();
+          } catch (err) {
+            await localSession.abortTransaction();
+            throw err;
+          } finally {
+            await localSession.endSession();
+          }
+        } else {
+          result = await this.processCheckout(input, {} as any);
+        }
+        return result;
+      }
+    } catch (err: any) {
+      // Catch MongoDB Duplicate Key Exception (Error Code: 11000)
+      if (err.code === 11000 && normalizedKey) {
+        const raceExisting = await Order.findOne({
+          customerId: new mongoose.Types.ObjectId(input.userId),
+          checkoutIdempotencyKey: normalizedKey
+        }).session(session || null);
+
+        if (raceExisting) {
+          if (raceExisting.checkoutRequestHash === hash) {
+            return { order: raceExisting, pricing: raceExisting.orderSummary, isDuplicate: true };
+          } else {
+            const conflictErr = new Error('Idempotency key match, but request payload does not match.');
+            (conflictErr as any).statusCode = 409;
+            throw conflictErr;
+          }
+        }
+      }
+      throw err;
+    }
   }
 
   /**

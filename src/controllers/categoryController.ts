@@ -1,6 +1,8 @@
 import { Request, Response } from 'express';
 import streamifier from 'streamifier';
+import mongoose from 'mongoose';
 import Category from '../models/Category';
+import Subcategory from '../models/Subcategory';
 import cloudinary from '../config/cloudinary';
 
 const makeSlug = (name: string) =>
@@ -358,11 +360,39 @@ export const deleteCategory = async (req: Request, res: Response) => {
       return res.status(404).json({ message: 'Category not found' });
     }
 
-    res.json({ message: 'Category deleted successfully' });
+    res.status(200).json({ message: 'Category deleted successfully' });
   } catch (error: any) {
     res.status(500).json({
       message: 'Failed to delete category',
       error: error.message,
     });
+  }
+};
+
+export const getCategorySubcategories = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    let categoryId = id;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      const cleanName = (s: string) => s.replace(/[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDC00-\uDFFF]/g, '').trim().toLowerCase();
+      const nameRegex = new RegExp(`^${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+      const cleanTarget = cleanName(id);
+
+      const cats = await Category.find();
+      const match = cats.find(c =>
+        c.name.toLowerCase() === id.toLowerCase() ||
+        cleanName(c.name) === cleanTarget ||
+        (c.slug && id.toLowerCase().includes(c.slug))
+      );
+
+      if (match) {
+        categoryId = match._id.toString();
+      }
+    }
+
+    const subcategories = await Subcategory.find({ categoryId, isActive: true }).sort({ displayOrder: 1, name: 1 });
+    res.json({ success: true, subcategories });
+  } catch (error: any) {
+    res.status(500).json({ message: 'Failed to fetch subcategories', error: error.message });
   }
 };

@@ -89,6 +89,42 @@ const WalletTransactionSchema = new mongoose_1.Schema({
     notes: {
         type: String,
         default: ""
+    },
+    balanceBefore: {
+        type: Number
+    },
+    balanceAfter: {
+        type: Number
+    },
+    pendingBalanceBefore: {
+        type: Number
+    },
+    pendingBalanceAfter: {
+        type: Number
+    },
+    withdrawnBalanceBefore: {
+        type: Number
+    },
+    withdrawnBalanceAfter: {
+        type: Number
+    },
+    repairRunId: {
+        type: String,
+        index: true
+    },
+    isReconciliationEntry: {
+        type: Boolean,
+        default: false
+    },
+    operationKey: {
+        type: String
     }
 }, { timestamps: true });
+WalletTransactionSchema.index({ operationKey: 1 }, {
+    unique: true,
+    partialFilterExpression: {
+        operationKey: { $type: "string" }
+    }
+});
+WalletTransactionSchema.index({ walletId: 1, createdAt: -1 });
 exports.WalletTransaction = mongoose_1.default.model("WalletTransaction", WalletTransactionSchema);

@@ -7,6 +7,7 @@ import {
   getCategoryById,
   updateCategory,
   deleteCategory,
+  getCategorySubcategories
 } from '../controllers/categoryController';
 import { categoryUpload  } from '../middleware/multer';
 
@@ -18,6 +19,7 @@ router.get('/', getCategories);
 router.get('/tree', getCategoryTree);
 router.get('/dropdown', getCategoryDropdown);
 router.get('/:id', getCategoryById);
+router.get('/:id/subcategories', getCategorySubcategories);
 
 router.put('/:id', categoryUpload, updateCategory);
 

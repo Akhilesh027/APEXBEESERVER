@@ -13,6 +13,7 @@ import Product from '../models/Product';
 import { BusinessRelationship } from '../models/BusinessRelationship';
 import { ReferralSettings } from '../models/ReferralSettings';
 import { ReferralTransaction } from '../models/ReferralTransaction';
+import { WalletTransaction } from '../models/WalletTransaction';
 import '../models/Franchise';
 import '../models/Entrepreneur';
 import '../models/Vendor';
@@ -37,6 +38,7 @@ async function runTests() {
   const testUserIds = existingTestUsers.map(u => u._id);
   if (testUserIds.length > 0) {
     await Wallet.deleteMany({ userId: { $in: testUserIds } });
+    await WalletTransaction.deleteMany({ userId: { $in: testUserIds } });
     await CommissionSettlement.deleteMany({ recipientId: { $in: testUserIds } });
     await ReferralTransaction.deleteMany({ $or: [
       { recipientUserId: { $in: testUserIds } },

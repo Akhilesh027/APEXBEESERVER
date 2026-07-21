@@ -30,10 +30,14 @@ class SettlementEngine {
         if (existing)
             return existing;
         const created = await ReferralTransaction_1.ReferralTransaction.create([doc], { session });
-        // Increment user.wallet.holdBalance directly
-        await User_1.User.findByIdAndUpdate(doc.recipientUserId, {
-            $inc: { "wallet.holdBalance": doc.amount }
-        }).session(session || null);
+        const tx = created[0];
+        await WalletEngine_1.WalletEngine.hold(tx.recipientUserId, tx.amount, {
+            category: "Referral Bonus",
+            source: tx.transactionType,
+            remarks: `Pending referral bonus level ${tx.level} for order ${tx.orderId}`,
+            referenceId: tx._id,
+            referenceType: "ORDER"
+        }, session);
         return created[0];
     }
     static async createCommissionSettlementUnique(doc, session) {
@@ -46,10 +50,17 @@ class SettlementEngine {
         if (existing)
             return existing;
         const created = await CommissionSettlement_1.CommissionSettlement.create([doc], { session });
-        // Increment user.wallet.holdBalance directly
-        await User_1.User.findByIdAndUpdate(doc.recipientId, {
-            $inc: { "wallet.holdBalance": doc.amount }
-        }).session(session || null);
+        const s = created[0];
+        const category = s.settlementType === 'vendor' ? "Vendor Earnings" :
+            s.settlementType === 'franchise' ? "Franchise Commission" :
+                s.settlementType === 'entrepreneur' ? "Entrepreneur Commission" : "System Commission";
+        await WalletEngine_1.WalletEngine.hold(s.recipientId, s.amount, {
+            category,
+            source: `${s.settlementType}_settlement`,
+            remarks: `Pending ${s.settlementType} commission for order ${s.orderId}`,
+            referenceId: s._id,
+            referenceType: "ORDER"
+        }, session);
         return created[0];
     }
     /**
@@ -522,14 +533,6 @@ class SettlementEngine {
                     continue; // Skip returned/cancelled or return-pending orders
                 }
                 const txId = `TXN_${Date.now()}_${Math.floor(100000 + Math.random() * 900000)}`;
-                // Update the recipient user's nested wallet fields atomically to prevent race conditions
-                await User_1.User.findByIdAndUpdate(tx.recipientUserId, {
-                    $inc: {
-                        "wallet.holdBalance": Number((-tx.amount).toFixed(2)),
-                        "wallet.balance": Number(tx.amount.toFixed(2)),
-                        "wallet.totalEarned": Number(tx.amount.toFixed(2))
-                    }
-                }).session(sess);
                 // Release the hold in WalletEngine
                 await WalletEngine_1.WalletEngine.release(tx.recipientUserId, tx.amount, {
                     category: "Referral Bonus",
@@ -565,14 +568,6 @@ class SettlementEngine {
                 if (s.status === 'released')
                     continue;
                 const txId = `TXN_${Date.now()}_${Math.floor(100000 + Math.random() * 900000)}`;
-                // Update the recipient user's nested wallet fields atomically to prevent race conditions
-                await User_1.User.findByIdAndUpdate(s.recipientId, {
-                    $inc: {
-                        "wallet.holdBalance": Number((-s.amount).toFixed(2)),
-                        "wallet.balance": Number(s.amount.toFixed(2)),
-                        "wallet.totalEarned": Number(s.amount.toFixed(2))
-                    }
-                }).session(sess);
                 const category = s.settlementType === 'vendor' ? "Vendor Earnings" :
                     s.settlementType === 'franchise' ? "Franchise Commission" :
                         s.settlementType === 'entrepreneur' ? "Entrepreneur Commission" : "System Commission";

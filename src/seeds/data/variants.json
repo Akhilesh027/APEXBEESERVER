@@ -1,0 +1,112 @@
+[
+  {
+    "seedKey": "var-jasmine-100g",
+    "productSeedKey": "prod-jasmine-flowers",
+    "sku": "SKU-JAS-FLW-100",
+    "barcode": "8901234001001",
+    "attributes": {
+      "packSize": "100g",
+      "unit": "packet"
+    },
+    "weight": 0.1
+  },
+  {
+    "seedKey": "var-jasmine-250g",
+    "productSeedKey": "prod-jasmine-flowers",
+    "sku": "SKU-JAS-FLW-250",
+    "barcode": "8901234001002",
+    "attributes": {
+      "packSize": "250g",
+      "unit": "packet"
+    },
+    "weight": 0.25
+  },
+  {
+    "seedKey": "var-poojakit-std",
+    "productSeedKey": "prod-standard-pooja-kit",
+    "sku": "SKU-PJ-KIT-STD",
+    "barcode": "8901234002001",
+    "attributes": {
+      "packSize": "Standard",
+      "unit": "box"
+    },
+    "weight": 0.8
+  },
+  {
+    "seedKey": "var-cowmilk-1l",
+    "productSeedKey": "prod-cow-milk-1l",
+    "sku": "SKU-COW-MILK-1L",
+    "barcode": "8901234003001",
+    "attributes": {
+      "packSize": "1 Litre",
+      "unit": "packet"
+    },
+    "weight": 1.0
+  },
+  {
+    "seedKey": "var-watercan-20l",
+    "productSeedKey": "prod-water-can-20l",
+    "sku": "SKU-WATER-CAN-20L",
+    "barcode": "8901234004001",
+    "attributes": {
+      "packSize": "20 Litres",
+      "unit": "can"
+    },
+    "weight": 20.0
+  },
+  {
+    "seedKey": "var-tomatoes-1kg",
+    "productSeedKey": "prod-fresh-tomatoes",
+    "sku": "SKU-TOMATO-1KG",
+    "barcode": "8901234005001",
+    "attributes": {
+      "packSize": "1 kg",
+      "unit": "packet"
+    },
+    "weight": 1.0
+  },
+  {
+    "seedKey": "var-saree-red",
+    "productSeedKey": "prod-kanchipuram-saree",
+    "sku": "SKU-KAN-SAREE-RED",
+    "barcode": "8901234006001",
+    "attributes": {
+      "colour": "Royal Red",
+      "size": "Standard"
+    },
+    "weight": 0.6
+  },
+  {
+    "seedKey": "var-saree-blue",
+    "productSeedKey": "prod-kanchipuram-saree",
+    "sku": "SKU-KAN-SAREE-BLU",
+    "barcode": "8901234006002",
+    "attributes": {
+      "colour": "Peacock Blue",
+      "size": "Standard"
+    },
+    "weight": 0.6
+  },
+  {
+    "seedKey": "var-boat-black",
+    "productSeedKey": "prod-boat-earbuds",
+    "sku": "SKU-BOAT-121-BLK",
+    "barcode": "8901234007001",
+    "attributes": {
+      "colour": "Active Black",
+      "size": "One Size"
+    },
+    "weight": 0.15
+  },
+  {
+    "seedKey": "var-boat-blue",
+    "productSeedKey": "prod-boat-earbuds",
+    "sku": "SKU-BOAT-121-BLU",
+    "barcode": "8901234007002",
+    "attributes": {
+      "colour": "Cherry Blossom Blue",
+      "size": "One Size"
+    },
+    "weight": 0.15
+  }
+]

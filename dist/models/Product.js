@@ -409,12 +409,13 @@ ProductSchema.virtual('availableStock').get(function () {
     }
     return this.stock;
 });
+ProductSchema.index({ sellerId: 1, createdAt: -1 });
 ProductSchema.index({ sellerId: 1, status: 1 });
 ProductSchema.index({ sellerType: 1, status: 1 });
-ProductSchema.index({ categoryId: 1, status: 1 });
+ProductSchema.index({ categoryId: 1, status: 1, createdAt: -1 });
 ProductSchema.index({ subCategoryId: 1, status: 1 });
 ProductSchema.index({ childCategoryId: 1, status: 1 });
-ProductSchema.index({ status: 1, isActive: 1 });
+ProductSchema.index({ status: 1, isActive: 1, createdAt: -1 });
 ProductSchema.index({ createdAt: -1 });
 ProductSchema.index({ name: 'text', description: 'text' });
 exports.default = mongoose_1.default.model('Product', ProductSchema);

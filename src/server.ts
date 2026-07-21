@@ -13,9 +13,15 @@ import { initNotificationListeners } from './modules/notifications/events/notifi
 import { seedNotificationTemplates } from './modules/notifications/config/seedTemplates';
 import { connectDB } from './config/db';
 import { seedDatabase } from './config/seed';
+import { seedBannerDefaults } from './seeds/seedBanners';
 import { InventoryService } from './services/inventoryService';
 import { User } from './models/User';
 import { ReferralSettings } from './models/ReferralSettings';
+import './models/Subcategory';
+import './models/MediaAsset';
+import './models/CommunityPost';
+import './models/CommunityComment';
+import './models/CommunityPostReport';
 import bcrypt from 'bcryptjs';
 import authRoutes from './routes/authRoutes';
 import userRoutes from './routes/userRoutes';
@@ -46,6 +52,13 @@ import deliveryRoutes from './routes/deliveryRoutes';
 import serviceBookingRoutes from './routes/serviceBookingRoutes';
 import localShopRoutes from './routes/localShopRoutes';
 import b2bRoutes from './routes/b2bRoutes';
+import searchRoutes from './routes/searchRoutes';
+import storesRoutes from './routes/storesRoutes';
+import checkoutRoutes from './routes/checkoutRoutes';
+import homeRoutes from './routes/homeRoutes';
+import communityRoutes from './routes/communityRoutes';
+import bannerRoutes from './routes/bannerRoutes';
+import orderTrackingRoutes from './routes/orderTrackingRoutes';
 
 // Initialize express app
 const app = express();
@@ -134,6 +147,13 @@ app.use("/api/delivery", deliveryRoutes);
 app.use("/api/service", serviceBookingRoutes);
 app.use('/api/local-shop', localShopRoutes);
 app.use('/api/b2b', b2bRoutes);
+app.use('/api/v1/search', searchRoutes);
+app.use('/api/v1/stores', storesRoutes);
+app.use('/api/v1/checkout', checkoutRoutes);
+app.use("/api/banners", bannerRoutes);
+app.use("/api/order-tracking", orderTrackingRoutes);
+app.use('/api/home', homeRoutes);
+app.use('/api/v1/community', communityRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -225,6 +245,22 @@ const seedReferralDefaults = async () => {
 const startServer = async () => {
   try {
     await connectDB();
+    if (mongoose.connection.db) {
+      await mongoose.connection.db.collection('inventories').deleteMany({});
+      console.log('[Startup] Cleared inventories collection to regenerate clean records.');
+    }
+
+    // Enable subscriptions for Toor Dal, Milk, and Water products
+    try {
+      const ProductModel = mongoose.model('Product');
+      const updatedRes = await ProductModel.updateMany(
+        { name: { $regex: /Toor Dal|Milk|Water/i } },
+        { $set: { isSubscriptionAvailable: true } }
+      );
+      console.log(`[Startup Migration] Subscription model enabled for ${updatedRes.modifiedCount} products matching Toor Dal / Milk / Water.`);
+    } catch (migErr) {
+      console.error('[Startup Migration] Failed to enable subscription model:', migErr);
+    }
 
     if (['staging', 'production'].includes(env.NODE_ENV)) {
       console.log('[REDIS] Verifying mandatory connection for staging/production...');
@@ -239,9 +275,14 @@ const startServer = async () => {
       console.log('[REDIS] Connection verified successfully.');
     }
 
-    await seedReferralDefaults();
-    await seedDatabase();
-    await seedNotificationTemplates(); // Seed event notifications templates
+    if (process.env.NODE_APP_INSTANCE === undefined || process.env.NODE_APP_INSTANCE === '0') {
+      await seedReferralDefaults();
+      await seedDatabase();
+      await seedNotificationTemplates(); // Seed event notifications templates
+      await seedBannerDefaults();
+    } else {
+      console.log(`[Server] Skipping referral defaults, database, and notification template seeding on clustered instance ${process.env.NODE_APP_INSTANCE}`);
+    }
     initNotificationListeners(); // Registry listeners for events
 
     let server: http.Server | null = null;
@@ -288,7 +329,7 @@ const startServer = async () => {
 
     const shutdown = async (signal: string) => {
       console.log(`[Shutdown] Received ${signal}. Starting graceful shutdown...`);
-      
+
       const cleanConnections = async () => {
         try {
           if (env.PROCESS_TYPE !== 'api') {
@@ -347,4 +388,8 @@ const startServer = async () => {
   }
 };
 
-startServer();
+if (process.env.NODE_ENV !== 'test') {
+  startServer();
+}
+
+export { app };

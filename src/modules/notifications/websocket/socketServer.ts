@@ -84,7 +84,9 @@ export const initSocketServer = (server: http.Server) => {
 
         socket.emit('auth:success', {
           message: 'Authenticated and joined real-time notification rooms.',
-          rooms: Array.from(socket.rooms)
+          rooms: Array.from(socket.rooms),
+          workerId: process.env.NODE_APP_INSTANCE || '0',
+          pid: process.pid
         });
 
         console.log(`[WebSocket] Client authenticated user: ${user.name} (${userId})`);

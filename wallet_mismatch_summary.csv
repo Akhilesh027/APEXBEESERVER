@@ -1,0 +1,12 @@
+Category,Count
+"Missing transaction history",0
+"Invalid transaction direction",0
+"Missing required balance field",0
+"Available-balance mismatch",2
+"Pending-balance mismatch",1
+"Withdrawn-balance mismatch",0
+"Legacy embedded-ledger mismatch",0
+"Duplicate transaction reference",0
+"Transaction ordering problem",0
+"Likely audit-formula false positive",0
+"Confirmed wallet corruption",0

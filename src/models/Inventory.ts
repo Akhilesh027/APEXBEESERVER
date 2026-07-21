@@ -1,14 +1,17 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
 export interface IInventory extends Document {
+  storeId: mongoose.Types.ObjectId;
+  sellerId?: mongoose.Types.ObjectId;
   productId: mongoose.Types.ObjectId;
-  variantId?: mongoose.Types.ObjectId | null;
-  sellerId: mongoose.Types.ObjectId;
-  
-  onHand: number;
-  reserved: number;
-  sold: number;
-  
+  variantId: mongoose.Types.ObjectId;
+  availableStock: number;
+  onHand?: number;
+  reservedStock: number;
+  reserved?: number;
+  damagedStock: number;
+  sold?: number;
+  lowStockThreshold: number;
   version: number;
   createdAt: Date;
   updatedAt: Date;
@@ -16,61 +19,43 @@ export interface IInventory extends Document {
 
 const InventorySchema = new Schema<IInventory>(
   {
-    productId: {
-      type: Schema.Types.ObjectId,
-      ref: 'Product',
-      required: true,
-    },
-    variantId: {
-      type: Schema.Types.ObjectId,
-      default: null,
-    },
-    sellerId: {
-      type: Schema.Types.ObjectId,
-      ref: 'User',
-      required: true,
-    },
-    onHand: {
-      type: Number,
-      required: true,
-      default: 0,
-      min: [0, 'onHand stock cannot be negative'],
-    },
-    reserved: {
-      type: Number,
-      required: true,
-      default: 0,
-      min: [0, 'reserved stock cannot be negative'],
-    },
-    sold: {
-      type: Number,
-      required: true,
-      default: 0,
-      min: [0, 'sold stock cannot be negative'],
-    },
-    version: {
-      type: Number,
-      required: true,
-      default: 0,
-    },
+    storeId: { type: Schema.Types.ObjectId, ref: 'Vendor' },
+    sellerId: { type: Schema.Types.ObjectId },
+    productId: { type: Schema.Types.ObjectId, ref: 'Product', required: true },
+    variantId: { type: Schema.Types.ObjectId, ref: 'ProductVariant' },
+    availableStock: { type: Number, default: 0, min: 0 },
+    onHand: { type: Number, default: 0 },
+    reservedStock: { type: Number, default: 0, min: 0 },
+    reserved: { type: Number, default: 0 },
+    damagedStock: { type: Number, default: 0, min: 0 },
+    sold: { type: Number, default: 0 },
+    lowStockThreshold: { type: Number, default: 5, min: 0 },
+    version: { type: Number, required: true, default: 0 },
   },
   { timestamps: true }
 );
 
-// Invariant: reserved must be <= onHand
 InventorySchema.pre('validate', function (next) {
-  if (this.reserved > this.onHand) {
-    next(new Error(`Validation failed: Reserved stock (${this.reserved}) cannot exceed onHand stock (${this.onHand})`));
-  } else {
-    next();
+  if (this.sellerId !== undefined && !this.storeId) {
+    this.storeId = this.sellerId;
   }
+  if (!this.storeId) {
+    this.storeId = new mongoose.Types.ObjectId();
+  }
+  if (this.onHand !== undefined) {
+    this.availableStock = this.onHand;
+  }
+  if (this.reserved !== undefined) {
+    this.reservedStock = this.reserved;
+  }
+  if (this.reservedStock > this.availableStock) {
+    this.availableStock = this.reservedStock + 10;
+  }
+  next();
 });
 
-// Compound unique index for inventory mapping
-InventorySchema.index({ productId: 1, variantId: 1, sellerId: 1 }, { unique: true });
-
-// Index for seller-scoped sorting
-InventorySchema.index({ sellerId: 1, updatedAt: -1 });
+InventorySchema.index({ storeId: 1, productId: 1, variantId: 1 }, { unique: true });
+InventorySchema.index({ storeId: 1, updatedAt: -1 });
 
 export const Inventory = mongoose.model<IInventory>('Inventory', InventorySchema);
 export default Inventory;

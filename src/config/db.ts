@@ -129,17 +129,23 @@ export const connectDB = async (): Promise<void> => {
 
     await mongoose.connect(mongoURI, {
       serverSelectionTimeoutMS: 15000,
-      maxPoolSize: env.MONGO_MAX_POOL_SIZE,
-      minPoolSize: env.MONGO_MIN_POOL_SIZE,
+      maxPoolSize: env.MONGODB_MAX_POOL_SIZE,
+      minPoolSize: env.MONGODB_MIN_POOL_SIZE,
+      maxConnecting: env.MONGODB_MAX_CONNECTING,
+      waitQueueTimeoutMS: env.MONGODB_WAIT_QUEUE_TIMEOUT_MS,
       socketTimeoutMS: 45000,
       connectTimeoutMS: 30000,
     });
 
     console.log(`MongoDB Atlas connected successfully to database "${dbName}"!`);
 
-    await seedAdmin();
-    await migrateServiceProviders();
-    await migrateServiceProviderKycs();
+    if (process.env.NODE_APP_INSTANCE === undefined || process.env.NODE_APP_INSTANCE === '0') {
+      await seedAdmin();
+      await migrateServiceProviders();
+      await migrateServiceProviderKycs();
+    } else {
+      console.log(`[Database] Skipping admin/service provider seeding/migrations on clustered instance ${process.env.NODE_APP_INSTANCE}`);
+    }
   } catch (error) {
     console.error('MongoDB Atlas connection failed:', error);
     console.error('Server stopped to prevent using wrong/local database.');

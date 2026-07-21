@@ -17,7 +17,8 @@ import {
   getAiProductSuggestions,
   getInventoryMovements,
   createInventoryMovement,
-  getProductBySku
+  getProductBySku,
+  getBuyAgainProducts
 } from '../controllers/productController';
 
 import { productUpload } from '../middleware/multer';
@@ -27,6 +28,7 @@ const router = express.Router();
 
 // Public routes for product viewing
 router.get('/', getAllProducts);
+router.get('/buy-again', protect, getBuyAgainProducts);
 router.get('/my-products', protect, getMyProducts);
 router.get('/vendor/:vendorId', getProductsByVendor);
 router.post('/ai-generator', protect, restrictTo('vendor', 'wholesaler', 'manufacturer', 'admin'), getAiProductSuggestions);

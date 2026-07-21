@@ -311,6 +311,7 @@ const getAllProducts = async (req, res) => {
         });
     }
     catch (error) {
+        console.error('Failed to fetch products error:', error);
         res.status(500).json({
             message: 'Failed to fetch products',
             error: error.message,
