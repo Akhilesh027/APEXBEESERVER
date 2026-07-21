@@ -1,0 +1,13 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const searchController_1 = require("../controllers/searchController");
+const router = (0, express_1.Router)();
+router.get('/', searchController_1.search);
+router.get('/suggestions', searchController_1.getSuggestions);
+router.get('/trending', searchController_1.getTrending);
+router.get('/recent', searchController_1.getRecent);
+router.post('/history', searchController_1.saveHistory);
+router.delete('/history', searchController_1.deleteHistory);
+router.get('/barcode/:barcode', searchController_1.searchBarcode);
+exports.default = router;

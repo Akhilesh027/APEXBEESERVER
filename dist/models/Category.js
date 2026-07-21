@@ -33,18 +33,8 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.Category = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
-const CategoryAttributeSchema = new mongoose_1.Schema({
-    name: { type: String, required: true, trim: true },
-    type: {
-        type: String,
-        enum: ['text', 'number', 'select', 'boolean'],
-        default: 'text',
-    },
-    required: { type: Boolean, default: false },
-    isVariant: { type: Boolean, default: false },
-    options: [{ type: String, trim: true }],
-}, { _id: true });
 const CategorySchema = new mongoose_1.Schema({
     name: { type: String, required: true, trim: true },
     slug: {
@@ -55,24 +45,46 @@ const CategorySchema = new mongoose_1.Schema({
         trim: true,
     },
     description: { type: String, default: '' },
-    image: { type: String, default: '' },
-    banner: { type: String, default: '' },
-    parentId: {
-        type: mongoose_1.Schema.Types.ObjectId,
-        ref: 'Category',
-        default: null,
-    },
-    level: {
-        type: Number,
-        enum: [1, 2, 3],
-        default: 1,
-    },
+    iconAssetId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'MediaAsset' },
+    hexAssetId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'MediaAsset' },
+    bannerAssetId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'MediaAsset' },
+    mobileBannerAssetId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'MediaAsset' },
+    displayOrder: { type: Number, default: 0 },
     isActive: { type: Boolean, default: true },
+    isFeatured: { type: Boolean, default: false },
+    isSeasonal: { type: Boolean, default: false },
+    supportedItemTypes: [
+        {
+            type: String,
+            enum: [
+                'product',
+                'service',
+                'restaurant',
+                'course',
+                'event',
+                'travel',
+                'finance',
+                'logistics',
+            ],
+            default: 'product',
+        },
+    ],
+    seo: {
+        title: { type: String, default: '' },
+        description: { type: String, default: '' },
+        keywords: [{ type: String }],
+    },
+    level: { type: Number, default: 1 },
+    parentId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Category', default: null },
+    image: { type: String },
+    banner: { type: String },
+    brands: [{ type: mongoose_1.Schema.Types.Mixed }],
+    attributes: [mongoose_1.Schema.Types.Mixed],
     sortOrder: { type: Number, default: 0 },
-    brands: [{ type: String, trim: true }],
-    attributes: [CategoryAttributeSchema],
 }, { timestamps: true });
-CategorySchema.index({ parentId: 1 });
-CategorySchema.index({ level: 1 });
-CategorySchema.index({ name: 1 }, { collation: { locale: 'en', strength: 2 } });
-exports.default = mongoose_1.default.model('Category', CategorySchema);
+CategorySchema.index({ name: 1 });
+CategorySchema.index({ slug: 1 });
+CategorySchema.index({ isActive: 1 });
+CategorySchema.index({ isSeasonal: 1 });
+exports.Category = mongoose_1.default.model('Category', CategorySchema);
+exports.default = exports.Category;

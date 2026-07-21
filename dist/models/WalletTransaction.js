@@ -36,95 +36,83 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.WalletTransaction = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
 const WalletTransactionSchema = new mongoose_1.Schema({
-    walletId: {
-        type: mongoose_1.Schema.Types.ObjectId,
-        ref: "Wallet",
-        required: true,
-        index: true
-    },
-    userId: {
-        type: mongoose_1.Schema.Types.ObjectId,
-        ref: "User",
-        required: true,
-        index: true
-    },
-    transactionNumber: {
-        type: String,
-        required: true,
-        unique: true,
-        index: true
-    },
-    amount: {
-        type: Number,
-        required: true,
-        min: 0.01
-    },
+    transactionId: { type: String, unique: true, index: true },
+    walletId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Wallet', required: true, index: true },
+    userId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     type: {
         type: String,
         required: true,
-        enum: ['subscription_credit', 'withdrawal', 'refund', 'commission', 'adjustment', 'reversal', 'payment'],
-        index: true
+        enum: [
+            'order_payment',
+            'refund',
+            'cashback',
+            'referral_bonus',
+            'commission',
+            'withdrawal',
+            'withdrawal_reversal',
+            'reward_redemption',
+            'admin_adjustment',
+        ],
+        index: true,
     },
-    direction: {
-        type: String,
-        required: true,
-        enum: ['credit', 'debit']
-    },
+    direction: { type: String, required: true, enum: ['credit', 'debit'] },
+    grossAmount: { type: Number, required: true, min: 0 },
+    tdsAmount: { type: Number, required: true, default: 0, min: 0 },
+    gstAmount: { type: Number, required: true, default: 0, min: 0 },
+    platformFee: { type: Number, required: true, default: 0, min: 0 },
+    netAmount: { type: Number, required: true, min: 0 },
+    openingBalance: { type: Number, required: true, default: 0 },
+    closingBalance: { type: Number, required: true, default: 0 },
+    orderId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Order' },
+    commissionId: { type: mongoose_1.Schema.Types.ObjectId },
+    withdrawalId: { type: mongoose_1.Schema.Types.ObjectId },
     status: {
         type: String,
         required: true,
-        enum: ['pending', 'processing', 'completed', 'failed', 'reversed'],
+        enum: ['pending', 'completed', 'reversed', 'failed'],
         default: 'pending',
-        index: true
+        index: true,
     },
-    referenceId: {
-        type: mongoose_1.Schema.Types.Mixed,
-        default: null,
-        index: true
-    },
-    referenceModel: {
-        type: String,
-        default: ""
-    },
-    notes: {
-        type: String,
-        default: ""
-    },
-    balanceBefore: {
-        type: Number
-    },
-    balanceAfter: {
-        type: Number
-    },
-    pendingBalanceBefore: {
-        type: Number
-    },
-    pendingBalanceAfter: {
-        type: Number
-    },
-    withdrawnBalanceBefore: {
-        type: Number
-    },
-    withdrawnBalanceAfter: {
-        type: Number
-    },
-    repairRunId: {
-        type: String,
-        index: true
-    },
-    isReconciliationEntry: {
-        type: Boolean,
-        default: false
-    },
-    operationKey: {
-        type: String
-    }
+    idempotencyKey: { type: String, unique: true, index: true },
+    // Legacy fallback schema mapping fields
+    amount: { type: Number },
+    transactionNumber: { type: String },
+    operationKey: { type: String },
+    balanceBefore: { type: Number },
+    balanceAfter: { type: Number },
+    pendingBalanceBefore: { type: Number },
+    pendingBalanceAfter: { type: Number },
+    withdrawnBalanceBefore: { type: Number },
+    withdrawnBalanceAfter: { type: Number },
+    notes: { type: String },
 }, { timestamps: true });
-WalletTransactionSchema.index({ operationKey: 1 }, {
-    unique: true,
-    partialFilterExpression: {
-        operationKey: { $type: "string" }
+WalletTransactionSchema.pre('validate', function (next) {
+    if (this.amount !== undefined) {
+        if (this.grossAmount === undefined)
+            this.grossAmount = this.amount;
+        if (this.netAmount === undefined)
+            this.netAmount = this.amount;
     }
+    if (this.transactionNumber !== undefined && !this.transactionId) {
+        this.transactionId = this.transactionNumber;
+    }
+    if (this.operationKey !== undefined && !this.idempotencyKey) {
+        this.idempotencyKey = this.operationKey;
+    }
+    if (this.balanceBefore !== undefined && this.openingBalance === 0) {
+        this.openingBalance = this.balanceBefore;
+    }
+    if (this.balanceAfter !== undefined && this.closingBalance === 0) {
+        this.closingBalance = this.balanceAfter;
+    }
+    if (!this.idempotencyKey) {
+        this.idempotencyKey = 'idemp-' + new mongoose_1.default.Types.ObjectId().toString();
+    }
+    if (!this.transactionId) {
+        this.transactionId = 'TXN-' + new mongoose_1.default.Types.ObjectId().toString();
+    }
+    next();
 });
 WalletTransactionSchema.index({ walletId: 1, createdAt: -1 });
-exports.WalletTransaction = mongoose_1.default.model("WalletTransaction", WalletTransactionSchema);
+exports.WalletTransaction = mongoose_1.default.model('WalletTransaction', WalletTransactionSchema);
+exports.default = exports.WalletTransaction;

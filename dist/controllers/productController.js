@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getProductBySku = exports.createInventoryMovement = exports.getInventoryMovements = exports.getAiProductSuggestions = exports.archiveProduct = exports.duplicateProduct = exports.getProductsByVendor = exports.bulkUpdateProducts = exports.rejectProduct = exports.sellerNegotiatePricing = exports.sellerAcceptPricing = exports.configureAdminPricing = exports.deleteProduct = exports.updateProduct = exports.getProductById = exports.getMyProducts = exports.getAllProducts = exports.createProduct = void 0;
+exports.getBuyAgainProducts = exports.getProductBySku = exports.createInventoryMovement = exports.getInventoryMovements = exports.getAiProductSuggestions = exports.archiveProduct = exports.duplicateProduct = exports.getProductsByVendor = exports.bulkUpdateProducts = exports.rejectProduct = exports.sellerNegotiatePricing = exports.sellerAcceptPricing = exports.configureAdminPricing = exports.deleteProduct = exports.updateProduct = exports.getProductById = exports.getMyProducts = exports.getAllProducts = exports.createProduct = void 0;
 const mongoose_1 = __importDefault(require("mongoose"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const Product_1 = __importDefault(require("../models/Product"));
@@ -228,9 +228,23 @@ const createProduct = async (req, res) => {
     }
 };
 exports.createProduct = createProduct;
+const calculateDistance = (lat1, lon1, lat2, lon2) => {
+    const R = 6371; // Radius of the earth in km
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+};
 const getAllProducts = async (req, res) => {
     try {
         const { category, categoryId, status, isActive, excludeId, limit, page, sellerId, sellerType } = req.query;
+        // Parse user location details from query parameters
+        const lat = req.query.lat ? parseFloat(req.query.lat) : null;
+        const lng = req.query.lng ? parseFloat(req.query.lng) : null;
+        const pincode = req.query.pincode ? String(req.query.pincode).trim() : '';
         const filter = {};
         const pageNum = Math.max(1, Number(page) || 1);
         const limitNum = Math.min(100, Math.max(1, Number(limit) || 20));
@@ -298,7 +312,49 @@ const getAllProducts = async (req, res) => {
             .sort({ createdAt: -1 })
             .skip((pageNum - 1) * limitNum)
             .limit(limitNum);
-        const products = await populateProduct(query.select(selectString));
+        const rawProducts = await populateProduct(query.select(selectString));
+        const sellerIds = rawProducts.map((p) => p.sellerId?._id || p.sellerId).filter(Boolean);
+        const vendors = await Vendor_1.Vendor.find({ userId: { $in: sellerIds } });
+        const vendorMap = new Map(vendors.map((v) => [v.userId.toString(), v]));
+        const products = rawProducts.map((p) => {
+            const productObj = p.toObject ? p.toObject() : p;
+            const sellerIdStr = (p.sellerId?._id || p.sellerId || '').toString();
+            const vendor = vendorMap.get(sellerIdStr);
+            let distance = 1.2; // default
+            let duration = 10; // default mins
+            let shippingCharge = 0; // default shipping charge
+            if (lat && lng && vendor && vendor.location && vendor.location.coordinates) {
+                const vLng = vendor.location.coordinates[0];
+                const vLat = vendor.location.coordinates[1];
+                if (typeof vLng === 'number' && typeof vLat === 'number') {
+                    distance = calculateDistance(lat, lng, vLat, vLng);
+                    duration = Math.max(10, Math.round(10 + distance * 2.5));
+                    shippingCharge = distance > 3 ? Math.round(distance * 8) : 0;
+                }
+            }
+            else if (pincode && vendor && vendor.pincode) {
+                if (vendor.pincode === pincode) {
+                    distance = 1.5;
+                    duration = 12;
+                }
+                else {
+                    distance = 4.8;
+                    duration = 25;
+                    shippingCharge = 15;
+                }
+            }
+            if (!productObj.adminPricing) {
+                productObj.adminPricing = {};
+            }
+            productObj.adminPricing.shippingCharge = shippingCharge;
+            productObj.calculatedDistanceKm = parseFloat(distance.toFixed(1));
+            productObj.estimatedDeliveryMinutes = duration;
+            productObj.deliveryMode = vendor?.deliveryMode || 'self_delivery';
+            // Store name & store rating override
+            productObj.brand = vendor?.businessName || productObj.brand || 'ApexBee Seller';
+            productObj.vendorRating = 4.8; // default store rating
+            return productObj;
+        });
         res.json({
             success: true,
             products,
@@ -999,3 +1055,93 @@ const getProductBySku = async (req, res) => {
     }
 };
 exports.getProductBySku = getProductBySku;
+const getBuyAgainProducts = async (req, res) => {
+    try {
+        const authUser = req.user;
+        if (!authUser) {
+            res.status(401).json({ success: false, message: 'Unauthorized access.' });
+            return;
+        }
+        const userId = authUser.id || authUser._id;
+        const Order = mongoose_1.default.model('Order');
+        // Find all successfully placed/completed/delivered orders for this user
+        const orders = await Order.find({
+            customerId: userId,
+            orderStatus: { $nin: ['cancelled', 'Cancelled', 'pending_payment', 'Failed', 'Payment Rejected'] }
+        }).sort({ createdAt: -1 });
+        // Collect product IDs in order of recent purchases
+        const productIds = new Set();
+        orders.forEach((order) => {
+            (order.items || []).forEach((item) => {
+                if (item.productId) {
+                    productIds.add(item.productId.toString());
+                }
+            });
+        });
+        const idsArray = Array.from(productIds);
+        if (idsArray.length === 0) {
+            res.status(200).json({ success: true, products: [] });
+            return;
+        }
+        const lat = req.query.lat ? parseFloat(req.query.lat) : null;
+        const lng = req.query.lng ? parseFloat(req.query.lng) : null;
+        const pincode = req.query.pincode ? String(req.query.pincode).trim() : '';
+        // Fetch the product documents
+        const rawProducts = await Product_1.default.find({
+            _id: { $in: idsArray },
+            status: 'Live',
+            isActive: true
+        });
+        const sellerIds = rawProducts.map((p) => p.sellerId?._id || p.sellerId).filter(Boolean);
+        const vendors = await Vendor_1.Vendor.find({ userId: { $in: sellerIds } });
+        const vendorMap = new Map(vendors.map((v) => [v.userId.toString(), v]));
+        const mappedProducts = rawProducts.map((p) => {
+            const productObj = p.toObject ? p.toObject() : p;
+            const sellerIdStr = (p.sellerId?._id || p.sellerId || '').toString();
+            const vendor = vendorMap.get(sellerIdStr);
+            let distance = 1.2; // default
+            let duration = 10; // default mins
+            let shippingCharge = 0; // default shipping charge
+            if (lat && lng && vendor && vendor.location && vendor.location.coordinates) {
+                const vLng = vendor.location.coordinates[0];
+                const vLat = vendor.location.coordinates[1];
+                if (typeof vLng === 'number' && typeof vLat === 'number') {
+                    distance = calculateDistance(lat, lng, vLat, vLng);
+                    duration = Math.max(10, Math.round(10 + distance * 2.5));
+                    shippingCharge = distance > 3 ? Math.round(distance * 8) : 0;
+                }
+            }
+            else if (pincode && vendor && vendor.pincode) {
+                if (vendor.pincode === pincode) {
+                    distance = 1.5;
+                    duration = 12;
+                }
+                else {
+                    distance = 4.8;
+                    duration = 25;
+                    shippingCharge = 15;
+                }
+            }
+            if (!productObj.adminPricing) {
+                productObj.adminPricing = {};
+            }
+            productObj.adminPricing.shippingCharge = shippingCharge;
+            productObj.calculatedDistanceKm = parseFloat(distance.toFixed(1));
+            productObj.estimatedDeliveryMinutes = duration;
+            productObj.deliveryMode = vendor?.deliveryMode || 'self_delivery';
+            productObj.brand = vendor?.businessName || productObj.brand || 'ApexBee Seller';
+            productObj.vendorRating = 4.8;
+            return productObj;
+        });
+        // Sort products based on their appearance in the recent purchases list
+        const productsMap = new Map(mappedProducts.map(p => [p._id.toString(), p]));
+        const orderedProducts = idsArray
+            .map(id => productsMap.get(id))
+            .filter(Boolean);
+        res.status(200).json({ success: true, products: orderedProducts });
+    }
+    catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+exports.getBuyAgainProducts = getBuyAgainProducts;

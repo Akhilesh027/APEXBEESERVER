@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.checkWishlistStatus = exports.toggleWishlist = exports.getWishlist = void 0;
+exports.syncWishlist = exports.checkWishlistStatus = exports.toggleWishlist = exports.getWishlist = void 0;
 const Wishlist_1 = __importDefault(require("../models/Wishlist"));
 const getWishlist = async (req, res) => {
     try {
@@ -81,3 +81,26 @@ const checkWishlistStatus = async (req, res) => {
     }
 };
 exports.checkWishlistStatus = checkWishlistStatus;
+const syncWishlist = async (req, res) => {
+    try {
+        const { userId, productIds } = req.body;
+        if (!userId || !Array.isArray(productIds)) {
+            return res.status(400).json({ success: false, message: 'User ID and productIds array are required' });
+        }
+        let wishlist = await Wishlist_1.default.findOne({ userId });
+        if (!wishlist) {
+            wishlist = new Wishlist_1.default({ userId, products: [] });
+        }
+        productIds.forEach((id) => {
+            if (!wishlist.products.some((pid) => pid.toString() === String(id))) {
+                wishlist.products.push(id);
+            }
+        });
+        await wishlist.save();
+        res.status(200).json({ success: true, message: 'Wishlist synced successfully', wishlist });
+    }
+    catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to sync wishlist', error: error.message });
+    }
+};
+exports.syncWishlist = syncWishlist;

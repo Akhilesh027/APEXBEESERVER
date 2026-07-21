@@ -44,6 +44,8 @@ const CouponSchema = new mongoose_1.Schema({
     },
     discountValue: { type: Number, required: true },
     minSubtotal: { type: Number, default: 0 },
+    minOrderAmount: { type: Number, default: 0 },
+    maxDiscountAmount: { type: Number, default: 999999 },
     expiryDate: { type: String, required: true },
     usageCount: { type: Number, default: 0 },
     usageLimit: { type: Number, default: 999999 },

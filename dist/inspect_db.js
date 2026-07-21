@@ -105,8 +105,8 @@ async function run() {
             userWallet.availableBalance += w.availableBalance;
             userWallet.pendingBalance += w.pendingBalance;
             userWallet.withdrawnBalance += w.withdrawnBalance;
-            userWallet.totalCredits += w.totalCredits;
-            userWallet.totalDebits += w.totalDebits;
+            userWallet.totalCredits = (userWallet.totalCredits || 0) + (w.totalCredits || 0);
+            userWallet.totalDebits = (userWallet.totalDebits || 0) + (w.totalDebits || 0);
             // Append ledger entries
             if (w.ledgerEntries && w.ledgerEntries.length > 0) {
                 userWallet.ledgerEntries.push(...w.ledgerEntries);

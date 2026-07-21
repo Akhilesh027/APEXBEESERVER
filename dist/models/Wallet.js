@@ -40,23 +40,26 @@ const LedgerEntrySchema = new mongoose_1.Schema({
     referenceId: { type: mongoose_1.Schema.Types.Mixed },
     referenceType: { type: String, enum: ['ORDER', 'WITHDRAWAL', 'REFERRAL', 'SYSTEM', 'REVERSAL'] },
     type: { type: String, enum: ['credit', 'debit', 'Credit', 'Debit'], required: true },
-    source: { type: String, default: "" },
-    category: { type: String, default: "" }, // old
+    source: { type: String, default: '' },
+    category: { type: String, default: '' },
     amount: { type: Number, required: true },
-    status: { type: String, default: "completed" },
-    remarks: { type: String, default: "" },
-    description: { type: String, default: "" }, // old
+    status: { type: String, default: 'completed' },
+    remarks: { type: String, default: '' },
+    description: { type: String, default: '' },
     createdAt: { type: Date, default: Date.now },
-    date: { type: Date, default: Date.now } // old
+    date: { type: Date, default: Date.now },
 });
 const WalletSchema = new mongoose_1.Schema({
     userId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true, unique: true, index: true },
-    availableBalance: { type: Number, default: 0 },
-    pendingBalance: { type: Number, default: 0 },
-    withdrawnBalance: { type: Number, default: 0 },
+    availableBalance: { type: Number, default: 0, required: true },
+    pendingBalance: { type: Number, default: 0, required: true },
+    holdBalance: { type: Number, default: 0, required: true },
+    withdrawnBalance: { type: Number, default: 0, required: true },
+    rewardCoins: { type: Number, default: 0, required: true },
+    ledgerEntries: [LedgerEntrySchema],
     totalCredits: { type: Number, default: 0 },
     totalDebits: { type: Number, default: 0 },
-    ledgerEntries: [LedgerEntrySchema],
-    version: { type: Number, default: 0, required: true }
-});
+    version: { type: Number, default: 0, required: true },
+}, { timestamps: true });
 exports.Wallet = mongoose_1.default.model('Wallet', WalletSchema);
+exports.default = exports.Wallet;

@@ -9,4 +9,5 @@ const router = express_1.default.Router();
 router.get('/:userId', wishlistController_1.getWishlist);
 router.post('/toggle', wishlistController_1.toggleWishlist);
 router.post('/check', wishlistController_1.checkWishlistStatus);
+router.post('/sync', wishlistController_1.syncWishlist);
 exports.default = router;

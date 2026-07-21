@@ -37,13 +37,34 @@ exports.Address = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
 const AddressSchema = new mongoose_1.Schema({
     userId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true },
-    name: { type: String, required: true },
+    label: { type: String, enum: ['home', 'office', 'parents', 'other'], default: 'home', required: true },
+    customLabel: { type: String },
+    recipientName: { type: String, required: true },
     phone: { type: String, required: true },
-    address: { type: String, required: true },
+    addressLine1: { type: String, required: true },
+    addressLine2: { type: String },
+    landmark: { type: String },
     city: { type: String, required: true },
+    district: { type: String },
     state: { type: String, required: true },
+    country: { type: String, required: true, default: 'India' },
     pincode: { type: String, required: true },
-    type: { type: String, enum: ['home', 'work', 'other'], default: 'home' },
-    isDefault: { type: Boolean, default: false }
+    location: {
+        type: { type: String, enum: ['Point'], default: 'Point', required: true },
+        coordinates: { type: [Number], required: true }, // [longitude, latitude]
+    },
+    deliveryInstructions: { type: String },
+    isDefault: { type: Boolean, default: false },
+    serviceabilityStatus: {
+        type: String,
+        enum: ['unknown', 'serviceable', 'not_serviceable'],
+        default: 'unknown',
+    },
+    name: { type: String },
+    address: { type: String },
+    type: { type: String },
 }, { timestamps: true });
+AddressSchema.index({ userId: 1 });
+AddressSchema.index({ location: '2dsphere' });
 exports.Address = mongoose_1.default.model('Address', AddressSchema);
+exports.default = exports.Address;

@@ -11,7 +11,10 @@ const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const server_1 = require("../../server");
 const User_1 = require("../../models/User");
 const Order_1 = require("../../models/Order");
-const MONGO_URI = 'mongodb://127.0.0.1:27017/apexbee_integration_test';
+const path_1 = __importDefault(require("path"));
+const dotenv_1 = __importDefault(require("dotenv"));
+dotenv_1.default.config({ path: path_1.default.join(__dirname, '../../../../.env') });
+const MONGO_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/apexbee_integration_test';
 const JWT_SECRET = process.env.JWT_SECRET || 'supersecretjwtkeyforapexbeebusinessoperatingnetwork';
 async function runIntegrationTest() {
     console.log('Connecting to integration test database...');

@@ -36,41 +36,38 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.DeliveryAssignment = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
 const DeliveryAssignmentSchema = new mongoose_1.Schema({
-    orderId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Order', required: true, index: true },
-    vendorId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
-    customerId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
-    partnerId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'DeliveryPartner', index: true },
-    franchiseId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Franchise', index: true },
-    status: {
-        type: String,
-        enum: [
-            'Created',
-            'Assigned',
-            'Accepted',
-            'Reached Pickup',
-            'Picked Up',
-            'Out For Delivery',
-            'Reached Customer',
-            'OTP Verified',
-            'Delivered',
-            'Settlement Released',
-            'Failed',
-            'Reschedule',
-            'Returned',
-        ],
-        default: 'Created',
-        required: true,
+    orderId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Order', required: true },
+    deliveryPartnerId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true },
+    partnerSnapshot: {
+        name: { type: String, required: true },
+        phoneMasked: { type: String, required: true },
+        photoUrl: { type: String },
     },
-    assignedAt: { type: Date },
+    assignedAt: { type: Date, required: true, default: Date.now },
     acceptedAt: { type: Date },
-    completedAt: { type: Date },
-    failedReason: { type: String, default: '' },
-    notes: { type: String, default: '' },
-    codCollection: {
-        collected: { type: Number, default: 0 },
-        expected: { type: Number, default: 0 },
-        submitted: { type: Boolean, default: false },
-        verified: { type: Boolean, default: false },
+    pickedUpAt: { type: Date },
+    deliveredAt: { type: Date },
+    deliveryOtpHash: { type: String },
+    otpExpiresAt: { type: Date },
+    currentLocation: {
+        type: { type: String, enum: ['Point'], default: 'Point' },
+        coordinates: { type: [Number] },
     },
+    estimatedArrivalTime: { type: Date },
+    partnerId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User' },
+    status: { type: String, default: 'Pending' },
+    failedReason: { type: String },
+    codCollection: {
+        expected: { type: Number, default: 0 },
+        collected: { type: Number, default: 0 },
+    },
+    notes: { type: String },
+    completedAt: { type: Date },
 }, { timestamps: true });
+DeliveryAssignmentSchema.index({ orderId: 1 });
+DeliveryAssignmentSchema.index({ deliveryPartnerId: 1 });
+if (DeliveryAssignmentSchema.index) {
+    DeliveryAssignmentSchema.index({ currentLocation: '2dsphere' });
+}
 exports.DeliveryAssignment = mongoose_1.default.model('DeliveryAssignment', DeliveryAssignmentSchema);
+exports.default = exports.DeliveryAssignment;

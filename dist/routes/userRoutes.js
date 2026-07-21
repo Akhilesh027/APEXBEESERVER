@@ -20,4 +20,5 @@ router.get('/bank-details', auth_1.protect, userController_1.getUserBankDetails)
 router.put('/bank-details', auth_1.protect, userController_1.updateUserBankDetails);
 router.get('/commissions', auth_1.protect, userController_1.getUserCommissions);
 router.get('/wallet/:id', auth_1.protect, userController_1.getUserWallet);
+router.get('/rewards/:id', auth_1.protect, userController_1.getUserRewards);
 exports.default = router;

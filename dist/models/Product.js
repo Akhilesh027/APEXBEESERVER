@@ -33,389 +33,64 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.Product = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
-const CommissionShareSchema = new mongoose_1.Schema({
-    type: {
-        type: String,
-        enum: [
-            'state',
-            'district',
-            'mandal',
-            'entrepreneur',
-            'level1',
-            'level2',
-            'level3',
-            'firstPurchase',
-            'wishlink',
-        ],
-        required: true,
-    },
-    label: {
-        type: String,
-        required: true,
-        trim: true,
-    },
-    percent: {
-        type: Number,
-        default: 0,
-        min: 0,
-    },
-    amount: {
-        type: Number,
-        default: 0,
-        min: 0,
-    },
-    isActive: {
-        type: Boolean,
-        default: true,
-    },
-}, { _id: false });
-const AdminPricingSchema = new mongoose_1.Schema({
-    mrp: {
-        type: Number,
-        required: true,
-        min: 0,
-    },
-    sellingPrice: {
-        type: Number,
-        required: true,
-        min: 0,
-    },
-    platformFeePercent: {
-        type: Number,
-        default: 0,
-        min: 0,
-    },
-    platformFeeAmount: {
-        type: Number,
-        default: 0,
-        min: 0,
-    },
-    shippingCharge: {
-        type: Number,
-        default: 0,
-        min: 0,
-    },
-    packingCharge: {
-        type: Number,
-        default: 0,
-        min: 0,
-    },
-    commissionShares: {
-        type: [CommissionShareSchema],
-        default: [],
-    },
-    totalCommissionAmount: {
-        type: Number,
-        default: 0,
-        min: 0,
-    },
-    finalSellerAmount: {
-        type: Number,
-        default: 0,
-        min: 0,
-    },
-    customerSellingAmount: {
-        type: Number,
-        default: 0,
-        min: 0,
-    },
-    platformNetProfit: {
-        type: Number,
-        default: 0,
-    },
-    remarks: {
-        type: String,
-        default: '',
-    },
-    configuredBy: {
-        type: mongoose_1.Schema.Types.ObjectId,
-        ref: 'User',
-    },
-    configuredAt: {
-        type: Date,
-        default: Date.now,
-    },
-    commissionBase: {
-        type: String,
-        enum: ['platform_fee', 'sale_price'],
-        default: 'platform_fee',
-    },
-}, { _id: false });
-const ProductVariantSchema = new mongoose_1.Schema({
-    sku: {
-        type: String,
-        required: true,
-        trim: true,
-        uppercase: true,
-    },
-    attributes: {
-        type: Map,
-        of: mongoose_1.Schema.Types.Mixed,
-        default: {},
-    },
-    mrp: {
-        type: Number,
-        default: 0,
-        min: 0,
-    },
-    discountPercent: {
-        type: Number,
-        default: 0,
-        min: 0,
-    },
-    sellingPrice: {
-        type: Number,
-        default: 0,
-        min: 0,
-    },
-    stock: {
-        type: Number,
-        default: 0,
-        min: 0,
-    },
-    images: [{ type: String }],
-    isActive: {
-        type: Boolean,
-        default: true,
-    },
-}, { _id: true });
-const SellerNegotiationSchema = new mongoose_1.Schema({
-    message: {
-        type: String,
-        required: true,
-        trim: true,
-    },
-    requestedSellingPrice: {
-        type: Number,
-        min: 0,
-    },
-    requestedPlatformFeePercent: {
-        type: Number,
-        min: 0,
-    },
-    requestedShippingCharge: {
-        type: Number,
-        min: 0,
-    },
-    requestedPackingCharge: {
-        type: Number,
-        min: 0,
-    },
-    createdAt: {
-        type: Date,
-        default: Date.now,
-    },
-}, { _id: true });
 const ProductSchema = new mongoose_1.Schema({
-    sellerId: {
-        type: mongoose_1.Schema.Types.ObjectId,
-        ref: 'User',
+    name: { type: String, required: true, trim: true },
+    slug: { type: String, required: true, unique: true, lowercase: true, trim: true },
+    description: { type: String, required: true, default: '' },
+    categoryId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Category', required: true },
+    subcategoryId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Subcategory', required: true },
+    brandId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Brand' },
+    productType: { type: String, enum: ['physical'], default: 'physical', required: true },
+    thumbnailAssetId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'MediaAsset' },
+    galleryAssetIds: [{ type: mongoose_1.Schema.Types.ObjectId, ref: 'MediaAsset' }],
+    specifications: { type: mongoose_1.Schema.Types.Mixed, default: {} },
+    taxClassId: { type: mongoose_1.Schema.Types.ObjectId },
+    returnPolicyId: { type: mongoose_1.Schema.Types.ObjectId },
+    moderationStatus: {
+        type: String,
+        enum: ['draft', 'pending', 'approved', 'rejected'],
+        default: 'draft',
         required: true,
-        index: true,
     },
-    sellerType: {
-        type: String,
-        enum: ['vendor', 'manufacturer', 'wholesaler'],
-        required: true,
-        index: true,
-    },
-    name: {
-        type: String,
-        required: true,
-        trim: true,
-    },
-    slug: {
-        type: String,
-        required: true,
-        unique: true,
-        lowercase: true,
-        trim: true,
-    },
-    description: {
-        type: String,
-        default: '',
-    },
-    categoryId: {
-        type: mongoose_1.Schema.Types.ObjectId,
-        ref: 'Category',
-        required: true,
-        index: true,
-    },
-    subCategoryId: {
-        type: mongoose_1.Schema.Types.ObjectId,
-        ref: 'Category',
-        default: null,
-        index: true,
-    },
-    childCategoryId: {
-        type: mongoose_1.Schema.Types.ObjectId,
-        ref: 'Category',
-        default: null,
-        index: true,
-    },
-    brand: {
-        type: String,
-        default: '',
-        trim: true,
-        index: true,
-    },
-    sku: {
-        type: String,
-        required: true,
-        unique: true,
-        trim: true,
-        uppercase: true,
-    },
-    thumbnail: {
-        type: String,
-        default: '',
-    },
+    isActive: { type: Boolean, default: true },
+    createdBy: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true },
+    approvedBy: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User' },
+    sellerId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User' },
+    sellerType: { type: String },
+    adminPricing: { type: mongoose_1.Schema.Types.Mixed },
+    variants: [mongoose_1.Schema.Types.Mixed],
+    stock: { type: Number, default: 0 },
+    sku: { type: String, required: true },
+    baseMrp: { type: Number, default: 0 },
+    baseSellingPrice: { type: Number, default: 0 },
+    status: { type: String, default: 'Draft' },
+    thumbnail: { type: String },
     images: [{ type: String }],
-    attributes: {
-        type: Map,
-        of: mongoose_1.Schema.Types.Mixed,
-        default: {},
-    },
-    variants: {
-        type: [ProductVariantSchema],
-        default: [],
-    },
-    baseMrp: {
-        type: Number,
-        default: 0,
-        min: 0,
-    },
-    discountPercent: {
-        type: Number,
-        default: 0,
-        min: 0,
-    },
-    baseSellingPrice: {
-        type: Number,
-        default: 0,
-        min: 0,
-    },
-    stock: {
-        type: Number,
-        default: 0,
-        min: 0,
-    },
-    adminPricing: {
-        type: AdminPricingSchema,
-        default: undefined,
-    },
-    status: {
-        type: String,
-        enum: [
-            'Draft',
-            'Pending Review',
-            'Awaiting Seller Approval',
-            'Live',
-            'Rejected',
-            'Negotiation Requested',
-        ],
-        default: 'Pending Review',
-        index: true,
-    },
-    isActive: {
-        type: Boolean,
-        default: false,
-        index: true,
-    },
-    adminPricingApproved: {
-        type: Boolean,
-        default: false,
-    },
-    sellerPricingAccepted: {
-        type: Boolean,
-        default: false,
-    },
-    rejectionReason: {
-        type: String,
-        default: '',
-    },
-    sellerNegotiations: {
-        type: [SellerNegotiationSchema],
-        default: [],
-    },
-    submittedAt: {
-        type: Date,
-        default: Date.now,
-    },
-    approvedByAdminAt: Date,
-    sellerAcceptedAt: Date,
-    liveAt: Date,
-    returnPeriodDays: {
-        type: Number,
-    },
-    referralCommission: {
-        level1: { type: Number, default: 0 },
-        level2: { type: Number, default: 0 },
-        level3: { type: Number, default: 0 }
-    },
-    isStoreProduct: {
-        type: Boolean,
-        default: false,
-        index: true
-    },
-    isSubscriptionAvailable: {
-        type: Boolean,
-        default: false,
-        index: true
-    },
-    badges: {
-        type: [String],
-        default: []
-    },
-    isArchived: {
-        type: Boolean,
-        default: false,
-        index: true
-    },
-    batchNo: {
-        type: String,
-        default: ''
-    },
-    expiryDate: Date,
-    manufacturingDate: Date,
-    reorderLevel: {
-        type: Number,
-        default: 10
-    },
-    safetyStock: {
-        type: Number,
-        default: 5
-    },
-    purchasePrice: {
-        type: Number,
-        default: 0
-    },
-    inventory: {
-        onHandStock: { type: Number, default: 0, min: 0 },
-        reservedStock: { type: Number, default: 0, min: 0 },
-        quarantineStock: { type: Number, default: 0, min: 0 },
-        damagedStock: { type: Number, default: 0, min: 0 },
-        expiredStock: { type: Number, default: 0, min: 0 }
-    }
-}, {
-    timestamps: true,
-    toJSON: { virtuals: true },
-    toObject: { virtuals: true }
-});
-ProductSchema.virtual('availableStock').get(function () {
-    if (this.inventory) {
-        return this.inventory.onHandStock - this.inventory.reservedStock;
-    }
-    return this.stock;
-});
-ProductSchema.index({ sellerId: 1, createdAt: -1 });
-ProductSchema.index({ sellerId: 1, status: 1 });
-ProductSchema.index({ sellerType: 1, status: 1 });
-ProductSchema.index({ categoryId: 1, status: 1, createdAt: -1 });
-ProductSchema.index({ subCategoryId: 1, status: 1 });
-ProductSchema.index({ childCategoryId: 1, status: 1 });
-ProductSchema.index({ status: 1, isActive: 1, createdAt: -1 });
-ProductSchema.index({ createdAt: -1 });
-ProductSchema.index({ name: 'text', description: 'text' });
-exports.default = mongoose_1.default.model('Product', ProductSchema);
+    subCategoryId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Subcategory' },
+    childCategoryId: { type: mongoose_1.Schema.Types.ObjectId },
+    brand: { type: String },
+    discountPercent: { type: Number, default: 0 },
+    attributes: { type: mongoose_1.Schema.Types.Mixed },
+    isStoreProduct: { type: Boolean, default: false },
+    isSubscriptionAvailable: { type: Boolean, default: false },
+    adminPricingApproved: { type: Boolean, default: false },
+    sellerPricingAccepted: { type: Boolean, default: false },
+    approvedByAdminAt: { type: Date },
+    sellerAcceptedAt: { type: Date },
+    liveAt: { type: Date },
+    referralCommission: { type: mongoose_1.Schema.Types.Mixed },
+    sellerNegotiations: [mongoose_1.Schema.Types.Mixed],
+    rejectionReason: { type: String },
+    badges: [{ type: String }],
+    isArchived: { type: Boolean, default: false },
+}, { timestamps: true });
+ProductSchema.index({ name: 1 });
+ProductSchema.index({ slug: 1 });
+ProductSchema.index({ categoryId: 1 });
+ProductSchema.index({ subcategoryId: 1 });
+ProductSchema.index({ moderationStatus: 1 });
+ProductSchema.index({ isActive: 1 });
+exports.Product = mongoose_1.default.model('Product', ProductSchema);
+exports.default = exports.Product;

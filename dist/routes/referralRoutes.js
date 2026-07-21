@@ -11,6 +11,7 @@ router.get("/history", auth_1.protect, referralController_1.getReferralHistory);
 router.get("/network", auth_1.protect, referralController_1.getReferralNetwork);
 router.get("/stats", auth_1.protect, referralController_1.getReferralStats);
 router.get("/earnings-summary", auth_1.protect, referralController_1.getReferralEarningsSummary);
+router.get("/leaderboard", auth_1.protect, referralController_1.getReferralLeaderboard);
 // Admin Configuration Endpoints
 router.get("/admin/settings", auth_1.protect, referralController_1.getReferralSettings);
 router.put("/admin/settings", auth_1.protect, referralController_1.updateReferralSettings);

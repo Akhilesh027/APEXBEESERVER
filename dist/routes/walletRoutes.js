@@ -8,6 +8,8 @@ router.get("/my-wallet", auth_1.protect, walletController_1.getMyWallet);
 router.post("/add-funds", auth_1.protect, walletController_1.addFunds);
 router.post("/withdrawals", auth_1.protect, walletController_1.createWithdrawalRequest);
 router.get("/withdrawals", auth_1.protect, walletController_1.getWithdrawalsHistory);
+router.post("/withdraw/request", auth_1.protect, walletController_1.requestWithdrawalOtp);
+router.post("/withdraw/verify", auth_1.protect, walletController_1.verifyWithdrawalOtp);
 // Admin endpoints
 router.get("/admin/withdrawals", auth_1.protect, (0, auth_1.restrictTo)("admin"), walletController_1.getAllWithdrawals);
 router.patch("/withdrawals/:id/approve", auth_1.protect, (0, auth_1.restrictTo)("admin"), walletController_1.approveWithdrawal);

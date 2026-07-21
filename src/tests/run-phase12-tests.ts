@@ -29,8 +29,8 @@ async function runPhase12Tests() {
     // Invariant 1: No negative inventory reserved or available stock
     const inventories = await Inventory.find({});
     for (const inv of inventories) {
-      assert.ok(inv.onHand >= 0, `Inventory onHand stock cannot be negative: ${inv.productId}`);
-      assert.ok(inv.reserved >= 0, `Inventory reserved stock cannot be negative: ${inv.productId}`);
+      assert.ok((inv.onHand ?? 0) >= 0, `Inventory onHand stock cannot be negative: ${inv.productId}`);
+      assert.ok((inv.reserved ?? 0) >= 0, `Inventory reserved stock cannot be negative: ${inv.productId}`);
     }
     console.log('Invariant: Inventory Stock Levels: PASS');
 
@@ -47,8 +47,8 @@ async function runPhase12Tests() {
     let totalCredited = 0;
     let totalDebited = 0;
     for (const tx of transactions) {
-      if (tx.direction === 'credit') totalCredited += tx.amount;
-      if (tx.direction === 'debit') totalDebited += tx.amount;
+      if (tx.direction === 'credit') totalCredited += (tx.amount ?? 0);
+      if (tx.direction === 'debit') totalDebited += (tx.amount ?? 0);
     }
     console.log(`Audited ${transactions.length} test wallet ledger entries. Total Credit: ${totalCredited}, Total Debit: ${totalDebited}`);
     console.log('Invariant: Wallet Ledger Reconciliation: PASS');
@@ -56,7 +56,7 @@ async function runPhase12Tests() {
     // Invariant 4: No orders with manipulated client pricing for test users
     const orders = await Order.find({ customerId: { $in: testUserIds } });
     for (const order of orders) {
-      const orderItems = order.items && order.items.length ? order.items : (order.orderItems || []);
+      const orderItems = order.items && order.items.length ? order.items : ((order as any).orderItems || []);
       const calculatedSum = orderItems.reduce((acc: number, it: any) => acc + it.price * it.quantity, 0);
       const reportedSum = order.orderSummary?.subtotal || order.totalAmount;
       const diff = Math.abs(calculatedSum - reportedSum);

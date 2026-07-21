@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.updateOrderPackingChecklist = exports.getOrderPackingSlipPDF = exports.getOrderInvoicePDF = exports.getOrderCountByUserId = exports.deleteOrder = exports.updateOrder = exports.getOrderById = exports.getOrders = exports.getOrdersByUserId = exports.createOrderWithProof = exports.createOrder = void 0;
+exports.getFirstOrderCheck = exports.updateOrderPackingChecklist = exports.getOrderPackingSlipPDF = exports.getOrderInvoicePDF = exports.getOrderCountByUserId = exports.deleteOrder = exports.updateOrder = exports.getOrderById = exports.getOrders = exports.getOrdersByUserId = exports.createOrderWithProof = exports.createOrder = void 0;
 const mongoose_1 = __importDefault(require("mongoose"));
 const fs_1 = __importDefault(require("fs"));
 const pdfkit_1 = __importDefault(require("pdfkit"));
@@ -612,7 +612,7 @@ const updateOrder = async (req, res) => {
         if (!isAdmin && !isSeller && !isCustomer && !isDriver) {
             return res.status(404).json({ success: false, message: "Resource not found" });
         }
-        const editableFields = ['orderStatus', 'deliveryAgentId', 'deliveryAgentType', 'deliveryAgentName', 'customerNotes', 'timeline', 'orderStatusObj'];
+        const editableFields = ['orderStatus', 'deliveryAgentId', 'deliveryAgentType', 'deliveryAgentName', 'customerNotes', 'timeline', 'orderStatusObj', 'courierPartner', 'trackingId'];
         const receivedKeys = Object.keys(req.body);
         const hasUnallowed = receivedKeys.some(k => !editableFields.includes(k));
         if (hasUnallowed && !isAdmin) {
@@ -952,3 +952,14 @@ const updateOrderPackingChecklist = async (req, res) => {
     }
 };
 exports.updateOrderPackingChecklist = updateOrderPackingChecklist;
+const getFirstOrderCheck = async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const orderCount = await Order_1.Order.countDocuments({ customerId: userId });
+        res.status(200).json({ success: true, isFirstOrder: orderCount === 0 });
+    }
+    catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+exports.getFirstOrderCheck = getFirstOrderCheck;

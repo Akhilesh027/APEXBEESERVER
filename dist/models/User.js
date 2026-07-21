@@ -141,7 +141,9 @@ const UserSchema = new mongoose_1.Schema({
         holdBalance: { type: Number, default: 0 },
         totalEarned: { type: Number, default: 0 },
         totalWithdrawn: { type: Number, default: 0 }
-    }
+    },
+    hasPets: { type: Boolean, default: true },
+    hasKids: { type: Boolean, default: true }
 }, { timestamps: true });
 UserSchema.index({ roles: 1, 'territory.state': 1, 'territory.district': 1, 'territory.mandal': 1 });
 exports.User = mongoose_1.default.model("User", UserSchema);

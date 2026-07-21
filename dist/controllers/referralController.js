@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getReferralEarningsSummary = exports.getReferralStats = exports.processReferralReleases = exports.updateReferralSettings = exports.getReferralSettings = exports.getReferralNetwork = exports.getReferralHistory = exports.getReferralDashboard = exports.getMyReferralInfo = void 0;
+exports.getReferralLeaderboard = exports.getReferralEarningsSummary = exports.getReferralStats = exports.processReferralReleases = exports.updateReferralSettings = exports.getReferralSettings = exports.getReferralNetwork = exports.getReferralHistory = exports.getReferralDashboard = exports.getMyReferralInfo = void 0;
 const User_1 = require("../models/User");
 const ReferralTransaction_1 = require("../models/ReferralTransaction");
 const ReferralSettings_1 = require("../models/ReferralSettings");
@@ -509,3 +509,79 @@ const getReferralEarningsSummary = async (req, res) => {
     }
 };
 exports.getReferralEarningsSummary = getReferralEarningsSummary;
+// GET /api/referrals/leaderboard
+const getReferralLeaderboard = async (req, res) => {
+    try {
+        const userId = req.user?.id || req.user?._id;
+        if (!userId) {
+            return res.status(401).json({ success: false, message: "Unauthorized" });
+        }
+        // Aggregate total earnings from ReferralTransaction
+        const transactions = await ReferralTransaction_1.ReferralTransaction.aggregate([
+            {
+                $group: {
+                    _id: "$recipientUserId",
+                    totalEarnings: { $sum: "$amount" },
+                    referralCount: { $addToSet: "$referredUserId" }
+                }
+            },
+            {
+                $project: {
+                    recipientUserId: "$_id",
+                    totalEarnings: 1,
+                    referralCount: { $size: "$referralCount" }
+                }
+            },
+            { $sort: { totalEarnings: -1 } }
+        ]);
+        // Populate user info for top 20
+        const populated = [];
+        let userRank = -1;
+        let userEarnings = 0;
+        let userCount = 0;
+        for (let i = 0; i < transactions.length; i++) {
+            const tx = transactions[i];
+            const isCurrentUser = tx.recipientUserId.toString() === userId.toString();
+            const userInfo = await User_1.User.findById(tx.recipientUserId, "name email referralCode");
+            if (userInfo) {
+                if (isCurrentUser) {
+                    userRank = i + 1;
+                    userEarnings = tx.totalEarnings;
+                    userCount = tx.referralCount;
+                }
+                // Add to leaderboard if within top 20
+                if (i < 20) {
+                    populated.push({
+                        rank: i + 1,
+                        name: userInfo.name,
+                        email: userInfo.email,
+                        referralCode: userInfo.referralCode,
+                        earnings: tx.totalEarnings,
+                        count: tx.referralCount,
+                        isCurrentUser
+                    });
+                }
+            }
+        }
+        // Fallback if current user is not in transactions (i.e. has 0 released earnings)
+        if (userRank === -1) {
+            const currentUser = await User_1.User.findById(userId, "name email referralCode");
+            userRank = transactions.length + 1;
+            userEarnings = 0;
+            userCount = await User_1.User.countDocuments({ "referralHierarchy.level1UserId": userId });
+        }
+        return res.status(200).json({
+            success: true,
+            leaderboard: populated,
+            currentUserRank: {
+                rank: userRank,
+                earnings: userEarnings,
+                count: userCount
+            }
+        });
+    }
+    catch (error) {
+        return res.status(500).json({ success: false, message: error.message });
+    }
+};
+exports.getReferralLeaderboard = getReferralLeaderboard;

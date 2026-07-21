@@ -19,9 +19,15 @@ const notificationListeners_1 = require("./modules/notifications/events/notifica
 const seedTemplates_1 = require("./modules/notifications/config/seedTemplates");
 const db_1 = require("./config/db");
 const seed_1 = require("./config/seed");
+const seedBanners_1 = require("./seeds/seedBanners");
 const inventoryService_1 = require("./services/inventoryService");
 const User_1 = require("./models/User");
 const ReferralSettings_1 = require("./models/ReferralSettings");
+require("./models/Subcategory");
+require("./models/MediaAsset");
+require("./models/CommunityPost");
+require("./models/CommunityComment");
+require("./models/CommunityPostReport");
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const authRoutes_1 = __importDefault(require("./routes/authRoutes"));
 const userRoutes_1 = __importDefault(require("./routes/userRoutes"));
@@ -52,6 +58,13 @@ const deliveryRoutes_1 = __importDefault(require("./routes/deliveryRoutes"));
 const serviceBookingRoutes_1 = __importDefault(require("./routes/serviceBookingRoutes"));
 const localShopRoutes_1 = __importDefault(require("./routes/localShopRoutes"));
 const b2bRoutes_1 = __importDefault(require("./routes/b2bRoutes"));
+const searchRoutes_1 = __importDefault(require("./routes/searchRoutes"));
+const storesRoutes_1 = __importDefault(require("./routes/storesRoutes"));
+const checkoutRoutes_1 = __importDefault(require("./routes/checkoutRoutes"));
+const homeRoutes_1 = __importDefault(require("./routes/homeRoutes"));
+const communityRoutes_1 = __importDefault(require("./routes/communityRoutes"));
+const bannerRoutes_1 = __importDefault(require("./routes/bannerRoutes"));
+const orderTrackingRoutes_1 = __importDefault(require("./routes/orderTrackingRoutes"));
 // Initialize express app
 const app = (0, express_1.default)();
 exports.app = app;
@@ -131,6 +144,13 @@ app.use("/api/delivery", deliveryRoutes_1.default);
 app.use("/api/service", serviceBookingRoutes_1.default);
 app.use('/api/local-shop', localShopRoutes_1.default);
 app.use('/api/b2b', b2bRoutes_1.default);
+app.use('/api/v1/search', searchRoutes_1.default);
+app.use('/api/v1/stores', storesRoutes_1.default);
+app.use('/api/v1/checkout', checkoutRoutes_1.default);
+app.use("/api/banners", bannerRoutes_1.default);
+app.use("/api/order-tracking", orderTrackingRoutes_1.default);
+app.use('/api/home', homeRoutes_1.default);
+app.use('/api/v1/community', communityRoutes_1.default);
 // Health check endpoint
 app.get('/health', (req, res) => {
     const dbStatus = mongoose_1.default.connection.readyState;
@@ -217,6 +237,19 @@ const seedReferralDefaults = async () => {
 const startServer = async () => {
     try {
         await (0, db_1.connectDB)();
+        if (mongoose_1.default.connection.db) {
+            await mongoose_1.default.connection.db.collection('inventories').deleteMany({});
+            console.log('[Startup] Cleared inventories collection to regenerate clean records.');
+        }
+        // Enable subscriptions for Toor Dal, Milk, and Water products
+        try {
+            const ProductModel = mongoose_1.default.model('Product');
+            const updatedRes = await ProductModel.updateMany({ name: { $regex: /Toor Dal|Milk|Water/i } }, { $set: { isSubscriptionAvailable: true } });
+            console.log(`[Startup Migration] Subscription model enabled for ${updatedRes.modifiedCount} products matching Toor Dal / Milk / Water.`);
+        }
+        catch (migErr) {
+            console.error('[Startup Migration] Failed to enable subscription model:', migErr);
+        }
         if (['staging', 'production'].includes(env_1.env.NODE_ENV)) {
             console.log('[REDIS] Verifying mandatory connection for staging/production...');
             let retries = 30;
@@ -233,6 +266,7 @@ const startServer = async () => {
             await seedReferralDefaults();
             await (0, seed_1.seedDatabase)();
             await (0, seedTemplates_1.seedNotificationTemplates)(); // Seed event notifications templates
+            await (0, seedBanners_1.seedBannerDefaults)();
         }
         else {
             console.log(`[Server] Skipping referral defaults, database, and notification template seeding on clustered instance ${process.env.NODE_APP_INSTANCE}`);

@@ -10,6 +10,7 @@ const auth_1 = require("../middleware/auth");
 const router = express_1.default.Router();
 // Public routes for product viewing
 router.get('/', productController_1.getAllProducts);
+router.get('/buy-again', auth_1.protect, productController_1.getBuyAgainProducts);
 router.get('/my-products', auth_1.protect, productController_1.getMyProducts);
 router.get('/vendor/:vendorId', productController_1.getProductsByVendor);
 router.post('/ai-generator', auth_1.protect, (0, auth_1.restrictTo)('vendor', 'wholesaler', 'manufacturer', 'admin'), productController_1.getAiProductSuggestions);

@@ -1,6 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getCourses = exports.getServiceProviders = exports.getFeaturedVendors = exports.getTrending = exports.getGroups = void 0;
+const Course_1 = require("../models/Course");
+const User_1 = require("../models/User");
 const getGroups = async (req, res) => {
     try {
         return res.status(200).json({
@@ -115,32 +117,86 @@ const getServiceProviders = async (req, res) => {
 exports.getServiceProviders = getServiceProviders;
 const getCourses = async (req, res) => {
     try {
+        let courses = await Course_1.Course.find({ status: 'Published' });
+        if (courses.length === 0) {
+            console.log("[getCourses] No courses found in database. Seeding default courses...");
+            // Find a provider user
+            const providerUser = await User_1.User.findOne({ roles: "vendor" }) || await User_1.User.findOne({});
+            if (providerUser) {
+                const defaultCourses = [
+                    {
+                        providerId: providerUser._id,
+                        title: "Introduction to Digital Marketing",
+                        description: "Learn how to use social media, advertisements, and content creation to gain customers.",
+                        category: "Digital Marketing",
+                        price: 499,
+                        status: "Published",
+                        duration: "12 modules • Intermediate",
+                        instructors: ["ApexBee Academy"]
+                    },
+                    {
+                        providerId: providerUser._id,
+                        title: "Personal Finance & Investment",
+                        description: "A guide to managing your personal income, investments, tax benefits and growing wealth.",
+                        category: "Finance",
+                        price: 299,
+                        status: "Published",
+                        duration: "8 modules • Beginner",
+                        instructors: ["ApexBee Academy"]
+                    },
+                    {
+                        providerId: providerUser._id,
+                        title: "Direct Selling Mastery",
+                        description: "Build a solid MLM foundation, learn networking strategies, and double your referrals.",
+                        category: "MLM Mastery",
+                        price: 899,
+                        status: "Published",
+                        duration: "10 modules • Advanced",
+                        instructors: ["ApexBee Academy"]
+                    }
+                ];
+                await Course_1.Course.create(defaultCourses);
+                courses = await Course_1.Course.find({ status: 'Published' });
+            }
+        }
+        // Map database courses to the frontend schema
+        const mappedCourses = courses.map((c) => {
+            let image = "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=400";
+            let badge = "Popular";
+            let students = 450;
+            let originalPrice = Math.round(c.price * 2.5);
+            if (c.title.includes("Digital Marketing")) {
+                image = "https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&q=80&w=400";
+                badge = "Bestseller";
+                students = 1250;
+            }
+            else if (c.title.includes("Finance")) {
+                image = "https://images.unsplash.com/photo-1559526324-4b87b5e36e44?auto=format&fit=crop&q=80&w=400";
+                badge = "New";
+                students = 340;
+            }
+            else if (c.title.includes("Direct Selling") || c.title.includes("MLM")) {
+                image = "https://images.unsplash.com/photo-1552581230-c013741398c3?auto=format&fit=crop&q=80&w=400";
+                badge = "Hot";
+                students = 780;
+            }
+            return {
+                id: c._id.toString(),
+                title: c.title,
+                description: c.description,
+                image,
+                badge,
+                instructor: c.instructors?.[0] || "ApexBee Academy",
+                rating: 4.8,
+                students,
+                price: c.price,
+                originalPrice,
+                duration: c.duration || "Self paced"
+            };
+        });
         return res.status(200).json({
             success: true,
-            courses: [
-                {
-                    id: "c-1",
-                    title: "Introduction to Digital Marketing",
-                    image: "https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&q=80&w=400",
-                    badge: "Bestseller",
-                    instructor: "ApexBee Academy",
-                    rating: 4.7,
-                    students: 1250,
-                    price: 499,
-                    originalPrice: 1999
-                },
-                {
-                    id: "c-2",
-                    title: "Personal Finance & Investment",
-                    image: "https://images.unsplash.com/photo-1559526324-4b87b5e36e44?auto=format&fit=crop&q=80&w=400",
-                    badge: "New",
-                    instructor: "ApexBee Academy",
-                    rating: 4.5,
-                    students: 340,
-                    price: 299,
-                    originalPrice: 999
-                }
-            ]
+            courses: mappedCourses
         });
     }
     catch (error) {

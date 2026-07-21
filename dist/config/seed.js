@@ -16,9 +16,156 @@ const LocalShopSubscription_1 = __importDefault(require("../models/LocalShopSubs
 const B2bPo_1 = require("../models/B2bPo");
 const Category_1 = __importDefault(require("../models/Category"));
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
+const mongoose_1 = __importDefault(require("mongoose"));
+const Banner_1 = require("../models/Banner");
+const Restaurant_1 = require("../models/Restaurant");
+const ServiceProvider_1 = require("../models/ServiceProvider");
+const seedCategories = async () => {
+    const parentCount = await Category_1.default.countDocuments({ parentId: null, image: { $exists: true } });
+    if (parentCount === 15) {
+        console.log("[Seeder] Categories already seeded with images.");
+        return;
+    }
+    console.log("[Seeder] Re-seeding new category hierarchy with images...");
+    await Category_1.default.deleteMany({});
+    try {
+        const Subcategory = mongoose_1.default.model('Subcategory');
+        await Subcategory.deleteMany({});
+    }
+    catch (err) { }
+    const categoriesToSeed = [
+        {
+            name: "📢 Promotional",
+            slug: "promotional",
+            image: "https://images.unsplash.com/photo-1507679799987-c73779587ccf?auto=format&fit=crop&q=80&w=600",
+            subcategories: ["Hot Deals", "Combo Offers", "Clearance Sale", "New Arrivals"]
+        },
+        {
+            name: "🛒 Daily Needs",
+            slug: "daily-needs",
+            image: "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&q=80&w=600",
+            subcategories: ["Groceries", "Dairy & Eggs", "Fruits & Vegetables", "Bakery & Bread", "Household Supplies"]
+        },
+        {
+            name: "🍽 Food & Dining",
+            slug: "food-dining",
+            image: "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&q=80&w=600",
+            subcategories: ["Restaurants", "Cafes & Bakeries", "Fast Food", "Catering Services", "Desserts & Sweets"]
+        },
+        {
+            name: "💼 Business Hub",
+            slug: "business-hub",
+            image: "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&q=80&w=600",
+            subcategories: ["Office Supplies", "B2B Raw Materials", "Business Consulting", "Co-working Spaces", "Marketing Services"]
+        },
+        {
+            name: "🛍 Shopping",
+            slug: "shopping",
+            image: "https://images.unsplash.com/photo-1483985988355-763728e1935b?auto=format&fit=crop&q=80&w=600",
+            subcategories: ["Electronics", "Fashion & Apparel", "Home & Living", "Footwear", "Accessories"]
+        },
+        {
+            name: "🎓 ApexBee Academy { MVP}",
+            slug: "apexbee-academy",
+            image: "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&q=80&w=600",
+            subcategories: ["Online Courses", "Skill Development", "Career Counseling", "School Tuitions", "Tech Workshops"]
+        },
+        {
+            name: "🛠 Services",
+            slug: "services",
+            image: "https://images.unsplash.com/photo-1621905251189-08b45d6a269e?auto=format&fit=crop&q=80&w=600",
+            subcategories: ["Home Cleaning", "Plumbing & Electrical", "Appliance Repair", "Pest Control", "Carpenter Services"]
+        },
+        {
+            name: "💰 Finance",
+            slug: "finance",
+            image: "https://images.unsplash.com/photo-1559526324-4b87b5e36e44?auto=format&fit=crop&q=80&w=600",
+            subcategories: ["Tax Consulting", "Investment Advisory", "Insurance Services", "Loans & Mortgages", "Accounting Services"]
+        },
+        {
+            name: "🎉 Events",
+            slug: "events",
+            image: "https://images.unsplash.com/photo-1511795409834-ef04bbd61622?auto=format&fit=crop&q=80&w=600",
+            subcategories: ["Wedding Planners", "Birthday Parties", "Corporate Events", "Venue Booking", "Stage Decoration"]
+        },
+        {
+            name: "✈ Tours & Travels",
+            slug: "tours-travels",
+            image: "https://images.unsplash.com/photo-1488646953014-85cb44e25828?auto=format&fit=crop&q=80&w=600",
+            subcategories: ["Flight Bookings", "Hotel Packages", "Car & Bus Rentals", "Holiday Tours", "Visa Assistance"]
+        },
+        {
+            name: "🐾 Pets",
+            slug: "pets",
+            image: "https://images.unsplash.com/photo-1450778869180-41d0601e046e?auto=format&fit=crop&q=80&w=600",
+            subcategories: ["Pet Food", "Pet Grooming", "Veterinary Care", "Pet Accessories", "Pet Boarding"]
+        },
+        {
+            name: "❤ Health & Wellness",
+            slug: "health-wellness",
+            image: "https://images.unsplash.com/photo-1506126613408-eca07ce68773?auto=format&fit=crop&q=80&w=600",
+            subcategories: ["Pharmacies", "Fitness & Gyms", "Yoga & Meditation", "Clinics & Doctors", "Personal Care"]
+        },
+        {
+            name: "👶 Kids World",
+            slug: "kids-world",
+            image: "https://images.unsplash.com/photo-1596464716127-f2a82984de30?auto=format&fit=crop&q=80&w=600",
+            subcategories: ["Toys & Games", "Baby Care", "Kids Clothing", "Maternity Care", "School Supplies"]
+        },
+        {
+            name: "👑 Women's Empire ⭐",
+            slug: "womens-empire",
+            image: "https://images.unsplash.com/photo-1534798580922-24354465df93?auto=format&fit=crop&q=80&w=600",
+            subcategories: ["Boutiques & Tailoring", "Beauty Salons", "Handmade Crafts", "Jewelry", "Women Startups"]
+        },
+        {
+            name: "🚚 Delivery & Logistics",
+            slug: "delivery-logistics",
+            image: "https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&q=80&w=600",
+            subcategories: ["Local Courier", "Packers & Movers", "Freight Transport", "Express Delivery", "Warehouse Services"]
+        }
+    ];
+    for (const item of categoriesToSeed) {
+        const parent = await Category_1.default.create({
+            name: item.name,
+            slug: item.slug,
+            image: item.image,
+            banner: item.image,
+            level: 1,
+            isActive: true,
+            displayOrder: 0
+        });
+        for (const subName of item.subcategories) {
+            const subSlug = subName.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+            await Category_1.default.create({
+                name: subName,
+                slug: `${item.slug}-${subSlug}`,
+                image: item.image,
+                banner: item.image,
+                level: 2,
+                parentId: parent._id,
+                isActive: true
+            });
+            try {
+                const Subcategory = mongoose_1.default.model('Subcategory');
+                await Subcategory.create({
+                    categoryId: parent._id,
+                    name: subName,
+                    slug: subSlug,
+                    image: item.image,
+                    banner: item.image,
+                    isActive: true
+                });
+            }
+            catch (err) { }
+        }
+    }
+    console.log("[Seeder] Categories hierarchy with images seeded successfully.");
+};
 const seedDatabase = async () => {
     try {
         console.log("Seeding database...");
+        await seedCategories();
         // 1. ReferralSettings, Campaigns and Leads checks in parallel
         const [referralSettingsCount, campaignCount, leadCount] = await Promise.all([
             ReferralSettings_1.ReferralSettings.countDocuments({}),
@@ -136,10 +283,13 @@ const seedDatabase = async () => {
                 });
                 console.log("Seeded manufacturer: agro@manufacturer.com");
                 // Get or create Category
-                let cat = await Category_1.default.findOne({});
+                let cat = await Category_1.default.findOne({ name: "Groceries" });
+                if (!cat) {
+                    cat = await Category_1.default.findOne({ name: "Daily Needs" });
+                }
                 if (!cat) {
                     cat = await Category_1.default.create({
-                        name: "Groceries & Foods",
+                        name: "Groceries",
                         slug: "groceries",
                         level: 1,
                         brands: ["Local"],
@@ -256,6 +406,8 @@ const seedDatabase = async () => {
         seedTasks.push(seedSuppliersAndProducts());
         // Await all parallel seeding tasks
         await Promise.all(seedTasks);
+        // Seed Banners, Restaurants and Service Providers
+        await seedBannersRestaurantsAndServices();
         console.log("Database seeding completed!");
     }
     catch (error) {
@@ -263,3 +415,199 @@ const seedDatabase = async () => {
     }
 };
 exports.seedDatabase = seedDatabase;
+const seedBannersRestaurantsAndServices = async () => {
+    try {
+        console.log("[Seeder] Seeding Banners, Restaurants, and Services...");
+        // 1. Seed Banners
+        await Banner_1.Banner.deleteMany({});
+        await Banner_1.Banner.create([
+            {
+                title: "Grocery Offers — Fresh Daily Essentials",
+                description: "Order farm-fresh vegetables, dairy products, bakery items, and household essentials from local merchants. Get up to 50% Off!",
+                imageUrl: "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&q=80&w=1200",
+                type: "promo",
+                isActive: true,
+                discount: "50%",
+                link: "/category/🛒 Daily Needs"
+            },
+            {
+                title: "Food Delivery — Hot Deals From Top Restaurants",
+                description: "Craving delicious biryani, mouthwatering pizzas, or fresh bakery treats? Get food delivered hot and fresh in minutes.",
+                imageUrl: "https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?auto=format&fit=crop&q=80&w=1200",
+                type: "promo",
+                isActive: true,
+                discount: "40%",
+                link: "/category/🍽 Food & Dining"
+            },
+            {
+                title: "Good Morning Deals ☀",
+                description: "Fresh Morning Specials! Milk & Breakfast items delivered in 15 mins.",
+                imageUrl: "https://images.unsplash.com/photo-1550583724-b2692b85b150?q=80&w=600",
+                type: "morning",
+                isActive: true,
+                discount: "Fresh Milk Deal",
+                link: "/category/🛒 Daily Needs",
+                countdownHours: 2
+            },
+            {
+                title: "Good Afternoon Deals 🌤",
+                description: "Lunch Combos & Fresh Juices from local diners near you.",
+                imageUrl: "https://images.unsplash.com/photo-1542838132-92c53300491e?q=80&w=600",
+                type: "afternoon",
+                isActive: true,
+                discount: "Lunch Combo Deal",
+                link: "/category/🍽 Food & Dining",
+                countdownHours: 0
+            },
+            {
+                title: "Good Evening Specials 🍕",
+                description: "Dinner Specials & Snack Platters from top local merchants.",
+                imageUrl: "https://images.unsplash.com/photo-1513104890138-7c749659a591?q=80&w=600",
+                type: "evening",
+                isActive: true,
+                discount: "Snacks & Tea Offer",
+                link: "/category/🍽 Food & Dining",
+                countdownHours: 0
+            },
+            {
+                title: "Late Night Cravings? 🌙",
+                description: "Order snacks, desserts, or medicines instantly from local stores open late.",
+                imageUrl: "https://images.unsplash.com/photo-1534308983496-4fabb1a015ee?q=80&w=600",
+                type: "night",
+                isActive: true,
+                discount: "Night Cravings Offer",
+                link: "/category/🛒 Daily Needs",
+                countdownHours: 0
+            },
+            {
+                title: "Festival Celebration — Puja Sweets & Hampers",
+                description: "Celebrate the festive season with delicious traditional sweets and customized pooja bundles from top local sweet shops.",
+                imageUrl: "https://images.unsplash.com/photo-1587314168485-3236d6710814?auto=format&fit=crop&q=80&w=1200",
+                type: "festival",
+                isActive: true,
+                discount: "20% OFF",
+                link: "/category/📢 Promotional",
+                countdownHours: 0
+            }
+        ]);
+        console.log("[Seeder] Seeded default platform Banners successfully.");
+        // 2. Seed Restaurants
+        const restaurantCount = await Restaurant_1.Restaurant.countDocuments({});
+        if (restaurantCount === 0) {
+            const adminUser = await User_1.User.findOne({ roles: "admin" }) || await User_1.User.findOne({});
+            if (adminUser) {
+                await Restaurant_1.Restaurant.create([
+                    {
+                        ownerId: adminUser._id,
+                        name: "Tasty Biryani Point",
+                        slug: "tasty-biryani-point",
+                        description: "Aromatic biryani and tasty north indian curries.",
+                        address: "Buchireddypalem, Andhra Pradesh",
+                        location: { type: 'Point', coordinates: [79.8789, 14.5321] },
+                        cuisineTypes: ["Biryani", "North Indian"],
+                        averagePreparationTimeMinutes: 20,
+                        isActive: true
+                    },
+                    {
+                        ownerId: adminUser._id,
+                        name: "Nellore Tiffins",
+                        slug: "nellore-tiffins",
+                        description: "Crispy dosas and soft idlis for morning breakfast.",
+                        address: "Buchireddypalem, Andhra Pradesh",
+                        location: { type: 'Point', coordinates: [79.8795, 14.5330] },
+                        cuisineTypes: ["Dosa", "South Indian Breakfast"],
+                        averagePreparationTimeMinutes: 15,
+                        isActive: true
+                    },
+                    {
+                        ownerId: adminUser._id,
+                        name: "Sweet Magic Bakery",
+                        slug: "sweet-magic-bakery",
+                        description: "Delicious custom cakes, shakes and desserts.",
+                        address: "Buchireddypalem, Andhra Pradesh",
+                        location: { type: 'Point', coordinates: [79.8800, 14.5340] },
+                        cuisineTypes: ["Cakes", "Desserts", "Shakes"],
+                        averagePreparationTimeMinutes: 25,
+                        isActive: true
+                    }
+                ]);
+                console.log("[Seeder] Seeded default Restaurants.");
+            }
+        }
+        else {
+            console.log("[Seeder] Restaurants already exist.");
+        }
+        // 3. Seed ServiceProviders
+        const providerCount = await ServiceProvider_1.ServiceProvider.countDocuments({});
+        if (providerCount === 0) {
+            const providerUser = await User_1.User.findOne({ roles: "vendor" }) || await User_1.User.findOne({});
+            if (providerUser) {
+                const providerCode = 'SP-' + Math.floor(100000 + Math.random() * 900000);
+                await ServiceProvider_1.ServiceProvider.create({
+                    userId: providerUser._id,
+                    providerCode,
+                    businessName: "Super Clean & Repairs",
+                    ownerName: providerUser.name,
+                    email: providerUser.email,
+                    mobile: providerUser.phone,
+                    address: "Nellore Sourcing Hub",
+                    pincode: "524001",
+                    status: "active",
+                    services: [
+                        {
+                            id: "svc-1",
+                            name: "Home Salon & Spa",
+                            category: "Home Salon",
+                            type: "Beauty",
+                            price: 299,
+                            duration: "60 mins",
+                            description: "Full body salon and relaxing spa treatment at home.",
+                            imageUrl: "https://images.unsplash.com/photo-1560066984-138dadb4c035?w=300",
+                            active: true
+                        },
+                        {
+                            id: "svc-2",
+                            name: "Plumbing & Repairs",
+                            category: "Plumbing",
+                            type: "Repair",
+                            price: 149,
+                            duration: "30 mins",
+                            description: "Fixing leaky pipes, taps and drainage issues.",
+                            imageUrl: "https://images.unsplash.com/photo-1581578731548-c64695cc6952?w=300",
+                            active: true
+                        },
+                        {
+                            id: "svc-3",
+                            name: "Smart Home Cleaning",
+                            category: "Cleaning",
+                            type: "Domestic",
+                            price: 499,
+                            duration: "120 mins",
+                            description: "Deep home vacuuming, sanitizing and sweeping.",
+                            imageUrl: "https://images.unsplash.com/photo-1527515637462-cff94eecc1ac?w=300",
+                            active: true
+                        },
+                        {
+                            id: "svc-4",
+                            name: "Appliance Servicing",
+                            category: "Appliance",
+                            type: "Maintenance",
+                            price: 199,
+                            duration: "45 mins",
+                            description: "AC, Fridge, and washing machine repair and service.",
+                            imageUrl: "https://images.unsplash.com/photo-1621905251189-08b45d6a269e?w=300",
+                            active: true
+                        }
+                    ]
+                });
+                console.log("[Seeder] Seeded default ServiceProvider with services.");
+            }
+        }
+        else {
+            console.log("[Seeder] ServiceProviders already exist.");
+        }
+    }
+    catch (err) {
+        console.error("[Seeder] Failed to seed banners/restaurants/services:", err);
+    }
+};

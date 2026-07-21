@@ -3,9 +3,11 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteCategory = exports.updateCategory = exports.getCategoryById = exports.getCategoryDropdown = exports.getCategoryTree = exports.getCategories = exports.createCategory = void 0;
+exports.getCategorySubcategories = exports.deleteCategory = exports.updateCategory = exports.getCategoryById = exports.getCategoryDropdown = exports.getCategoryTree = exports.getCategories = exports.createCategory = void 0;
 const streamifier_1 = __importDefault(require("streamifier"));
+const mongoose_1 = __importDefault(require("mongoose"));
 const Category_1 = __importDefault(require("../models/Category"));
+const Subcategory_1 = __importDefault(require("../models/Subcategory"));
 const cloudinary_1 = __importDefault(require("../config/cloudinary"));
 const makeSlug = (name) => name
     .toLowerCase()
@@ -280,7 +282,7 @@ const deleteCategory = async (req, res) => {
         if (!category) {
             return res.status(404).json({ message: 'Category not found' });
         }
-        res.json({ message: 'Category deleted successfully' });
+        res.status(200).json({ message: 'Category deleted successfully' });
     }
     catch (error) {
         res.status(500).json({
@@ -290,3 +292,27 @@ const deleteCategory = async (req, res) => {
     }
 };
 exports.deleteCategory = deleteCategory;
+const getCategorySubcategories = async (req, res) => {
+    try {
+        const { id } = req.params;
+        let categoryId = id;
+        if (!mongoose_1.default.Types.ObjectId.isValid(id)) {
+            const cleanName = (s) => s.replace(/[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDC00-\uDFFF]/g, '').trim().toLowerCase();
+            const nameRegex = new RegExp(`^${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+            const cleanTarget = cleanName(id);
+            const cats = await Category_1.default.find();
+            const match = cats.find(c => c.name.toLowerCase() === id.toLowerCase() ||
+                cleanName(c.name) === cleanTarget ||
+                (c.slug && id.toLowerCase().includes(c.slug)));
+            if (match) {
+                categoryId = match._id.toString();
+            }
+        }
+        const subcategories = await Subcategory_1.default.find({ categoryId, isActive: true }).sort({ displayOrder: 1, name: 1 });
+        res.json({ success: true, subcategories });
+    }
+    catch (error) {
+        res.status(500).json({ message: 'Failed to fetch subcategories', error: error.message });
+    }
+};
+exports.getCategorySubcategories = getCategorySubcategories;

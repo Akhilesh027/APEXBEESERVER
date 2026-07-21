@@ -5,6 +5,7 @@ const adminController_1 = require("../controllers/adminController");
 const vendorController_1 = require("../controllers/vendorController");
 const referralController_1 = require("../controllers/referralController");
 const auth_1 = require("../middleware/auth");
+const bulkController_1 = require("../controllers/bulkController");
 const router = (0, express_1.Router)();
 // Restrict all routes under admin to users with 'admin' role
 router.get('/applications', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.getApplications);
@@ -47,4 +48,7 @@ router.post('/inventory/cleanup-expired-reservations', auth_1.protect, (0, auth_
 router.get('/feature-flags', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.getFeatureFlag);
 router.post('/feature-flags', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.setFeatureFlag);
 router.get('/metrics', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.getMetrics);
+// Bulk product uploads
+router.post('/bulk/products/import', auth_1.protect, (0, auth_1.restrictTo)('admin'), bulkController_1.importProductsCSV);
+router.get('/bulk/products/export', auth_1.protect, (0, auth_1.restrictTo)('admin'), bulkController_1.exportProductsCSV);
 exports.default = router;

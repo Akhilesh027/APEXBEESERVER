@@ -12,6 +12,7 @@ router.get('/', categoryController_1.getCategories);
 router.get('/tree', categoryController_1.getCategoryTree);
 router.get('/dropdown', categoryController_1.getCategoryDropdown);
 router.get('/:id', categoryController_1.getCategoryById);
+router.get('/:id/subcategories', categoryController_1.getCategorySubcategories);
 router.put('/:id', multer_1.categoryUpload, categoryController_1.updateCategory);
 router.delete('/:id', categoryController_1.deleteCategory);
 exports.default = router;

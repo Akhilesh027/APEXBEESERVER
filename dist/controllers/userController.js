@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getUserWallet = exports.getUserCommissions = exports.updateUserBankDetails = exports.getUserBankDetails = exports.deleteUserAddress = exports.setDefaultAddress = exports.updateUserAddress = exports.createUserAddress = exports.getUserAddresses = exports.updateUserProfile = exports.getUserProfile = void 0;
+exports.getUserRewards = exports.getUserWallet = exports.getUserCommissions = exports.updateUserBankDetails = exports.getUserBankDetails = exports.deleteUserAddress = exports.setDefaultAddress = exports.updateUserAddress = exports.createUserAddress = exports.getUserAddresses = exports.updateUserProfile = exports.getUserProfile = void 0;
 const mongoose_1 = __importDefault(require("mongoose"));
 const User_1 = require("../models/User");
 const Address_1 = require("../models/Address");
@@ -132,25 +132,36 @@ const createUserAddress = async (req, res) => {
         if (isDefault) {
             await Address_1.Address.updateMany({ userId }, { isDefault: false });
         }
+        const resolvedLabel = (type === 'work' || type === 'Office')
+            ? 'office'
+            : (type === 'other' || type === 'Other')
+                ? 'other'
+                : 'home';
         let addr;
         if (id) {
             // It is an edit/update!
             addr = await Address_1.Address.findOne({ _id: id, userId });
             if (addr) {
-                if (name !== undefined)
+                if (name !== undefined) {
                     addr.name = name;
+                    addr.recipientName = name;
+                }
                 if (phone !== undefined)
                     addr.phone = phone;
-                if (address !== undefined)
+                if (address !== undefined) {
                     addr.address = address;
+                    addr.addressLine1 = address;
+                }
                 if (city !== undefined)
                     addr.city = city;
                 if (state !== undefined)
                     addr.state = state;
                 if (pincode !== undefined)
                     addr.pincode = pincode;
-                if (type !== undefined)
+                if (type !== undefined) {
                     addr.type = type;
+                    addr.label = resolvedLabel;
+                }
                 if (isDefault !== undefined)
                     addr.isDefault = isDefault;
                 await addr.save();
@@ -162,13 +173,20 @@ const createUserAddress = async (req, res) => {
             addr = new Address_1.Address({
                 userId,
                 name,
+                recipientName: name || 'Customer',
                 phone,
                 address,
+                addressLine1: address || 'Address Line 1',
                 city,
                 state,
                 pincode,
-                type: type || 'home',
-                isDefault: isDefault || count === 0
+                type: type || 'Home',
+                label: resolvedLabel,
+                isDefault: isDefault || count === 0,
+                location: {
+                    type: 'Point',
+                    coordinates: [78.4867, 17.3850] // Default Hyderabad coordinates
+                }
             });
             await addr.save();
         }
@@ -199,20 +217,31 @@ const updateUserAddress = async (req, res) => {
             res.status(404).json({ message: 'Address not found' });
             return;
         }
-        if (name !== undefined)
+        const resolvedLabel = (type === 'work' || type === 'Office')
+            ? 'office'
+            : (type === 'other' || type === 'Other')
+                ? 'other'
+                : 'home';
+        if (name !== undefined) {
             addr.name = name;
+            addr.recipientName = name;
+        }
         if (phone !== undefined)
             addr.phone = phone;
-        if (address !== undefined)
+        if (address !== undefined) {
             addr.address = address;
+            addr.addressLine1 = address;
+        }
         if (city !== undefined)
             addr.city = city;
         if (state !== undefined)
             addr.state = state;
         if (pincode !== undefined)
             addr.pincode = pincode;
-        if (type !== undefined)
+        if (type !== undefined) {
             addr.type = type;
+            addr.label = resolvedLabel;
+        }
         if (isDefault !== undefined)
             addr.isDefault = isDefault;
         await addr.save();
@@ -482,3 +511,13 @@ const getUserWallet = async (req, res) => {
     }
 };
 exports.getUserWallet = getUserWallet;
+const getUserRewards = async (req, res) => {
+    try {
+        const { id } = req.params;
+        res.status(200).json({ success: true, rewardPoints: 150 });
+    }
+    catch (error) {
+        res.status(500).json({ success: false, message: 'Server error retrieving rewards', error: error.message });
+    }
+};
+exports.getUserRewards = getUserRewards;

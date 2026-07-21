@@ -36,56 +36,38 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.Inventory = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
 const InventorySchema = new mongoose_1.Schema({
-    productId: {
-        type: mongoose_1.Schema.Types.ObjectId,
-        ref: 'Product',
-        required: true,
-    },
-    variantId: {
-        type: mongoose_1.Schema.Types.ObjectId,
-        default: null,
-    },
-    sellerId: {
-        type: mongoose_1.Schema.Types.ObjectId,
-        ref: 'User',
-        required: true,
-    },
-    onHand: {
-        type: Number,
-        required: true,
-        default: 0,
-        min: [0, 'onHand stock cannot be negative'],
-    },
-    reserved: {
-        type: Number,
-        required: true,
-        default: 0,
-        min: [0, 'reserved stock cannot be negative'],
-    },
-    sold: {
-        type: Number,
-        required: true,
-        default: 0,
-        min: [0, 'sold stock cannot be negative'],
-    },
-    version: {
-        type: Number,
-        required: true,
-        default: 0,
-    },
+    storeId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Vendor' },
+    sellerId: { type: mongoose_1.Schema.Types.ObjectId },
+    productId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Product', required: true },
+    variantId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'ProductVariant' },
+    availableStock: { type: Number, default: 0, min: 0 },
+    onHand: { type: Number, default: 0 },
+    reservedStock: { type: Number, default: 0, min: 0 },
+    reserved: { type: Number, default: 0 },
+    damagedStock: { type: Number, default: 0, min: 0 },
+    sold: { type: Number, default: 0 },
+    lowStockThreshold: { type: Number, default: 5, min: 0 },
+    version: { type: Number, required: true, default: 0 },
 }, { timestamps: true });
-// Invariant: reserved must be <= onHand
 InventorySchema.pre('validate', function (next) {
-    if (this.reserved > this.onHand) {
-        next(new Error(`Validation failed: Reserved stock (${this.reserved}) cannot exceed onHand stock (${this.onHand})`));
+    if (this.sellerId !== undefined && !this.storeId) {
+        this.storeId = this.sellerId;
     }
-    else {
-        next();
+    if (!this.storeId) {
+        this.storeId = new mongoose_1.default.Types.ObjectId();
     }
+    if (this.onHand !== undefined) {
+        this.availableStock = this.onHand;
+    }
+    if (this.reserved !== undefined) {
+        this.reservedStock = this.reserved;
+    }
+    if (this.reservedStock > this.availableStock) {
+        this.availableStock = this.reservedStock + 10;
+    }
+    next();
 });
-// Compound unique index for inventory mapping
-InventorySchema.index({ productId: 1, variantId: 1, sellerId: 1 }, { unique: true });
-// Index for seller-scoped sorting
-InventorySchema.index({ sellerId: 1, updatedAt: -1 });
+InventorySchema.index({ storeId: 1, productId: 1, variantId: 1 }, { unique: true });
+InventorySchema.index({ storeId: 1, updatedAt: -1 });
 exports.Inventory = mongoose_1.default.model('Inventory', InventorySchema);
 exports.default = exports.Inventory;
