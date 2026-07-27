@@ -670,11 +670,38 @@ export const updateOrder = async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: "Resource not found" });
     }
 
-    const editableFields = ['orderStatus', 'deliveryAgentId', 'deliveryAgentType', 'deliveryAgentName', 'customerNotes', 'timeline', 'orderStatusObj', 'courierPartner', 'trackingId'];
-    const receivedKeys = Object.keys(req.body);
-    const hasUnallowed = receivedKeys.some(k => !editableFields.includes(k));
-    if (hasUnallowed && !isAdmin) {
-      return res.status(400).json({ success: false, message: 'Submitting protected fields in order update is not allowed.' });
+    const editableFields = [
+      'orderStatus',
+      'paymentStatus',
+      'refundStatus',
+      'deliveryType',
+      'deliveryAgentId',
+      'deliveryAgentType',
+      'deliveryAgentName',
+      'customerNotes',
+      'timeline',
+      'orderStatusObj',
+      'courierPartner',
+      'trackingId',
+      'dispatchNotes',
+      'cancelReason',
+      'rejectionReason',
+      'returnReason',
+      'estimatedDeliveryTime',
+      'otp',
+      'notes'
+    ];
+
+    if (!isAdmin) {
+      const protectedFields = ['_id', 'id', 'orderNumber', 'customerId', 'sellerId', 'items', 'totalAmount', 'createdAt', 'updatedAt', '__v'];
+      for (const field of protectedFields) {
+        delete req.body[field];
+      }
+      for (const key of Object.keys(req.body)) {
+        if (!editableFields.includes(key)) {
+          delete req.body[key];
+        }
+      }
     }
 
     if (req.body.orderStatus) {

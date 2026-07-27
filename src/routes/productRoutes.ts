@@ -26,11 +26,14 @@ import { protect, restrictTo } from '../middleware/auth';
 
 const router = express.Router();
 
-// Public routes for product viewing
+// Public routes & specific endpoints
 router.get('/', getAllProducts);
-router.get('/buy-again', protect, getBuyAgainProducts);
+router.get('/buy-again', getBuyAgainProducts);
 router.get('/my-products', protect, getMyProducts);
 router.get('/vendor/:vendorId', getProductsByVendor);
+router.get('/inventory/movements', protect, getInventoryMovements);
+router.post('/inventory/movements', protect, createInventoryMovement);
+router.post('/bulk-update', protect, restrictTo('vendor', 'wholesaler', 'manufacturer', 'admin'), bulkUpdateProducts);
 router.post('/ai-generator', protect, restrictTo('vendor', 'wholesaler', 'manufacturer', 'admin'), getAiProductSuggestions);
 router.get('/sku/:sku', getProductBySku);
 router.get('/:id', getProductById);

@@ -4,6 +4,8 @@ import mongoose from 'mongoose';
 import Category from '../models/Category';
 import Subcategory from '../models/Subcategory';
 import cloudinary from '../config/cloudinary';
+import { seedVendor50Products } from '../seeds/seedVendorProducts';
+import { seedFullMvpCategories } from '../seeds/seedFullMvpCategories';
 
 const makeSlug = (name: string) =>
   name
@@ -39,21 +41,44 @@ const parseAttributes = (value: any) => {
   }
 };
 
-const uploadToCloudinary = async (
-  buffer: Buffer,
-  folder: string
-): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const stream = cloudinary.uploader.upload_stream(
-      { folder },
-      (error, result) => {
-        if (error || !result) return reject(error);
-        resolve(result.secure_url);
-      }
-    );
+import path from 'path';
+import fs from 'fs';
 
-    streamifier.createReadStream(buffer).pipe(stream);
-  });
+const saveFileLocalOrCloud = async (
+  file: Express.Multer.File,
+  folder: string,
+  prefix: string
+): Promise<string> => {
+  try {
+    const cloudName = process.env.CLOUDINARY_CLOUD_NAME || process.env.CLOUD_NAME;
+    if (cloudName && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET) {
+      const cloudUrl = await new Promise<string>((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream(
+          { folder },
+          (error, result) => {
+            if (error || !result) return reject(error);
+            resolve(result.secure_url);
+          }
+        );
+        streamifier.createReadStream(file.buffer).pipe(stream);
+      });
+      if (cloudUrl) return cloudUrl;
+    }
+  } catch (err) {
+    console.warn(`[CategoryUpload] Cloudinary upload skipped/failed (${err}). Using local file storage fallback.`);
+  }
+
+  const uploadDir = path.join(__dirname, '../../../public/uploads/categories');
+  if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+  }
+
+  const ext = path.extname(file.originalname) || '.png';
+  const filename = `${prefix}-${Date.now()}-${Math.round(Math.random() * 1e6)}${ext}`;
+  const filePath = path.join(uploadDir, filename);
+
+  fs.writeFileSync(filePath, file.buffer);
+  return `/uploads/categories/${filename}`;
 };
 
 const buildTree = (categories: any[]) => {
@@ -132,16 +157,18 @@ export const createCategory = async (req: Request, res: Response) => {
     let banner = '';
 
     if (files?.image?.[0]) {
-      image = await uploadToCloudinary(
-        files.image[0].buffer,
-        'apexbee/categories/images'
+      image = await saveFileLocalOrCloud(
+        files.image[0],
+        'apexbee/categories/images',
+        'cat-icon'
       );
     }
 
     if (files?.banner?.[0]) {
-      banner = await uploadToCloudinary(
-        files.banner[0].buffer,
-        'apexbee/categories/banners'
+      banner = await saveFileLocalOrCloud(
+        files.banner[0],
+        'apexbee/categories/banners',
+        'cat-banner'
       );
     }
 
@@ -155,6 +182,7 @@ export const createCategory = async (req: Request, res: Response) => {
       banner,
       brands: parseArray(req.body.brands),
       attributes: parseAttributes(req.body.attributes),
+      supportedItemTypes: parseArray(req.body.supportedItemTypes),
       isActive: isActive === 'false' ? false : true,
       sortOrder: Number(sortOrder) || 0,
     });
@@ -204,7 +232,7 @@ export const getCategoryTree = async (_req: Request, res: Response) => {
 export const getCategoryDropdown = async (_req: Request, res: Response) => {
   try {
     const categories = await Category.find({ isActive: true })
-      .select('name slug parentId level image attributes brands')
+      .select('name slug parentId level image attributes brands supportedItemTypes')
       .sort({ sortOrder: 1, name: 1 })
       .lean();
 
@@ -283,16 +311,18 @@ export const updateCategory = async (req: Request, res: Response) => {
     };
 
     if (files?.image?.[0]) {
-      category.image = await uploadToCloudinary(
-        files.image[0].buffer,
-        'apexbee/categories/images'
+      category.image = await saveFileLocalOrCloud(
+        files.image[0],
+        'apexbee/categories/images',
+        'cat-icon'
       );
     }
 
     if (files?.banner?.[0]) {
-      category.banner = await uploadToCloudinary(
-        files.banner[0].buffer,
-        'apexbee/categories/banners'
+      category.banner = await saveFileLocalOrCloud(
+        files.banner[0],
+        'apexbee/categories/banners',
+        'cat-banner'
       );
     }
 
@@ -394,5 +424,147 @@ export const getCategorySubcategories = async (req: Request, res: Response) => {
     res.json({ success: true, subcategories });
   } catch (error: any) {
     res.status(500).json({ message: 'Failed to fetch subcategories', error: error.message });
+  }
+};
+
+export const seedVendorController = async (req: Request, res: Response) => {
+  try {
+    console.log('[SeedVendorController] Executing seedVendor50Products v8...');
+    const result = await seedVendor50Products();
+    res.status(200).json({ success: true, result });
+  } catch (error: any) {
+    console.error('[seedVendorController] Error:', error);
+    res.status(200).json({ success: false, error: error.message, stack: error.stack });
+  }
+};
+
+export const ATTRIBUTE_PRESETS: Record<string, any[]> = {
+  grocery: [
+    { name: 'Net Weight / Pack Size', type: 'select', unit: 'kg/g', required: true, isVariant: true, options: ['250g', '500g', '1kg', '2kg', '5kg', '10kg', '25kg'] },
+    { name: 'Dietary Preference', type: 'select', required: true, isVariant: false, options: ['Veg', 'Non-Veg', 'Eggitarian', 'Vegan'] },
+    { name: 'Shelf Life', type: 'text', required: false, isVariant: false, placeholder: 'e.g. 6 Months' },
+    { name: 'Organic Certified', type: 'boolean', required: false, isVariant: false },
+    { name: 'Packaging Type', type: 'select', required: false, isVariant: false, options: ['Pouch', 'Box', 'Bottle', 'Can', 'Bag'] },
+  ],
+  restaurant: [
+    { name: 'Portion Size', type: 'select', required: true, isVariant: true, options: ['Quarter', 'Half', 'Full', 'Single', 'Family Pack'] },
+    { name: 'Spice Level', type: 'select', required: true, isVariant: false, options: ['Mild', 'Medium', 'Spicy', 'Extra Hot'] },
+    { name: 'Food Preference', type: 'select', required: true, isVariant: false, options: ['Pure Veg', 'Non-Veg', 'Jain', 'Eggitarian'] },
+    { name: 'Preparation Time', type: 'number', unit: 'Mins', required: false, isVariant: false, placeholder: 'e.g. 20' },
+    { name: 'Serving Temp', type: 'select', required: false, isVariant: false, options: ['Hot', 'Cold', 'Normal'] },
+  ],
+  devotional: [
+    { name: 'Material', type: 'select', required: true, isVariant: false, options: ['Brass', 'Copper', 'Silver', 'Panchaloha', 'Marble', 'Wood', 'Clay', 'Glass'] },
+    { name: 'Height / Size', type: 'select', unit: 'inches', required: true, isVariant: true, options: ['3 inches', '6 inches', '9 inches', '1 foot', '1.5 feet', '2 feet'] },
+    { name: 'Deity Name', type: 'select', required: false, isVariant: false, options: ['Lord Ganesha', 'Lord Shiva', 'Goddess Lakshmi', 'Lord Venkateswara', 'Goddess Durga', 'Lord Rama', 'Lord Hanuman', 'General'] },
+    { name: 'Sanctified Status', type: 'boolean', required: false, isVariant: false },
+    { name: 'Ritual Purpose', type: 'select', required: false, isVariant: false, options: ['Daily Pooja', 'Vinayaka Chavithi', 'Varalakshmi Vratham', 'Dasara', 'Diwali', 'Homam'] },
+  ],
+  fashion: [
+    { name: 'Apparel Size', type: 'select', required: true, isVariant: true, options: ['S', 'M', 'L', 'XL', 'XXL', 'Free Size'] },
+    { name: 'Color', type: 'select', required: true, isVariant: true, options: ['Red', 'Blue', 'Black', 'White', 'Green', 'Yellow', 'Gold', 'Pink'] },
+    { name: 'Fabric Material', type: 'select', required: false, isVariant: false, options: ['Cotton', 'Silk', 'Georgette', 'Denim', 'Polyester', 'Linen'] },
+    { name: 'Gender Target', type: 'select', required: true, isVariant: false, options: ['Men', 'Women', 'Unisex', 'Kids'] },
+  ],
+  electronics: [
+    { name: 'RAM & Storage', type: 'select', required: true, isVariant: true, options: ['4GB RAM / 64GB Storage', '8GB RAM / 128GB Storage', '12GB RAM / 256GB Storage', '16GB RAM / 512GB Storage'] },
+    { name: 'Warranty Period', type: 'select', unit: 'Months', required: true, isVariant: false, options: ['6 Months', '1 Year', '2 Years', 'No Warranty'] },
+    { name: 'Color Finish', type: 'select', required: false, isVariant: true, options: ['Space Black', 'Silver', 'Ocean Blue', 'Gold'] },
+    { name: 'Brand Model', type: 'text', required: true, isVariant: false },
+  ],
+  service_repair: [
+    { name: 'Service Package', type: 'select', required: true, isVariant: true, options: ['Basic Inspection', 'Standard Repair', 'Comprehensive Deep Service'] },
+    { name: 'Warranty on Service', type: 'select', unit: 'Days', required: true, isVariant: false, options: ['30 Days Warranty', '60 Days Warranty', '90 Days Warranty'] },
+    { name: 'Service Duration', type: 'number', unit: 'Mins', required: false, isVariant: false, placeholder: 'e.g. 60' },
+    { name: 'Spare Parts Included', type: 'boolean', required: false, isVariant: false },
+  ],
+  academy: [
+    { name: 'Course Duration Plan', type: 'select', required: true, isVariant: true, options: ['1 Month Access', '3 Months Bootcamp', 'Full Certification Pass'] },
+    { name: 'Course Level', type: 'select', required: true, isVariant: false, options: ['Beginner', 'Intermediate', 'Advanced'] },
+    { name: 'Mode of Instruction', type: 'select', required: true, isVariant: false, options: ['Live Online Class', 'Recorded Self-Paced', 'In-Person Workshop'] },
+    { name: 'Certificate Provided', type: 'boolean', required: true, isVariant: false },
+  ],
+};
+
+export const applyAttributePreset = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { presetKey } = req.body;
+
+    const presetAttributes = ATTRIBUTE_PRESETS[presetKey];
+    if (!presetAttributes) {
+      return res.status(400).json({ message: `Preset '${presetKey}' not found` });
+    }
+
+    const category = await Category.findById(id);
+    if (!category) {
+      return res.status(404).json({ message: 'Category not found' });
+    }
+
+    const existingNames = new Set(category.attributes?.map((a: any) => a.name.toLowerCase()));
+    const newAttributes = presetAttributes.filter((a) => !existingNames.has(a.name.toLowerCase()));
+
+    category.attributes = [...(category.attributes || []), ...newAttributes];
+    await category.save();
+
+    res.status(200).json({
+      success: true,
+      message: `Successfully applied preset '${presetKey}' to ${category.name}`,
+      category,
+    });
+  } catch (error: any) {
+    res.status(500).json({ message: 'Failed to apply attribute preset', error: error.message });
+  }
+};
+
+export const seedFullMvpController = async (_req: Request, res: Response) => {
+  try {
+    console.log('[SeedFullMvpController] Seeding full MVP categories taxonomy...');
+    const result = await seedFullMvpCategories();
+    res.status(200).json({ success: true, message: 'Full MVP Category Taxonomy seeded successfully!', result });
+  } catch (error: any) {
+    console.error('[seedFullMvpController] Error:', error);
+    res.status(500).json({ success: false, error: error.message, stack: error.stack });
+  }
+};
+
+export const getMergedCategoryAttributes = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const cat = await Category.findById(id);
+    if (!cat) {
+      return res.status(404).json({ message: 'Category not found' });
+    }
+
+    const categoryChain = [cat];
+    let current = cat;
+    while (current.parentId) {
+      const parent = await Category.findById(current.parentId);
+      if (!parent) break;
+      categoryChain.unshift(parent); // Top parent first
+      current = parent;
+    }
+
+    const attributeMap = new Map<string, any>();
+    for (const item of categoryChain) {
+      if (Array.isArray(item.attributes)) {
+        for (const attr of item.attributes) {
+          const key = attr.name ? attr.name.toLowerCase().trim() : ((attr as any).key || '');
+          if (key) {
+            attributeMap.set(key, { ...attr, inheritedFrom: item.name, inheritedLevel: item.level });
+          }
+        }
+      }
+    }
+
+    const mergedAttributes = Array.from(attributeMap.values());
+    res.json({
+      success: true,
+      category: cat,
+      categoryChain: categoryChain.map(c => ({ id: c._id, name: c.name, level: c.level })),
+      mergedAttributes
+    });
+  } catch (error: any) {
+    res.status(500).json({ message: 'Failed to fetch merged attributes', error: error.message });
   }
 };

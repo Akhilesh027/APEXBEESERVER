@@ -25,11 +25,11 @@ const seedCategories = async () => {
 
   console.log("[Seeder] Re-seeding new category hierarchy with images...");
   await Category.deleteMany({});
-  
+
   try {
     const Subcategory = mongoose.model('Subcategory');
     await Subcategory.deleteMany({});
-  } catch (err) {}
+  } catch (err) { }
 
   const categoriesToSeed = [
     {
@@ -157,7 +157,7 @@ const seedCategories = async () => {
           banner: item.image,
           isActive: true
         });
-      } catch (err) {}
+      } catch (err) { }
     }
   }
   console.log("[Seeder] Categories hierarchy with images seeded successfully.");
@@ -359,7 +359,7 @@ export const seedDatabase = async () => {
         // Seed Subscriptions for these products
         const vendorUser = await User.findOne({ roles: "vendor" }) || await User.findOne({});
         const customerUser = await User.findOne({ roles: "customer" }) || await User.findOne({});
-        
+
         if (vendorUser && customerUser) {
           // Add local shop subscription
           await LocalShopSubscription.create([

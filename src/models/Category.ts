@@ -10,6 +10,19 @@ export type SupportedItemType =
   | 'finance'
   | 'logistics';
 
+export interface ICategoryAttribute {
+  _id?: string;
+  key?: string;
+  name: string;
+  type: 'text' | 'number' | 'select' | 'multiselect' | 'boolean';
+  unit?: string;
+  required: boolean;
+  isVariant: boolean;
+  options?: string[];
+  placeholder?: string;
+  displayGroup?: string;
+}
+
 export interface ICategory extends Document {
   name: string;
   slug: string;
@@ -33,7 +46,7 @@ export interface ICategory extends Document {
   image?: string;
   banner?: string;
   brands?: any[];
-  attributes: any[];
+  attributes: ICategoryAttribute[];
   sortOrder: number;
   createdAt: Date;
   updatedAt: Date;

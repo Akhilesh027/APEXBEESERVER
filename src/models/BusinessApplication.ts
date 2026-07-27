@@ -50,7 +50,9 @@ export interface IBusinessApplication extends Document {
     bankName?: string;
     ifscCode?: string;
   };
-  status: "pending" | "under_review" | "approved" | "verified" | "rejected";
+  category?: string;
+  primaryCategory?: string;
+  status: "pending" | "pending_approval" | "pre_approved" | "kyc_submitted" | "under_review" | "approved" | "verified" | "rejected";
   adminRemarks?: string;
   createdAt: Date;
   updatedAt: Date;
@@ -62,6 +64,8 @@ const BusinessApplicationSchema = new Schema<IBusinessApplication>(
 
     applicationType: { type: String, required: true },
     roleId: { type: String },
+    category: { type: String, default: "" },
+    primaryCategory: { type: String, default: "" },
 
     businessName: { type: String, required: true },
     ownerName: { type: String, required: true },
@@ -112,7 +116,7 @@ assignedFranchise: {
 
     status: {
       type: String,
-      enum: ["pending", "under_review", "approved", "verified", "rejected"],
+      enum: ["pending", "pending_approval", "pre_approved", "kyc_submitted", "under_review", "approved", "verified", "rejected"],
       default: "pending",
     },
 

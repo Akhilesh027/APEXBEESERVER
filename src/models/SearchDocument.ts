@@ -64,7 +64,7 @@ const SearchDocumentSchema = new Schema<ISearchDocument>(
     categoryId: { type: Schema.Types.ObjectId, ref: 'Category' },
     subcategoryId: { type: Schema.Types.ObjectId, ref: 'Subcategory' },
     location: {
-      type: { type: String, enum: ['Point'], default: 'Point' },
+      type: { type: String, enum: ['Point'] },
       coordinates: { type: [Number] },
     },
     serviceRadiusKm: { type: Number },

@@ -1,6 +1,7 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
 export type WalletTransactionType =
+  | 'payment'
   | 'order_payment'
   | 'refund'
   | 'cashback'
@@ -9,7 +10,10 @@ export type WalletTransactionType =
   | 'withdrawal'
   | 'withdrawal_reversal'
   | 'reward_redemption'
-  | 'admin_adjustment';
+  | 'admin_adjustment'
+  | 'adjustment'
+  | 'subscription_credit'
+  | 'reversal';
 
 export interface IWalletTransaction extends Document {
   transactionId: string;
@@ -54,6 +58,7 @@ const WalletTransactionSchema = new Schema<IWalletTransaction>(
       type: String,
       required: true,
       enum: [
+        'payment',
         'order_payment',
         'refund',
         'cashback',
@@ -63,6 +68,9 @@ const WalletTransactionSchema = new Schema<IWalletTransaction>(
         'withdrawal_reversal',
         'reward_redemption',
         'admin_adjustment',
+        'adjustment',
+        'subscription_credit',
+        'reversal',
       ],
       index: true,
     },

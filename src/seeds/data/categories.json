@@ -7,11 +7,39 @@
     "isActive": true,
     "isFeatured": true,
     "isSeasonal": false,
-    "supportedItemTypes": ["product", "service", "event"],
+    "supportedItemTypes": [
+      "product",
+      "service",
+      "event"
+    ],
+    "attributes": [
+      {
+        "name": "Pack Size",
+        "isVariant": true,
+        "type": "select",
+        "options": [
+          "100g",
+          "250g",
+          "500g",
+          "Standard Box"
+        ]
+      }
+    ],
+    "brands": [
+      "Dabur",
+      "Cycle Pure",
+      "Mangaldeep",
+      "Patanjali"
+    ],
     "seo": {
       "title": "ApexBee Devotional - Temple & Puja Supplies",
       "description": "Puja kits, flowers, incense and local temple services nearby.",
-      "keywords": ["puja", "flowers", "devotional", "temple"]
+      "keywords": [
+        "puja",
+        "flowers",
+        "devotional",
+        "temple"
+      ]
     }
   },
   {
@@ -22,11 +50,52 @@
     "isActive": true,
     "isFeatured": true,
     "isSeasonal": false,
-    "supportedItemTypes": ["product"],
+    "supportedItemTypes": [
+      "product"
+    ],
+    "attributes": [
+      {
+        "name": "Pack Size",
+        "isVariant": true,
+        "type": "select",
+        "options": [
+          "250g",
+          "500g",
+          "1kg",
+          "5kg",
+          "1L",
+          "5L"
+        ]
+      },
+      {
+        "name": "Packaging Type",
+        "isVariant": false,
+        "type": "select",
+        "options": [
+          "Pouch",
+          "Bottle",
+          "Bag",
+          "Can"
+        ]
+      }
+    ],
+    "brands": [
+      "Heritage",
+      "Amul",
+      "Freedom",
+      "Lalitha",
+      "Fortune",
+      "Bisleri"
+    ],
     "seo": {
       "title": "Daily Needs & Groceries - ApexBee Super App",
       "description": "Get fresh milk, vegetables, water cans delivered daily to your door.",
-      "keywords": ["milk", "vegetables", "water cans", "groceries"]
+      "keywords": [
+        "milk",
+        "vegetables",
+        "water cans",
+        "groceries"
+      ]
     }
   },
   {
@@ -37,11 +106,57 @@
     "isActive": true,
     "isFeatured": true,
     "isSeasonal": false,
-    "supportedItemTypes": ["restaurant", "product"],
+    "supportedItemTypes": [
+      "restaurant",
+      "product"
+    ],
+    "attributes": [
+      {
+        "name": "Portion Size",
+        "isVariant": true,
+        "type": "select",
+        "options": [
+          "Half Portion",
+          "Full Portion",
+          "Family Pack"
+        ]
+      },
+      {
+        "name": "Spice Level",
+        "isVariant": false,
+        "type": "select",
+        "options": [
+          "Mild 🌿",
+          "Medium 🌶️",
+          "Extra Hot 🌶️🔥"
+        ]
+      },
+      {
+        "name": "Egg Preference",
+        "isVariant": false,
+        "type": "select",
+        "options": [
+          "Eggless 🟢",
+          "Contains Egg 🔴"
+        ]
+      }
+    ],
+    "brands": [
+      "Bawarchi",
+      "Paradise",
+      "Karachi Bakery",
+      "Subway",
+      "Domino's"
+    ],
     "seo": {
       "title": "ApexBee Food & Dining - Local Restaurants",
       "description": "Order from nearby restaurants, sweet shops and home chefs.",
-      "keywords": ["food", "dining", "restaurants", "biryani"]
+      "keywords": [
+        "food",
+        "dining",
+        "restaurants",
+        "biryani"
+      ]
     }
   },
   {
@@ -52,11 +167,37 @@
     "isActive": true,
     "isFeatured": true,
     "isSeasonal": false,
-    "supportedItemTypes": ["product", "service", "finance"],
+    "supportedItemTypes": [
+      "product",
+      "service",
+      "finance"
+    ],
+    "attributes": [
+      {
+        "name": "MOQ / Wholesale Lot",
+        "isVariant": true,
+        "type": "select",
+        "options": [
+          "10 Units",
+          "50 Units",
+          "100 Units",
+          "500 Units"
+        ]
+      }
+    ],
+    "brands": [
+      "ApexBee B2B",
+      "Wholesale Direct"
+    ],
     "seo": {
       "title": "ApexBee Business Hub - Wholesale & B2B Sourcing",
       "description": "Wholesalers, manufacturers, procurement tools and business opportunities.",
-      "keywords": ["b2b", "wholesale", "manufacturer", "supplies"]
+      "keywords": [
+        "b2b",
+        "wholesale",
+        "manufacturer",
+        "supplies"
+      ]
     }
   },
   {
@@ -67,11 +208,64 @@
     "isActive": true,
     "isFeatured": true,
     "isSeasonal": false,
-    "supportedItemTypes": ["product"],
+    "supportedItemTypes": [
+      "product"
+    ],
+    "attributes": [
+      {
+        "name": "Size",
+        "isVariant": true,
+        "type": "select",
+        "options": [
+          "S",
+          "M",
+          "L",
+          "XL",
+          "XXL"
+        ]
+      },
+      {
+        "name": "Color",
+        "isVariant": true,
+        "type": "select",
+        "options": [
+          "Royal Red",
+          "Peacock Blue",
+          "Active Black",
+          "Emerald Green",
+          "Pure White"
+        ]
+      },
+      {
+        "name": "Storage / Capacity",
+        "isVariant": true,
+        "type": "select",
+        "options": [
+          "64GB",
+          "128GB",
+          "256GB",
+          "512GB"
+        ]
+      }
+    ],
+    "brands": [
+      "Kanchipuram Silk",
+      "boAt",
+      "Samsung",
+      "Nike",
+      "Puma",
+      "Zara",
+      "Apple"
+    ],
     "seo": {
       "title": "ApexBee Shopping - Clothing, Electronics & Home",
       "description": "Compare prices and shop fashion, home decor, electronics locally.",
-      "keywords": ["shopping", "clothing", "electronics", "home decor"]
+      "keywords": [
+        "shopping",
+        "clothing",
+        "electronics",
+        "home decor"
+      ]
     }
   },
   {
@@ -82,11 +276,33 @@
     "isActive": true,
     "isFeatured": true,
     "isSeasonal": false,
-    "supportedItemTypes": ["course"],
+    "supportedItemTypes": [
+      "course"
+    ],
+    "attributes": [
+      {
+        "name": "Course Mode",
+        "isVariant": false,
+        "type": "select",
+        "options": [
+          "Online Video",
+          "Live Batch",
+          "Offline Workshop"
+        ]
+      }
+    ],
+    "brands": [
+      "ApexBee Academy"
+    ],
     "seo": {
       "title": "ApexBee Academy - Skill Development Courses",
       "description": "Learn entrepreneurship, digital marketing, local trades and get certified.",
-      "keywords": ["academy", "courses", "skills", "certification"]
+      "keywords": [
+        "academy",
+        "courses",
+        "skills",
+        "certification"
+      ]
     }
   },
   {
@@ -97,131 +313,35 @@
     "isActive": true,
     "isFeatured": true,
     "isSeasonal": false,
-    "supportedItemTypes": ["service"],
+    "supportedItemTypes": [
+      "service"
+    ],
+    "attributes": [
+      {
+        "name": "Service Duration",
+        "isVariant": true,
+        "type": "select",
+        "options": [
+          "1 Hour",
+          "Half Day",
+          "Full Day",
+          "Monthly Contract"
+        ]
+      }
+    ],
+    "brands": [
+      "ApexBee Verified Professionals"
+    ],
     "seo": {
-      "title": "Local Services & Experts - ApexBee Services",
-      "description": "Book plumbers, electricians, house painters and tutors nearby.",
-      "keywords": ["services", "plumber", "electrician", "expert"]
-    }
-  },
-  {
-    "seedKey": "category-finance",
-    "name": "Finance",
-    "slug": "finance",
-    "displayOrder": 8,
-    "isActive": true,
-    "isFeatured": false,
-    "isSeasonal": false,
-    "supportedItemTypes": ["finance", "service"],
-    "seo": {
-      "title": "ApexBee Finance - Insurance, Loans & Advisory",
-      "description": "Find local financial advisors, apply for business loans and secure your family.",
-      "keywords": ["finance", "loans", "insurance", "financial plan"]
-    }
-  },
-  {
-    "seedKey": "category-events",
-    "name": "Events",
-    "slug": "events",
-    "displayOrder": 9,
-    "isActive": true,
-    "isFeatured": false,
-    "isSeasonal": false,
-    "supportedItemTypes": ["event"],
-    "seo": {
-      "title": "ApexBee Events - local functions & venues",
-      "description": "Book event planners, function halls, banquets and ticketing.",
-      "keywords": ["events", "marriage halls", "planning", "decorations"]
-    }
-  },
-  {
-    "seedKey": "category-travels",
-    "name": "Tours & Travels",
-    "slug": "tours-travels",
-    "displayOrder": 10,
-    "isActive": true,
-    "isFeatured": false,
-    "isSeasonal": true,
-    "supportedItemTypes": ["travel"],
-    "seo": {
-      "title": "ApexBee Tours & Travels - Vacation Packages",
-      "description": "Local tours, pilgrimage bookings, taxi hires and bus tickets.",
-      "keywords": ["travel", "tours", "pilgrimage", "cab rental"]
-    }
-  },
-  {
-    "seedKey": "category-pets",
-    "name": "Pets",
-    "slug": "pets",
-    "displayOrder": 11,
-    "isActive": true,
-    "isFeatured": false,
-    "isSeasonal": false,
-    "supportedItemTypes": ["product", "service"],
-    "seo": {
-      "title": "ApexBee Pets - Pet Supplies & Grooming",
-      "description": "Pet foods, veterinary consultations, vaccination alerts and pet styling.",
-      "keywords": ["pets", "dog food", "grooming", "veterinary"]
-    }
-  },
-  {
-    "seedKey": "category-health-wellness",
-    "name": "Health & Wellness",
-    "slug": "health-wellness",
-    "displayOrder": 12,
-    "isActive": true,
-    "isFeatured": true,
-    "isSeasonal": false,
-    "supportedItemTypes": ["product", "service"],
-    "seo": {
-      "title": "Health & Wellness - Local Doctors & Organic Products",
-      "description": "Purchase organic goods, book diagnostic labs, yoga instructors, and doctors.",
-      "keywords": ["health", "doctors", "organic", "diagnostic lab"]
-    }
-  },
-  {
-    "seedKey": "category-kids",
-    "name": "Kids World",
-    "slug": "kids-world",
-    "displayOrder": 13,
-    "isActive": true,
-    "isFeatured": false,
-    "isSeasonal": false,
-    "supportedItemTypes": ["product", "service"],
-    "seo": {
-      "title": "ApexBee Kids World - Toys, Clothes & Tutors",
-      "description": "Kids clothing, educational toys, daycare directories and birthday planners.",
-      "keywords": ["kids", "toys", "baby clothing", "school tutor"]
-    }
-  },
-  {
-    "seedKey": "category-women-empire",
-    "name": "Women’s Empire",
-    "slug": "womens-empire",
-    "displayOrder": 14,
-    "isActive": true,
-    "isFeatured": true,
-    "isSeasonal": false,
-    "supportedItemTypes": ["product", "service"],
-    "seo": {
-      "title": "ApexBee Women's Empire - Beauty, Boutique & Businesses",
-      "description": "Handicrafts, boutique designs, home chefs and women-led ventures.",
-      "keywords": ["womens boutique", "handicrafts", "salons", "women led"]
-    }
-  },
-  {
-    "seedKey": "category-logistics",
-    "name": "Delivery & Logistics",
-    "slug": "delivery-logistics",
-    "displayOrder": 15,
-    "isActive": true,
-    "isFeatured": true,
-    "isSeasonal": false,
-    "supportedItemTypes": ["logistics"],
-    "seo": {
-      "title": "ApexBee Delivery & Logistics - Local Shipping",
-      "description": "Intracity courier service, truck hires and shipping quotes.",
-      "keywords": ["courier", "shipping", "parcel delivery", "logistics"]
+      "title": "ApexBee Services - Local Handymen & Experts",
+      "description": "Hire verified electricians, plumbers, beauticians, mechanics and freelancers.",
+      "keywords": [
+        "services",
+        "plumber",
+        "electrician",
+        "salon",
+        "handyman"
+      ]
     }
   }
 ]

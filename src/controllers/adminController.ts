@@ -616,7 +616,7 @@ export const approveApplication = async (
 ): Promise<void> => {
   try {
     const { id } = req.params;
-    const { adminRemarks } = req.body;
+    const { adminRemarks, primaryCategory, category } = req.body;
 
     const app = await BusinessApplication.findById(id);
 
@@ -625,35 +625,31 @@ export const approveApplication = async (
       return;
     }
 
-    if (app.status === "approved") {
-      res.status(400).json({ message: "Application is already approved" });
-      return;
+    if (adminRemarks) {
+      app.adminRemarks = adminRemarks;
     }
 
-if (adminRemarks) {
-  app.adminRemarks = adminRemarks;
-}
+    const assignedCat = primaryCategory || category || (app as any).primaryCategory || (app as any).category || "Food & Restaurant";
+    (app as any).primaryCategory = assignedCat;
+    (app as any).category = assignedCat;
+    app.status = "pre_approved";
 
-app.status = "approved";
+    await app.save();
 
-await app.save();
     const user = await User.findById(app.userId);
 
-    if (!user) {
-      res.status(404).json({ message: "Associated user not found" });
-      return;
+    if (user) {
+      await createNotificationCompat({
+        userId: user._id,
+        title: "Application Pre-Approved! 📄",
+        message: `Your business application for ${app.applicationType} (${app.businessName}) has been pre-approved under ${assignedCat}. Please upload your KYC documents for final verification.`,
+        type: "info",
+      });
     }
-
-    await createNotificationCompat({
-      userId: user._id,
-      title: "Application Approved! 🎉",
-      message: `Your business application for ${app.applicationType} (${app.businessName}) has been approved. Please upload/complete KYC for final verification.`,
-      type: "success",
-    });
 
     res.status(200).json({
       success: true,
-      message: "Application approved successfully.",
+      message: "Application pre-approved successfully. Awaiting KYC document submission.",
       application: app,
     });
   } catch (error: any) {
@@ -679,12 +675,12 @@ export const verifyKycApplication = async (
       res.status(404).json({ message: "Application not found" });
       return;
     }
-if (!["approved", "under_review"].includes(app.status)) {
-  res.status(400).json({
-    message: "Application must be approved or under review before KYC verification",
-  });
-  return;
-}
+    if (!["approved", "pre_approved", "under_review", "kyc_submitted"].includes(app.status)) {
+      res.status(400).json({
+        message: "Application must be pre-approved or under review before KYC verification",
+      });
+      return;
+    }
 
     const user = await User.findById(app.userId);
 
@@ -823,6 +819,9 @@ if (!["approved", "under_review"].includes(app.status)) {
       const updateObj: any = {
         $set: {
           ...profileFields,
+          category: (app as any).primaryCategory || (app as any).category || 'Food & Restaurant',
+          primaryCategory: (app as any).primaryCategory || (app as any).category || 'Food & Restaurant',
+          kycStatus: 'Verified',
           gstNumber: app.gstNumber,
           panNumber: app.panNumber,
           documents: existingVendor?.documents?.length

@@ -17,6 +17,7 @@ const router = Router();
 
 // User Referral Endpoints
 router.get("/me", protect, getMyReferralInfo);
+router.get("/my", protect, getMyReferralInfo);
 router.get("/dashboard", protect, getReferralDashboard);
 router.get("/history", protect, getReferralHistory);
 router.get("/network", protect, getReferralNetwork);

@@ -1,0 +1,319 @@
+[
+  {
+    "name": "Devotional",
+    "slug": "devotional",
+    "icon": "🏛",
+    "supportedItemTypes": ["product", "service", "event"],
+    "subcategories": [
+      {
+        "name": "Pooja Essentials",
+        "slug": "pooja-essentials",
+        "childCategories": [
+          "Pooja Items", "Camphor", "Cotton Wicks", "Kumkum", "Turmeric", 
+          "Incense", "Dhoop", "Diyas", "Oils"
+        ]
+      },
+      {
+        "name": "Pooja Kits & Offerings",
+        "slug": "pooja-kits-offerings",
+        "childCategories": [
+          "Pooja Kits", "Temple Offerings", "Prasadam", "Archana Kits", "Homam Kits"
+        ]
+      },
+      {
+        "name": "Idols & Spiritual",
+        "slug": "idols-spiritual",
+        "childCategories": [
+          "God Idols", "Photo Frames", "Rudraksha & Malas", "Yantras", "Spiritual Accessories"
+        ]
+      },
+      {
+        "name": "Flowers & Garlands",
+        "slug": "flowers-garlands",
+        "childCategories": [
+          "Fresh Flowers", "Garlands", "Tulasi", "Bilva Leaves", "Loose Flowers"
+        ]
+      },
+      {
+        "name": "Spiritual Books & Astrology",
+        "slug": "spiritual-books-astrology",
+        "childCategories": [
+          "Holy Books", "Panchangam", "Astrology", "Vastu", "Devotional CDs/Books"
+        ]
+      },
+      {
+        "name": "Festival Combos",
+        "slug": "festival-combos",
+        "childCategories": [
+          "Vinayaka Chavithi Combo", "Varalakshmi Vratham Kit", "Navaratri Combo", "Dasara", 
+          "Diwali Combo", "Sankranti Combo", "Ugadi", "Srirama Navami", "Krishna Janmashtami", 
+          "Shivaratri", "Karthika Masam", "Christmas Combo", "Ramzan / Eid Combo", "Bakrid", 
+          "New Year", "Raksha Bandhan", "Holi", "Bonalu", "Bathukamma"
+        ]
+      },
+      {
+        "name": "Temple & Festival Services",
+        "slug": "temple-festival-services",
+        "childCategories": [
+          "Temple Services", "Festival Specials", "Pooja Booking", "Pandit Booking", "Festival Kits", "Decorations"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Daily Needs",
+    "slug": "daily-needs",
+    "icon": "🛒",
+    "supportedItemTypes": ["product"],
+    "subcategories": [
+      {
+        "name": "Grocery & Staples",
+        "slug": "grocery-staples",
+        "childCategories": [
+          "Rice", "Atta & Flours", "Dal & Pulses", "Cooking Oils & Ghee", "Salt, Sugar & Jaggery", 
+          "Spices & Masalas", "Dry Fruits & Nuts", "Pickles & Papads", "Noodles, Pasta & Vermicelli", 
+          "Breakfast Cereals", "Ready to Cook", "Ready to Eat", "Snacks", "Biscuits & Cookies", 
+          "Chocolates & Candies", "Tea & Coffee", "Soft Drinks", "Juices", "Health Drinks", "Syrups & Squashes"
+        ]
+      },
+      {
+        "name": "Fruits & Vegetables",
+        "slug": "fruits-vegetables",
+        "childCategories": [
+          "Fresh Fruits", "Fresh Vegetables", "Leafy Vegetables", "Exotic Fruits", "Exotic Vegetables", 
+          "Cut Fruits", "Cut Vegetables", "Herbs & Leaves", "Sprouts", "Seasonal Fruits", "Seasonal Vegetables"
+        ]
+      },
+      {
+        "name": "Dairy, Bakery & Water Cans",
+        "slug": "dairy-bakery-water-cans",
+        "childCategories": [
+          "Milk", "Milk Subscription", "Curd", "Butter", "Cheese", "Paneer", "Ghee", "Bread", "Buns", 
+          "Cakes", "Cookies", "Bakery Snacks", "Eggs", "20L Water Can", "10L Water Can", "Water Bottles", 
+          "Mineral Water", "Water Can Subscription"
+        ]
+      },
+      {
+        "name": "Organic & Healthy Foods",
+        "slug": "organic-healthy-foods",
+        "childCategories": [
+          "Organic Rice", "Organic Atta", "Organic Pulses", "Organic Spices", "Millets", "Cold Pressed Oils", 
+          "Natural Honey", "Dry Fruits", "Seeds", "Herbal Products", "Sugar Free Products", "Gluten Free Foods", 
+          "Healthy Snacks", "Ayurvedic Foods"
+        ]
+      },
+      {
+        "name": "Meat & Seafood",
+        "slug": "meat-seafood",
+        "childCategories": [
+          "Chicken", "Mutton", "Fish", "Prawns", "Crab", "Dry Fish", "Eggs", "Marinated Meat", 
+          "Ready to Cook Meat", "Frozen Meat"
+        ]
+      },
+      {
+        "name": "Household Supplies",
+        "slug": "household-supplies",
+        "childCategories": [
+          "Personal Care - Soap", "Personal Care - Shampoo", "Personal Care - Hair Oil", "Personal Care - Face Wash", 
+          "Personal Care - Toothpaste", "Personal Care - Toothbrush", "Personal Care - Deodorants", "Personal Care - Perfumes", 
+          "Personal Care - Cosmetics", "Personal Care - Men's Grooming", "Personal Care - Women's Hygiene",
+          "Baby Care - Baby Food", "Baby Care - Baby Diapers", "Baby Care - Baby Wipes", "Baby Care - Baby Soap", 
+          "Baby Care - Baby Shampoo", "Baby Care - Baby Lotion", "Baby Care - Baby Powder",
+          "Home Care - Floor Cleaner", "Home Care - Toilet Cleaner", "Home Care - Dishwash Liquid", "Home Care - Detergent Powder", 
+          "Home Care - Detergent Liquid", "Home Care - Fabric Conditioner", "Home Care - Air Freshener", "Home Care - Garbage Bags",
+          "Cleaning Essentials - Brooms", "Cleaning Essentials - Mops", "Cleaning Essentials - Cleaning Brushes", 
+          "Cleaning Essentials - Scrub Pads", "Cleaning Essentials - Tissue Papers", "Cleaning Essentials - Kitchen Towels", 
+          "Cleaning Essentials - Disposable Gloves"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Food & Dining",
+    "slug": "food-dining",
+    "icon": "🍽",
+    "supportedItemTypes": ["restaurant", "product"],
+    "subcategories": [
+      {
+        "name": "Restaurants",
+        "slug": "restaurants",
+        "childCategories": [
+          "Veg Restaurants", "Non-Veg Restaurants", "Family Restaurants", "Dhaba", "Multi-Cuisine"
+        ]
+      },
+      {
+        "name": "Street Food",
+        "slug": "street-food",
+        "childCategories": [
+          "Panipuri", "Chaat", "Pav Bhaji", "Samosa", "Bajji", "Punugulu", "Mirchi Bajji", "Bonda", 
+          "Vada", "Pakodi", "Momos", "Shawarma", "Egg Point", "Corn & Chat Items", "Sugarcane Juice", 
+          "Kulfi", "Falooda", "Local Street Specials"
+        ]
+      },
+      {
+        "name": "Fast Food & Snacks",
+        "slug": "fast-food-snacks",
+        "childCategories": [
+          "Noodles", "Fried Rice", "Pizza", "Burger", "Shawarma", "Momos", "Sandwich", "Rolls", "Fries"
+        ]
+      },
+      {
+        "name": "Tiffins & Meals",
+        "slug": "tiffins-meals",
+        "childCategories": [
+          "Idly", "Dosa", "Poori", "Upma", "Meals"
+        ]
+      },
+      {
+        "name": "Cafés, Bakery & Beverages",
+        "slug": "cafes-bakery-beverages",
+        "childCategories": [
+          "Tea", "Coffee", "Juice", "Milkshake", "Lassi", "Cakes", "Pastries", "Bread", "Cookies"
+        ]
+      },
+      {
+        "name": "Sweets & Desserts",
+        "slug": "sweets-desserts",
+        "childCategories": [
+          "Laddu", "Kaju Sweets", "Bengali Sweets", "Ice Cream", "Falooda", "Brownies"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Shopping",
+    "slug": "shopping",
+    "icon": "🛍",
+    "supportedItemTypes": ["product"],
+    "subcategories": [
+      {
+        "name": "Fashion & Lifestyle",
+        "slug": "fashion-lifestyle",
+        "childCategories": [
+          "Men's Fashion", "Women's Fashion", "Kids Wear", "Footwear", "Watches", "Jewellery", 
+          "Bags & Luggage", "Fashion Accessories", "Sunglasses"
+        ]
+      },
+      {
+        "name": "Mobiles & Electronics",
+        "slug": "mobiles-electronics",
+        "childCategories": [
+          "Smartphones", "Feature Phones", "Mobile Accessories", "Laptops", "Computers", "Tablets", 
+          "Smart Watches", "Headphones & Earbuds", "Speakers", "Power Banks", "Chargers & Cables", "Cameras", "Smart Gadgets"
+        ]
+      },
+      {
+        "name": "Home & Living",
+        "slug": "home-living",
+        "childCategories": [
+          "Furniture", "Home Decor", "Kitchen Appliances", "Home Appliances", "Kitchen & Dining", 
+          "Storage & Organizers", "Lighting", "Mattresses", "Curtains", "Bathroom Essentials"
+        ]
+      },
+      {
+        "name": "Sports, Toys & Stationery",
+        "slug": "sports-toys-stationery",
+        "childCategories": [
+          "Sports Equipment", "Gym & Fitness", "Indoor Games", "Outdoor Games", "Toys", "Educational Toys", 
+          "Books", "School Stationery", "Office Stationery", "Art & Craft"
+        ]
+      },
+      {
+        "name": "Auto & Bike Essentials",
+        "slug": "auto-bike-essentials",
+        "childCategories": [
+          "Car Accessories", "Bike Accessories", "Helmets", "Engine Oil", "Car Care", "Bike Care", 
+          "Tyre Accessories", "Cleaning Kits", "Seat Covers", "Mobile Holders"
+        ]
+      },
+      {
+        "name": "Agriculture & Garden",
+        "slug": "agriculture-garden",
+        "childCategories": [
+          "Seeds", "Fertilizers", "Pesticides", "Farming Tools", "Irrigation Items", "Plant Pots", 
+          "Gardening Tools", "Indoor Plants", "Outdoor Plants", "Organic Farming Products"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Services",
+    "slug": "services",
+    "icon": "🛠",
+    "supportedItemTypes": ["service"],
+    "subcategories": [
+      {
+        "name": "Home Appliances Repair",
+        "slug": "home-appliances-repair",
+        "childCategories": [
+          "AC Repair & Service", "Refrigerator Repair", "Washing Machine Repair", "TV Repair", 
+          "Water Purifier Repair", "Microwave Repair", "Geyser Repair", "Chimney Repair", "Mixer Grinder Repair", "Fan Repair"
+        ]
+      },
+      {
+        "name": "Home Cleaning Service",
+        "slug": "home-cleaning-service",
+        "childCategories": [
+          "Full Home Cleaning", "Kitchen Cleaning", "Bathroom Cleaning", "Sofa Cleaning", "Carpet Cleaning", 
+          "Mattress Cleaning", "Water Tank Cleaning", "Deep Cleaning", "Office Cleaning", "Home Appliances Cleaning"
+        ]
+      },
+      {
+        "name": "Vehicle Services",
+        "slug": "vehicle-services",
+        "childCategories": [
+          "Bike Service", "Car Service", "Car Wash", "Bike Wash", "Engine Oil Change", "Battery Replacement", 
+          "Tyre & Puncture Repair", "Doorstep Service", "Towing Service", "Vehicle Inspection"
+        ]
+      },
+      {
+        "name": "Spa & Salon",
+        "slug": "spa-salon",
+        "childCategories": [
+          "Men's Salon", "Women's Salon", "Hair Cut", "Hair Spa", "Facial", "Makeup", "Bridal Makeup", 
+          "Mehendi", "Massage Therapy", "Nail Care"
+        ]
+      },
+      {
+        "name": "Laundry Service",
+        "slug": "laundry-service",
+        "childCategories": [
+          "Wash & Fold", "Wash & Iron", "Dry Cleaning", "Steam Iron", "Blanket Cleaning", "Shoe Cleaning", 
+          "Curtain Cleaning", "Carpet Cleaning", "Express Laundry Pickup & Delivery"
+        ]
+      },
+      {
+        "name": "Pest Control Services",
+        "slug": "pest-control-services",
+        "childCategories": [
+          "Home Pest Control"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "ApexBee Academy",
+    "slug": "academy",
+    "icon": "🎓",
+    "supportedItemTypes": ["course"],
+    "subcategories": [
+      {
+        "name": "Become an Entrepreneur",
+        "slug": "become-an-entrepreneur",
+        "childCategories": [
+          "Start Your Business", "Women Entrepreneurship", "Franchise Opportunities", "Business Ideas", 
+          "Startup Guidance", "Business Planning", "Financial Literacy", "Marketing Basics"
+        ]
+      },
+      {
+        "name": "Skill Development",
+        "slug": "skill-development",
+        "childCategories": [
+          "AC Repair", "Refrigerator Repair", "Washing Machine Repair", "TV Repair", "RO Water Purifier Repair", 
+          "Electrician Basics", "Plumbing Basics", "Mobile Repair", "Computer & Laptop Repair", 
+          "Beauty & Salon Training", "Driving Skills", "Digital Marketing"
+        ]
+      }
+    ]
+  }
+]

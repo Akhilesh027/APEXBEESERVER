@@ -1,69 +1,141 @@
 [
   {
-    "seedKey": "var-jasmine-100g",
-    "productSeedKey": "prod-jasmine-flowers",
-    "sku": "SKU-JAS-FLW-100",
-    "barcode": "8901234001001",
+    "seedKey": "var-biryani-half",
+    "productSeedKey": "prod-hyderabadi-biryani",
+    "sku": "SKU-BIR-HYD-HALF",
+    "barcode": "8901234008001",
     "attributes": {
-      "packSize": "100g",
-      "unit": "packet"
+      "size": "Half Portion",
+      "packSize": "Half Portion",
+      "unit": "portion"
     },
-    "weight": 0.1
+    "weight": 0.4
   },
   {
-    "seedKey": "var-jasmine-250g",
-    "productSeedKey": "prod-jasmine-flowers",
-    "sku": "SKU-JAS-FLW-250",
-    "barcode": "8901234001002",
+    "seedKey": "var-biryani-full",
+    "productSeedKey": "prod-hyderabadi-biryani",
+    "sku": "SKU-BIR-HYD-FULL",
+    "barcode": "8901234008002",
     "attributes": {
-      "packSize": "250g",
-      "unit": "packet"
-    },
-    "weight": 0.25
-  },
-  {
-    "seedKey": "var-poojakit-std",
-    "productSeedKey": "prod-standard-pooja-kit",
-    "sku": "SKU-PJ-KIT-STD",
-    "barcode": "8901234002001",
-    "attributes": {
-      "packSize": "Standard",
-      "unit": "box"
+      "size": "Full Portion",
+      "packSize": "Full Portion",
+      "unit": "portion"
     },
     "weight": 0.8
   },
   {
-    "seedKey": "var-cowmilk-1l",
-    "productSeedKey": "prod-cow-milk-1l",
-    "sku": "SKU-COW-MILK-1L",
-    "barcode": "8901234003001",
+    "seedKey": "var-biryani-family",
+    "productSeedKey": "prod-hyderabadi-biryani",
+    "sku": "SKU-BIR-HYD-FAM",
+    "barcode": "8901234008003",
     "attributes": {
-      "packSize": "1 Litre",
-      "unit": "packet"
+      "size": "Family Pack (3-4 Persons)",
+      "packSize": "Family Pack",
+      "unit": "portion"
     },
-    "weight": 1.0
+    "weight": 1.8
   },
   {
-    "seedKey": "var-watercan-20l",
-    "productSeedKey": "prod-water-can-20l",
-    "sku": "SKU-WATER-CAN-20L",
-    "barcode": "8901234004001",
+    "seedKey": "var-cake-500g",
+    "productSeedKey": "prod-chocolate-cake",
+    "sku": "SKU-CAKE-TRF-500G",
+    "barcode": "8901234009001",
     "attributes": {
-      "packSize": "20 Litres",
+      "size": "0.5 kg",
+      "packSize": "0.5 kg",
+      "unit": "cake"
+    },
+    "weight": 0.5
+  },
+  {
+    "seedKey": "var-cake-1kg",
+    "productSeedKey": "prod-chocolate-cake",
+    "sku": "SKU-CAKE-TRF-1KG",
+    "barcode": "8901234009002",
+    "attributes": {
+      "size": "1.0 kg",
+      "packSize": "1.0 kg",
+      "unit": "cake"
+    },
+    "weight": 1
+  },
+  {
+    "seedKey": "var-cake-2kg",
+    "productSeedKey": "prod-chocolate-cake",
+    "sku": "SKU-CAKE-TRF-2KG",
+    "barcode": "8901234009003",
+    "attributes": {
+      "size": "2.0 kg",
+      "packSize": "2.0 kg",
+      "unit": "cake"
+    },
+    "weight": 2
+  },
+  {
+    "seedKey": "var-oil-1l",
+    "productSeedKey": "prod-sunflower-oil",
+    "sku": "SKU-OIL-SUN-1L",
+    "barcode": "8901234010001",
+    "attributes": {
+      "packSize": "1 Litre Pouch",
+      "unit": "pouch"
+    },
+    "weight": 1
+  },
+  {
+    "seedKey": "var-oil-5l",
+    "productSeedKey": "prod-sunflower-oil",
+    "sku": "SKU-OIL-SUN-5L",
+    "barcode": "8901234010002",
+    "attributes": {
+      "packSize": "5 Litres Can",
       "unit": "can"
     },
-    "weight": 20.0
+    "weight": 5
   },
   {
-    "seedKey": "var-tomatoes-1kg",
-    "productSeedKey": "prod-fresh-tomatoes",
-    "sku": "SKU-TOMATO-1KG",
-    "barcode": "8901234005001",
+    "seedKey": "var-rice-5kg",
+    "productSeedKey": "prod-hmt-rice",
+    "sku": "SKU-RICE-HMT-5KG",
+    "barcode": "8901234011001",
     "attributes": {
-      "packSize": "1 kg",
-      "unit": "packet"
+      "packSize": "5 kg Bag",
+      "unit": "bag"
     },
-    "weight": 1.0
+    "weight": 5
+  },
+  {
+    "seedKey": "var-rice-25kg",
+    "productSeedKey": "prod-hmt-rice",
+    "sku": "SKU-RICE-HMT-25KG",
+    "barcode": "8901234011002",
+    "attributes": {
+      "packSize": "25 kg Bag",
+      "unit": "bag"
+    },
+    "weight": 25
+  },
+  {
+    "seedKey": "var-honey-250g",
+    "productSeedKey": "prod-organic-honey",
+    "sku": "SKU-HNY-ORG-250G",
+    "barcode": "8901234012001",
+    "attributes": {
+      "packSize": "250g Glass Jar",
+      "unit": "jar"
+    },
+    "weight": 0.25
+  },
+  {
+    "seedKey": "var-honey-500g",
+    "productSeedKey": "prod-organic-honey",
+    "sku": "SKU-HNY-ORG-500G",
+    "barcode": "8901234012002",
+    "attributes": {
+      "packSize": "500g Glass Jar",
+      "unit": "jar"
+    },
+    "weight": 0.5
   },
   {
     "seedKey": "var-saree-red",

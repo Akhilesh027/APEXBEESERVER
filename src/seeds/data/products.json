@@ -1,63 +1,64 @@
 [
   {
-    "seedKey": "prod-jasmine-flowers",
-    "subcategorySeedKey": "subcat-devotional-flowers",
-    "name": "Fresh Jasmine Flowers (Mallepulu)",
-    "slug": "fresh-jasmine-flowers",
-    "description": "Fragrant fresh jasmine flowers locally sourced, perfect for daily prayers and hair styling.",
+    "seedKey": "prod-hyderabadi-biryani",
+    "subcategorySeedKey": "subcat-food-restaurants",
+    "name": "Special Hyderabadi Chicken Biryani",
+    "slug": "special-hyderabadi-chicken-biryani",
+    "description": "Authentic dum biryani prepared with aromatic basmati rice, tender chicken, and secret spices.",
     "productType": "physical",
     "specifications": {
-      "origin": "Local Farms",
-      "freshness": "Harvested Daily"
+      "cuisine": "Hyderabadi",
+      "dietary": "Non-Vegetarian",
+      "spiceLevel": "Medium"
     }
   },
   {
-    "seedKey": "prod-standard-pooja-kit",
-    "subcategorySeedKey": "subcat-devotional-pooja-kits",
-    "name": "ApexBee Standard Pooja Kit",
-    "slug": "standard-pooja-kit",
-    "description": "Complete daily pooja box containing kumkum, turmeric, incense sticks, ghee wicks, camphor, and matchbox.",
+    "seedKey": "prod-chocolate-cake",
+    "subcategorySeedKey": "subcat-food-bakery",
+    "name": "Belgian Chocolate Truffle Cake",
+    "slug": "belgian-chocolate-truffle-cake",
+    "description": "Rich dark chocolate sponge layered with creamy Belgian truffle ganache and choco chips.",
     "productType": "physical",
     "specifications": {
-      "itemsCount": "12 essential items",
-      "package": "Eco-friendly Box"
+      "flavor": "Chocolate Truffle",
+      "eggType": "Eggless Available",
+      "shelfLife": "3 Days"
     }
   },
   {
-    "seedKey": "prod-cow-milk-1l",
-    "subcategorySeedKey": "subcat-daily-milk",
-    "name": "Pure Cow Milk (A2) 1L",
-    "slug": "pure-cow-milk-1l",
-    "description": "Pasteurized pure organic cow milk sourced directly from trusted local dairies. Rich in vitamins and nutrients.",
-    "productType": "physical",
-    "specifications": {
-      "fatContent": "3.5%",
-      "volume": "1 Litre",
-      "packaging": "Pouch"
-    }
-  },
-  {
-    "seedKey": "prod-water-can-20l",
-    "subcategorySeedKey": "subcat-daily-water",
-    "name": "Premium Mineral Water Can 20L",
-    "slug": "mineral-water-can-20l",
-    "description": "20 Litre multi-stage filtered pure drinking water can. Standard bubble top bottle matching major household water dispensers.",
-    "productType": "physical",
-    "specifications": {
-      "volume": "20 Litres",
-      "filtration": "RO + UV + Minerals"
-    }
-  },
-  {
-    "seedKey": "prod-fresh-tomatoes",
+    "seedKey": "prod-sunflower-oil",
     "subcategorySeedKey": "subcat-daily-veg",
-    "name": "Fresh Organic Tomatoes 1kg",
-    "slug": "fresh-tomatoes-1kg",
-    "description": "Farm-fresh ripe red organic tomatoes. Naturally grown, perfect for curries, salads, and soups.",
+    "name": "Freedom Refined Sunflower Oil",
+    "slug": "freedom-refined-sunflower-oil",
+    "description": "Clear and light sunflower oil enriched with Vitamins A & D, ideal for daily healthy cooking.",
     "productType": "physical",
     "specifications": {
-      "weight": "1 kg",
-      "grade": "Premium A-Grade"
+      "fortified": "Vitamin A & D",
+      "purity": "100% Refined"
+    }
+  },
+  {
+    "seedKey": "prod-hmt-rice",
+    "subcategorySeedKey": "subcat-daily-veg",
+    "name": "Lalitha Brand Premium HMT Rice",
+    "slug": "lalitha-brand-premium-hmt-rice",
+    "description": "Aged raw HMT rice grains, light on stomach and perfect for daily family meals.",
+    "productType": "physical",
+    "specifications": {
+      "grainType": "HMT Raw Rice",
+      "aging": "12 Months Aged"
+    }
+  },
+  {
+    "seedKey": "prod-organic-honey",
+    "subcategorySeedKey": "subcat-devotional-pooja-kits",
+    "name": "Dabur Organic Raw Honey",
+    "slug": "dabur-organic-raw-honey",
+    "description": "100% pure organic wild forest honey without added sugars or preservatives.",
+    "productType": "physical",
+    "specifications": {
+      "purity": "Organic Certified",
+      "packaging": "Glass Jar"
     }
   },
   {

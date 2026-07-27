@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import Product from '../models/Product';
 import Category from '../models/Category';
 import { Vendor } from '../models/Vendor';
+import Order from '../models/Order';
 import { uploadToCloudinary } from '../config/cloudinary';
 
 const validateProductFields = (body: any, res: Response): boolean => {
@@ -218,18 +219,38 @@ export const createProduct = async (req: Request, res: Response) => {
       sellerType,
     } = req.body;
 
-    if (!name?.trim() || !categoryId || !sku?.trim()) {
-      res.status(400).json({
-        message: 'Product name, category and SKU are required',
-      });
-      return;
-    }
-
+    let finalCategoryId = categoryId;
     const sellerId = isAdmin ? (req.body.sellerId || authUser.id) : authUser.id;
 
     if (!sellerId) {
       res.status(401).json({
         message: 'Seller not found. Login required.',
+      });
+      return;
+    }
+
+    if (!finalCategoryId && sellerId) {
+      const vendor = await Vendor.findOne({ $or: [{ userId: sellerId }, { _id: sellerId }] });
+      if (vendor) {
+        const catSearchStr = vendor.primaryCategory || (vendor.categories && vendor.categories[0]);
+        if (catSearchStr) {
+          const matchedCat = await Category.findOne({
+            $or: [
+              { _id: mongoose.Types.ObjectId.isValid(catSearchStr) ? catSearchStr : null },
+              { name: new RegExp(`^${catSearchStr.replace(/[^a-zA-Z0-9]/g, '.*')}`, 'i') },
+              { slug: makeSlug(catSearchStr) }
+            ]
+          });
+          if (matchedCat) {
+            finalCategoryId = matchedCat._id;
+          }
+        }
+      }
+    }
+
+    if (!name?.trim() || !finalCategoryId || !sku?.trim()) {
+      res.status(400).json({
+        message: 'Product name, category and SKU are required',
       });
       return;
     }
@@ -264,9 +285,11 @@ export const createProduct = async (req: Request, res: Response) => {
       slug,
       description: description || '',
 
-      categoryId,
+      categoryId: finalCategoryId,
       subCategoryId: subCategoryId || null,
+      subcategoryId: subCategoryId || null,
       childCategoryId: childCategoryId || null,
+      createdBy: sellerId,
 
       brand: brand || '',
       sku: cleanSku,
@@ -285,19 +308,49 @@ export const createProduct = async (req: Request, res: Response) => {
           : calculatedSelling,
       stock: normalizeNumber(stock),
 
-      status: 'Pending Review',
-      isActive: false,
-      adminPricingApproved: false,
-      sellerPricingAccepted: false,
+      status: isAdmin ? (req.body.status || 'Live') : 'Pending Review',
+      isActive: isAdmin ? (req.body.isActive !== false) : false,
+      moderationStatus: isAdmin ? 'approved' : 'pending',
+      adminPricingApproved: isAdmin ? true : false,
+      sellerPricingAccepted: isAdmin ? true : false,
       submittedAt: new Date(),
       isStoreProduct: req.body.isStoreProduct === 'true' || req.body.isStoreProduct === true,
       isSubscriptionAvailable: req.body.isSubscriptionAvailable === 'true' || req.body.isSubscriptionAvailable === true,
     });
 
+    try {
+      const StoreProduct = mongoose.model('StoreProduct');
+      const Inventory = mongoose.model('Inventory');
+      const vendor = await Vendor.findOne({ $or: [{ userId: sellerId }, { _id: sellerId }] });
+      const storeId = vendor ? vendor._id.toString() : sellerId.toString();
+
+      await StoreProduct.create({
+        storeId,
+        productId: product._id,
+        mrp: mrp || 0,
+        sellingPrice: calculatedSelling || mrp || 0,
+        minimumOrderQuantity: 1,
+        preparationTimeMinutes: 15,
+        isActive: true,
+      });
+
+      await Inventory.create({
+        storeId,
+        productId: product._id,
+        availableStock: normalizeNumber(stock, 50),
+        reservedStock: 0,
+        damagedStock: 0,
+        lowStockThreshold: 5,
+      });
+    } catch (invErr: any) {
+      console.warn('[createProduct] Non-fatal store product/inventory creation warning:', invErr.message);
+    }
+
     const populatedProduct = await populateProduct(Product.findById(product._id));
 
     res.status(201).json({
-      message: 'Product added successfully and sent for admin review',
+      success: true,
+      message: 'Product added successfully and is live!',
       product: populatedProduct,
     });
   } catch (error: any) {
@@ -345,37 +398,45 @@ export const getAllProducts = async (req: Request, res: Response) => {
     if (isActive !== undefined) {
       filter.isActive = isActive === 'true';
     }
-    if (categoryId) {
-      filter.categoryId = categoryId;
-    }
-    if (excludeId) {
-      filter._id = { $ne: excludeId };
-    }
+    if (category || categoryId) {
+      const catParam = String(categoryId || category).trim();
+      const cleanParam = catParam.replace(/[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDC00-\uDFFF]/g, '').trim();
 
-    if (category) {
-      const foundCategory = await Category.findOne({
-        $or: [
-          { name: String(category).trim() },
-          { slug: String(category).trim().toLowerCase() }
-        ]
-      }).collation({ locale: 'en', strength: 2 });
+      let foundCategory = null;
+      if (mongoose.Types.ObjectId.isValid(catParam)) {
+        foundCategory = await Category.findById(catParam);
+      }
+      if (!foundCategory && cleanParam) {
+        const regex = new RegExp(cleanParam.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&'), 'i');
+        foundCategory = await Category.findOne({
+          $or: [
+            { name: regex },
+            { slug: catParam.toLowerCase() },
+            { slug: cleanParam.toLowerCase().replace(/[^a-z0-9]+/g, '-') }
+          ]
+        });
+      }
 
       if (foundCategory) {
+        const childCats = await Category.find({ parentId: foundCategory._id }).select('_id');
+        const childCatIds = childCats.map((c) => c._id);
+        const grandChildCats = await Category.find({ parentId: { $in: childCatIds } }).select('_id');
+        const allCatIds = [foundCategory._id, ...childCatIds, ...grandChildCats.map((c) => c._id)];
+
         filter.$or = [
-          { categoryId: foundCategory._id },
-          { subCategoryId: foundCategory._id },
-          { childCategoryId: foundCategory._id }
+          { categoryId: { $in: allCatIds } },
+          { subCategoryId: { $in: allCatIds } },
+          { subcategoryId: { $in: allCatIds } },
+          { childCategoryId: { $in: allCatIds } }
         ];
       } else {
-        return res.json({
-          products: [],
-          pagination: {
-            page: pageNum,
-            limit: limitNum,
-            totalPages: 0,
-            totalProducts: 0
-          }
-        });
+        const regex = new RegExp(cleanParam.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&'), 'i');
+        filter.$or = [
+          { category: regex },
+          { subcategory: regex },
+          { name: regex },
+          { brand: regex }
+        ];
       }
     }
 
@@ -405,8 +466,12 @@ export const getAllProducts = async (req: Request, res: Response) => {
     const rawProducts = await populateProduct(query.select(selectString));
 
     const sellerIds = rawProducts.map((p: any) => p.sellerId?._id || p.sellerId).filter(Boolean);
-    const vendors = await Vendor.find({ userId: { $in: sellerIds } });
-    const vendorMap = new Map(vendors.map((v: any) => [v.userId.toString(), v]));
+    const vendors = await Vendor.find({ $or: [{ userId: { $in: sellerIds } }, { _id: { $in: sellerIds } }] });
+    const vendorMap = new Map();
+    vendors.forEach((v: any) => {
+      if (v.userId) vendorMap.set(v.userId.toString(), v);
+      if (v._id) vendorMap.set(v._id.toString(), v);
+    });
 
     const products = rawProducts.map((p: any) => {
       const productObj = p.toObject ? p.toObject() : p;
@@ -494,6 +559,8 @@ export const getMyProducts = async (req: Request, res: Response) => {
     });
   }
 };
+
+
 
 export const getProductById = async (req: Request, res: Response) => {
   try {
@@ -1255,22 +1322,20 @@ export const getBuyAgainProducts = async (req: Request, res: Response): Promise<
   try {
     const authUser = (req as any).user;
     if (!authUser) {
-      res.status(401).json({ success: false, message: 'Unauthorized access.' });
+      const fallbackProds = await Product.find({ isActive: true }).limit(6).lean();
+      res.status(200).json({ success: true, products: fallbackProds });
       return;
     }
 
     const userId = authUser.id || authUser._id;
-    const Order = mongoose.model('Order');
-    
-    // Find all successfully placed/completed/delivered orders for this user
-    const orders = await Order.find({
+    const pastOrders = await Order.find({
       customerId: userId,
       orderStatus: { $nin: ['cancelled', 'Cancelled', 'pending_payment', 'Failed', 'Payment Rejected'] }
     }).sort({ createdAt: -1 });
 
     // Collect product IDs in order of recent purchases
     const productIds = new Set<string>();
-    orders.forEach((order: any) => {
+    pastOrders.forEach((order: any) => {
       (order.items || []).forEach((item: any) => {
         if (item.productId) {
           productIds.add(item.productId.toString());
@@ -1280,7 +1345,8 @@ export const getBuyAgainProducts = async (req: Request, res: Response): Promise<
 
     const idsArray = Array.from(productIds);
     if (idsArray.length === 0) {
-      res.status(200).json({ success: true, products: [] });
+      const fallbackProds = await Product.find({ isActive: true }).limit(6).lean();
+      res.status(200).json({ success: true, products: fallbackProds });
       return;
     }
 
@@ -1291,13 +1357,16 @@ export const getBuyAgainProducts = async (req: Request, res: Response): Promise<
     // Fetch the product documents
     const rawProducts = await Product.find({
       _id: { $in: idsArray },
-      status: 'Live',
       isActive: true
     });
 
     const sellerIds = rawProducts.map((p: any) => p.sellerId?._id || p.sellerId).filter(Boolean);
-    const vendors = await Vendor.find({ userId: { $in: sellerIds } });
-    const vendorMap = new Map(vendors.map((v: any) => [v.userId.toString(), v]));
+    const vendors = await Vendor.find({ $or: [{ userId: { $in: sellerIds } }, { _id: { $in: sellerIds } }] });
+    const vendorMap = new Map();
+    vendors.forEach((v: any) => {
+      if (v.userId) vendorMap.set(v.userId.toString(), v);
+      if (v._id) vendorMap.set(v._id.toString(), v);
+    });
 
     const mappedProducts = rawProducts.map((p: any) => {
       const productObj = p.toObject ? p.toObject() : p;

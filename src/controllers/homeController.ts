@@ -152,6 +152,7 @@ export const getHomeDashboard = async (req: Request, res: Response) => {
         slug: sp.productId.slug,
         description: sp.productId.description,
         brand: vendor?.businessName || sp.productId.brand || 'ApexBee Seller',
+        storeRating: (vendor?.rating?.totalReviews > 0 && vendor?.rating?.average) ? Number(vendor.rating.average).toFixed(1) : undefined,
         sku: sp.variantId?.sku || sp.productId.sku,
         thumbnail: sp.productId.thumbnail || '',
         images: sp.productId.images || [],
@@ -163,8 +164,9 @@ export const getHomeDashboard = async (req: Request, res: Response) => {
         status: 'Live',
         categoryId: sp.productId.categoryId,
         subCategoryId: sp.productId.subCategoryId,
-        rating: 4.5,
-        reviews: 20,
+        rating: sp.productId.rating || sp.productId.averageRating || 0,
+        reviews: sp.productId.numReviews || sp.productId.reviewsCount || 0,
+        soldCount: sp.productId.soldCount || 0,
         adminPricing: {
           shippingCharge: shippingCharge
         },
@@ -473,20 +475,41 @@ export const getPersonalizationDetails = async (req: Request, res: Response) => 
       console.error("[Personalization] Error fetching services:", err);
     }
 
-    // Fetch Restaurants from DB
+    // Fetch Restaurants from DB (Real Vendors or Restaurants)
     let restaurants: any[] = [];
     try {
-      const activeRestaurants = await Restaurant.find({ isActive: true }).limit(3);
-      restaurants = activeRestaurants.map((r: any) => ({
-        id: r._id.toString(),
-        name: r.name,
-        food: r.cuisineTypes ? r.cuisineTypes.join(", ") : "Multi-cuisine",
-        rating: "4.7",
-        eta: r.averagePreparationTimeMinutes ? `${r.averagePreparationTimeMinutes} mins` : "20 mins",
-        distance: "800m",
-        min: "₹100",
-        image: r.coverAssetId || "https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?w=300"
-      }));
+      const realVendors = await Vendor.find({
+        $or: [
+          { category: { $regex: /food|restaurant|dining/i } },
+          { primaryCategory: { $regex: /food|restaurant|dining/i } },
+          { businessName: { $regex: /restaurant|biryani|bistro|cafe|diner|kitchen|food/i } }
+        ]
+      }).limit(6);
+
+      if (realVendors.length > 0) {
+        restaurants = realVendors.map((v: any) => ({
+          id: v._id.toString(),
+          name: v.businessName,
+          food: (v.categories && v.categories.length > 0) ? v.categories.join(", ") : (v.category || "Food & Restaurant 🍽️"),
+          rating: v.rating?.average ? String(v.rating.average) : "4.8",
+          eta: `${v.estimatedDeliveryMinutes || 20} mins`,
+          distance: v.pincode ? `Pin ${v.pincode}` : "800m",
+          min: `₹${v.minOrder || 100}`,
+          image: v.storeDesign?.logoUrl || v.logo || "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=300"
+        }));
+      } else {
+        const activeRestaurants = await Restaurant.find({ isActive: true }).limit(6);
+        restaurants = activeRestaurants.map((r: any) => ({
+          id: r._id.toString(),
+          name: r.name,
+          food: r.cuisineTypes ? r.cuisineTypes.join(", ") : "Multi-cuisine",
+          rating: "4.7",
+          eta: r.averagePreparationTimeMinutes ? `${r.averagePreparationTimeMinutes} mins` : "20 mins",
+          distance: "800m",
+          min: "₹100",
+          image: r.coverAssetId || "https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?w=300"
+        }));
+      }
     } catch (err) {
       console.error("[Personalization] Error fetching restaurants:", err);
     }

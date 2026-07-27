@@ -14,7 +14,9 @@ import { seedNotificationTemplates } from './modules/notifications/config/seedTe
 import { connectDB } from './config/db';
 import { seedDatabase } from './config/seed';
 import { seedBannerDefaults } from './seeds/seedBanners';
+import { seedVendor50Products } from './seeds/seedVendorProducts';
 import { InventoryService } from './services/inventoryService';
+import Product from './models/Product';
 import { User } from './models/User';
 import { ReferralSettings } from './models/ReferralSettings';
 import './models/Subcategory';
@@ -126,6 +128,8 @@ app.use('/api/service-provider', serviceProviderRoutes);
 app.use('/api/franchise', franchiseRoutes);
 app.use('/api/entrepreneur', entrepreneurRoutes);
 
+import tableBookingRoutes from './routes/tableBookingRoutes';
+
 app.use("/api/admin/territories", territoryRoutes);
 app.use("/api/territories", territoryRoutes);
 app.use('/api/business-relationships', businessRelationshipRoutes);
@@ -145,6 +149,7 @@ app.use("/api/business", businessRoutes);
 app.use("/api", miscRoutes);
 app.use("/api/delivery", deliveryRoutes);
 app.use("/api/service", serviceBookingRoutes);
+app.use('/api/table-bookings', tableBookingRoutes);
 app.use('/api/local-shop', localShopRoutes);
 app.use('/api/b2b', b2bRoutes);
 app.use('/api/v1/search', searchRoutes);
@@ -154,6 +159,30 @@ app.use("/api/banners", bannerRoutes);
 app.use("/api/order-tracking", orderTrackingRoutes);
 app.use('/api/home', homeRoutes);
 app.use('/api/v1/community', communityRoutes);
+
+app.get('/api/v1/seed-50-vendor-products', async (req, res) => {
+  try {
+    console.log('[Seed Endpoint] Executing seedVendor50Products clean v4...');
+    const result = await seedVendor50Products();
+    res.json({ success: true, result });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/v1/vendor-product-count', async (req, res) => {
+  try {
+    const user = await User.findOne({ email: 'vendor@gmail.com' });
+    if (!user) {
+      res.json({ success: false, message: 'vendor@gmail.com user not created yet' });
+      return;
+    }
+    const count = await Product.countDocuments({ sellerId: user._id });
+    res.json({ success: true, vendorEmail: 'vendor@gmail.com', vendorUserId: user._id, productCount: count });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -192,6 +221,17 @@ app.get('/health', (req, res) => {
   } else {
     res.status(503).json(payload);
   }
+});
+
+// Global Express Error Handler
+app.use((err: any, req: any, res: any, next: any) => {
+  console.error(`[Unhandled 500 Error] ${req.method} ${req.originalUrl}:`, err);
+  res.status(500).json({
+    success: false,
+    message: err.message || 'Internal Server Error',
+    error: err.toString(),
+    stack: err.stack
+  });
 });
 
 // Start listening and database connection
@@ -245,9 +285,22 @@ const seedReferralDefaults = async () => {
 const startServer = async () => {
   try {
     await connectDB();
-    if (mongoose.connection.db) {
-      await mongoose.connection.db.collection('inventories').deleteMany({});
-      console.log('[Startup] Cleared inventories collection to regenerate clean records.');
+
+    let server: http.Server | null = null;
+    if (env.PROCESS_TYPE !== 'worker') {
+      server = http.createServer(app);
+      server.listen(PORT, () => {
+        console.log(`ApexBee Core API Server running on port ${PORT} [PROCESS_TYPE=${env.PROCESS_TYPE}] - Live.`);
+      });
+    }
+
+    try {
+      if (mongoose.connection && mongoose.connection.db) {
+        await mongoose.connection.db.collection('inventories').deleteMany({});
+        console.log('[Startup] Cleared inventories collection to regenerate clean records.');
+      }
+    } catch (invErr: any) {
+      console.warn('[Startup] Inventories clear non-fatal warning:', invErr.message);
     }
 
     // Enable subscriptions for Toor Dal, Milk, and Water products
@@ -276,38 +329,13 @@ const startServer = async () => {
     }
 
     if (process.env.NODE_APP_INSTANCE === undefined || process.env.NODE_APP_INSTANCE === '0') {
-      await seedReferralDefaults();
-      await seedDatabase();
-      await seedNotificationTemplates(); // Seed event notifications templates
-      await seedBannerDefaults();
+      try { await seedReferralDefaults(); } catch (e: any) { console.error('seedReferralDefaults non-fatal error:', e.message); }
+      try { await seedNotificationTemplates(); } catch (e: any) { console.error('seedNotificationTemplates non-fatal error:', e.message); }
+      try { await seedBannerDefaults(); } catch (e: any) { console.error('seedBannerDefaults non-fatal error:', e.message); }
     } else {
       console.log(`[Server] Skipping referral defaults, database, and notification template seeding on clustered instance ${process.env.NODE_APP_INSTANCE}`);
     }
     initNotificationListeners(); // Registry listeners for events
-
-    let server: http.Server | null = null;
-
-    if (env.PROCESS_TYPE !== 'worker') {
-      server = http.createServer(app);
-      initSocketServer(server); // Boot WebSocket connection room engine
-      server.listen(PORT, () => {
-        console.log(`ApexBee Core API Server running on port ${PORT} [PROCESS_TYPE=${env.PROCESS_TYPE}]`);
-        console.log('Registered Routes:');
-        app._router.stack.forEach((middleware: any) => {
-          if (middleware.route) {
-            console.log(`${Object.keys(middleware.route.methods).join(',').toUpperCase()} ${middleware.route.path}`);
-          } else if (middleware.name === 'router') {
-            middleware.handle.stack.forEach((handler: any) => {
-              if (handler.route) {
-                const path = handler.route.path;
-                const methods = Object.keys(handler.route.methods).join(',').toUpperCase();
-                console.log(`${methods} ${path}`);
-              }
-            });
-          }
-        });
-      });
-    }
 
     let reservationExpiryTimer: NodeJS.Timeout | null = null;
     if (env.PROCESS_TYPE !== 'api') {

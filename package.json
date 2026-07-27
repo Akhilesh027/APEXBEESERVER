@@ -1,6 +1,7 @@
 {
   "name": "apexbee-backend",
   "version": "1.0.0",
+  "description": "ApexBee Backend API",
   "private": true,
   "type": "commonjs",
   "scripts": {

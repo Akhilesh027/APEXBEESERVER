@@ -129,6 +129,9 @@ export const updateVendorProfile = async (req: Request, res: Response): Promise<
     if (updates.storeTags !== undefined) vendor.storeTags = updates.storeTags;
     if (updates.storeServices !== undefined) vendor.storeServices = updates.storeServices;
     if (updates.marketplaceStatus !== undefined) vendor.marketplaceStatus = updates.marketplaceStatus;
+    if (updates.storeType !== undefined) vendor.storeType = updates.storeType;
+    if (updates.primaryCategory !== undefined) vendor.primaryCategory = updates.primaryCategory;
+    if (updates.subCategories !== undefined) vendor.subCategories = updates.subCategories;
     if (updates.isMarketplaceListed !== undefined) vendor.isMarketplaceListed = !!updates.isMarketplaceListed;
 
     const saved = await vendor.save();

@@ -140,9 +140,9 @@ export const connectDB = async (): Promise<void> => {
     console.log(`MongoDB Atlas connected successfully to database "${dbName}"!`);
 
     if (process.env.NODE_APP_INSTANCE === undefined || process.env.NODE_APP_INSTANCE === '0') {
-      await seedAdmin();
-      await migrateServiceProviders();
-      await migrateServiceProviderKycs();
+      try { await seedAdmin(); } catch (e: any) { console.error('seedAdmin non-fatal error:', e.message); }
+      try { await migrateServiceProviders(); } catch (e: any) { console.error('migrateServiceProviders non-fatal error:', e.message); }
+      try { await migrateServiceProviderKycs(); } catch (e: any) { console.error('migrateServiceProviderKycs non-fatal error:', e.message); }
     } else {
       console.log(`[Database] Skipping admin/service provider seeding/migrations on clustered instance ${process.env.NODE_APP_INSTANCE}`);
     }

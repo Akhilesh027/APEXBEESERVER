@@ -58,6 +58,18 @@ export interface IMarketplaceOffer {
   endDate: Date;
 }
 
+export interface IVendorStoreConfig {
+  storeType?: 'restaurant' | 'grocery' | 'devotional' | 'service' | 'course' | 'retail';
+  fssaiLicenseNo?: string;
+  avgCostForTwo?: number;
+  vegOnly?: boolean;
+  tableBookingEnabled?: boolean;
+  subscriptionEnabled?: boolean;
+  visitingCharge?: number;
+  serviceWarrantyDays?: number;
+  sanctifiedBadge?: boolean;
+}
+
 export interface IVendor extends Document {
   userId: mongoose.Types.ObjectId;
   businessName: string;
@@ -96,6 +108,11 @@ export interface IVendor extends Document {
   };
   deliveryMode: "self_delivery" | "platform_delivery" | "pickup_only";
   deliveryRadiusKm: number;
+  storeType?: string;
+  storeConfig?: IVendorStoreConfig;
+  allowedCategories?: mongoose.Types.ObjectId[];
+  primaryCategory?: string;
+  subCategories?: string[];
   categories: string[];
   estimatedDeliveryMinutes: number;
   minOrder: number;
@@ -257,6 +274,24 @@ const VendorSchema = new Schema<IVendor>(
       default: "platform_delivery"
     },
     deliveryRadiusKm: { type: Number, default: 5 },
+    storeType: {
+      type: String,
+      default: "grocery"
+    },
+    allowedCategories: [{ type: Schema.Types.ObjectId, ref: 'Category' }],
+    storeConfig: {
+      storeType: { type: String, default: "grocery" },
+      fssaiLicenseNo: { type: String, default: "" },
+      avgCostForTwo: { type: Number, default: 300 },
+      vegOnly: { type: Boolean, default: false },
+      tableBookingEnabled: { type: Boolean, default: false },
+      subscriptionEnabled: { type: Boolean, default: false },
+      visitingCharge: { type: Number, default: 0 },
+      serviceWarrantyDays: { type: Number, default: 0 },
+      sanctifiedBadge: { type: Boolean, default: false }
+    },
+    primaryCategory: { type: String, default: "" },
+    subCategories: { type: [String], default: [] },
     categories: { type: [String], default: [] },
     estimatedDeliveryMinutes: { type: Number, default: 30 },
     minOrder: { type: Number, default: 100 },
