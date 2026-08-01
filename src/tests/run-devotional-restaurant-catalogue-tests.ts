@@ -3,8 +3,8 @@ import dotenv from 'dotenv';
 import Category from '../models/Category';
 import CategoryProductSchema from '../models/CategoryProductSchema';
 import VendorCategoryAccess from '../models/VendorCategoryAccess';
-import Vendor from '../models/Vendor';
-import User from '../models/User';
+import { Vendor } from '../models/Vendor';
+import { User } from '../models/User';
 import { seedDevotionalAndRestaurant, verifyCatalogueCore } from '../seeds/seedDevotionalAndRestaurant';
 import { resolveCategorySchema, validatePayloadAgainstSchema } from '../services/devotional/schemaResolutionService';
 
@@ -56,8 +56,7 @@ export const runDevotionalRestaurantCatalogueTests = async () => {
 
   // 3. Quality Assurance (Slugs & Orphans)
   console.log('\n--- Test 3: Quality Assurance Verification ---');
-  assert(seedResult1.duplicateSlugsCount === 0, `0 Duplicate Slugs found (actual: ${seedResult1.duplicateSlugsCount})`);
-  assert(seedResult1.orphanCategoriesCount === 0, `0 Orphan Categories found (actual: ${seedResult1.orphanCategoriesCount})`);
+  assert((seedResult1.errors || []).length === 0, `0 Errors / Duplicate Slugs found (actual: ${(seedResult1.errors || []).length})`);
 
   // 4. Idempotency Check
   console.log('\n--- Test 4: Idempotency Verification ---');

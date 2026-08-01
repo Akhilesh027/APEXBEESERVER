@@ -128,7 +128,7 @@ const runTests = async () => {
   assert(!!redisVal, 'OTP stored in Redis with purpose-bound key');
 
   // Verify attempts limit
-  let verifyResObj;
+  let verifyResObj: any;
   for (let i = 0; i < 4; i++) {
     const wrongVerifyRes = await fetch(`${API_BASE}/academy/otp/verify`, {
       method: 'POST',
