@@ -22,7 +22,7 @@ const StoreProductSchema = new Schema<IStoreProduct>(
   {
     storeId: { type: Schema.Types.ObjectId, ref: 'Vendor', required: true },
     productId: { type: Schema.Types.ObjectId, ref: 'Product', required: true },
-    variantId: { type: Schema.Types.ObjectId, ref: 'ProductVariant', required: true },
+    variantId: { type: Schema.Types.ObjectId, ref: 'ProductVariant', required: false },
     mrp: { type: Number, required: true },
     sellingPrice: { type: Number, required: true },
     costPrice: { type: Number },

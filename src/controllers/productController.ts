@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
 import Product from '../models/Product';
 import Category from '../models/Category';
+import CategoryExperienceConfig from '../models/CategoryExperienceConfig';
 import { Vendor } from '../models/Vendor';
 import Order from '../models/Order';
 import { uploadToCloudinary } from '../config/cloudinary';
@@ -219,6 +220,22 @@ export const createProduct = async (req: Request, res: Response) => {
       sellerType,
     } = req.body;
 
+    // Block product creation if experience config restricts it
+    const targetCategoryIds = [categoryId, subCategoryId, childCategoryId].filter(Boolean);
+    if (targetCategoryIds.length > 0) {
+      const blockedConfig = await CategoryExperienceConfig.findOne({
+        categoryId: { $in: targetCategoryIds },
+        productCreationEnabled: false,
+      });
+      if (blockedConfig) {
+        res.status(403).json({
+          success: false,
+          message: 'Product creation is disabled for this category.',
+        });
+        return;
+      }
+    }
+
     let finalCategoryId = categoryId;
     const sellerId = isAdmin ? (req.body.sellerId || authUser.id) : authUser.id;
 
@@ -277,54 +294,57 @@ export const createProduct = async (req: Request, res: Response) => {
     const calculatedSelling =
       mrp > 0 ? Math.round(mrp - (mrp * discount) / 100) : 0;
 
-    const product = await Product.create({
-      sellerId,
-      sellerType: sellerType || 'vendor',
+    let product: any;
+    const vendor = await Vendor.findOne({ $or: [{ userId: sellerId }, { _id: sellerId }] });
+    const storeId = vendor ? vendor._id.toString() : sellerId.toString();
 
-      name: name.trim(),
-      slug,
-      description: description || '',
-
-      categoryId: finalCategoryId,
-      subCategoryId: subCategoryId || null,
-      subcategoryId: subCategoryId || null,
-      childCategoryId: childCategoryId || null,
-      createdBy: sellerId,
-
-      brand: brand || '',
-      sku: cleanSku,
-
-      thumbnail: uploaded.thumbnail,
-      images: uploaded.images,
-
-      attributes: parsedAttributes,
-      variants: parsedVariants,
-
-      baseMrp: mrp,
-      discountPercent: discount,
-      baseSellingPrice:
-        baseSellingPrice !== undefined && baseSellingPrice !== ''
-          ? normalizeNumber(baseSellingPrice)
-          : calculatedSelling,
-      stock: normalizeNumber(stock),
-
-      status: isAdmin ? (req.body.status || 'Live') : 'Pending Review',
-      isActive: isAdmin ? (req.body.isActive !== false) : false,
-      moderationStatus: isAdmin ? 'approved' : 'pending',
-      adminPricingApproved: isAdmin ? true : false,
-      sellerPricingAccepted: isAdmin ? true : false,
-      submittedAt: new Date(),
-      isStoreProduct: req.body.isStoreProduct === 'true' || req.body.isStoreProduct === true,
-      isSubscriptionAvailable: req.body.isSubscriptionAvailable === 'true' || req.body.isSubscriptionAvailable === true,
-    });
-
+    // Perform atomic creation with rollback protection
     try {
-      const StoreProduct = mongoose.model('StoreProduct');
-      const Inventory = mongoose.model('Inventory');
-      const vendor = await Vendor.findOne({ $or: [{ userId: sellerId }, { _id: sellerId }] });
-      const storeId = vendor ? vendor._id.toString() : sellerId.toString();
+      product = await Product.create({
+        sellerId,
+        sellerType: sellerType || 'vendor',
 
-      await StoreProduct.create({
+        name: name.trim(),
+        slug,
+        description: description || '',
+
+        categoryId: finalCategoryId,
+        subCategoryId: subCategoryId || null,
+        subcategoryId: subCategoryId || null,
+        childCategoryId: childCategoryId || null,
+        createdBy: sellerId,
+
+        brand: brand || '',
+        sku: cleanSku,
+
+        thumbnail: uploaded.thumbnail,
+        images: uploaded.images,
+
+        attributes: parsedAttributes,
+        variants: parsedVariants,
+
+        baseMrp: mrp,
+        discountPercent: discount,
+        baseSellingPrice:
+          baseSellingPrice !== undefined && baseSellingPrice !== ''
+            ? normalizeNumber(baseSellingPrice)
+            : calculatedSelling,
+        stock: normalizeNumber(stock),
+
+        status: isAdmin ? (req.body.status || 'Live') : 'Pending Review',
+        isActive: isAdmin ? (req.body.isActive !== false) : false,
+        moderationStatus: isAdmin ? 'approved' : 'pending',
+        adminPricingApproved: isAdmin ? true : false,
+        sellerPricingAccepted: isAdmin ? true : false,
+        submittedAt: new Date(),
+        isStoreProduct: req.body.isStoreProduct === 'true' || req.body.isStoreProduct === true,
+        isSubscriptionAvailable: req.body.isSubscriptionAvailable === 'true' || req.body.isSubscriptionAvailable === true,
+      });
+
+      const StoreProductModel = mongoose.model('StoreProduct');
+      const InventoryModel = mongoose.model('Inventory');
+
+      await StoreProductModel.create({
         storeId,
         productId: product._id,
         mrp: mrp || 0,
@@ -334,7 +354,7 @@ export const createProduct = async (req: Request, res: Response) => {
         isActive: true,
       });
 
-      await Inventory.create({
+      await InventoryModel.create({
         storeId,
         productId: product._id,
         availableStock: normalizeNumber(stock, 50),
@@ -342,8 +362,15 @@ export const createProduct = async (req: Request, res: Response) => {
         damagedStock: 0,
         lowStockThreshold: 5,
       });
-    } catch (invErr: any) {
-      console.warn('[createProduct] Non-fatal store product/inventory creation warning:', invErr.message);
+    } catch (createErr: any) {
+      if (product && product._id) {
+        await Product.findByIdAndDelete(product._id);
+        const StoreProductModel = mongoose.model('StoreProduct');
+        const InventoryModel = mongoose.model('Inventory');
+        await StoreProductModel.deleteMany({ productId: product._id });
+        await InventoryModel.deleteMany({ productId: product._id });
+      }
+      throw new Error(`Atomic product creation failed: ${createErr.message}`);
     }
 
     const populatedProduct = await populateProduct(Product.findById(product._id));
@@ -376,7 +403,7 @@ const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: numbe
 export const getAllProducts = async (req: Request, res: Response) => {
   try {
     const { category, categoryId, status, isActive, excludeId, limit, page, sellerId, sellerType } = req.query;
-    
+
     // Parse user location details from query parameters
     const lat = req.query.lat ? parseFloat(req.query.lat as string) : null;
     const lng = req.query.lng ? parseFloat(req.query.lng as string) : null;
@@ -446,7 +473,7 @@ export const getAllProducts = async (req: Request, res: Response) => {
         const token = req.headers.authorization.split(' ')[1];
         const decoded = jwt.verify(token, process.env.JWT_SECRET || 'supersecretjwtkeyforapexbeebusinessoperatingnetwork') as any;
         authUser = decoded;
-      } catch (err) {}
+      } catch (err) { }
     }
 
     const isAdmin = authUser && authUser.roles?.includes('admin');
@@ -504,12 +531,12 @@ export const getAllProducts = async (req: Request, res: Response) => {
       if (!productObj.adminPricing) {
         productObj.adminPricing = {};
       }
-      
+
       productObj.adminPricing.shippingCharge = shippingCharge;
       productObj.calculatedDistanceKm = parseFloat(distance.toFixed(1));
       productObj.estimatedDeliveryMinutes = duration;
       productObj.deliveryMode = vendor?.deliveryMode || 'self_delivery';
-      
+
       // Store name & store rating override
       productObj.brand = vendor?.businessName || productObj.brand || 'ApexBee Seller';
       productObj.vendorRating = 4.8; // default store rating
@@ -582,7 +609,7 @@ export const getProductById = async (req: Request, res: Response) => {
         const token = req.headers.authorization.split(' ')[1];
         const decoded = jwt.verify(token, process.env.JWT_SECRET || 'supersecretjwtkeyforapexbeebusinessoperatingnetwork') as any;
         authUser = decoded;
-      } catch (err) {}
+      } catch (err) { }
     }
 
     const isOwner = authUser && String(product.sellerId._id || product.sellerId) === String(authUser.id);
@@ -1026,7 +1053,7 @@ export const bulkUpdateProducts = async (req: Request, res: Response) => {
 export const getProductsByVendor = async (req: Request, res: Response): Promise<void> => {
   try {
     const { vendorId } = req.params;
-    
+
     // Support querying by vendor.userId if the vendorId passed is vendor._id
     let querySellerId = vendorId;
     try {
@@ -1039,14 +1066,14 @@ export const getProductsByVendor = async (req: Request, res: Response): Promise<
     }
 
     // Only return Live + active storefront products for customer-facing storefront view
-    const products = await Product.find({ 
+    const products = await Product.find({
       $or: [
         { sellerId: querySellerId },
         { sellerId: vendorId }
       ],
-      isStoreProduct: true, 
-      status: 'Live', 
-      isActive: true 
+      isStoreProduct: true,
+      status: 'Live',
+      isActive: true
     })
       .populate('categoryId', 'name')
       .populate('subCategoryId', 'name');
@@ -1078,10 +1105,10 @@ export const getProductsByVendor = async (req: Request, res: Response): Promise<
     });
   } catch (error: any) {
     console.error('Error fetching products by vendor:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Server error fetching products by vendor', 
-      error: error.message 
+    res.status(500).json({
+      success: false,
+      message: 'Server error fetching products by vendor',
+      error: error.message
     });
   }
 };
@@ -1399,12 +1426,12 @@ export const getBuyAgainProducts = async (req: Request, res: Response): Promise<
       if (!productObj.adminPricing) {
         productObj.adminPricing = {};
       }
-      
+
       productObj.adminPricing.shippingCharge = shippingCharge;
       productObj.calculatedDistanceKm = parseFloat(distance.toFixed(1));
       productObj.estimatedDeliveryMinutes = duration;
       productObj.deliveryMode = vendor?.deliveryMode || 'self_delivery';
-      
+
       productObj.brand = vendor?.businessName || productObj.brand || 'ApexBee Seller';
       productObj.vendorRating = 4.8;
 
@@ -1420,5 +1447,148 @@ export const getBuyAgainProducts = async (req: Request, res: Response): Promise<
     res.status(200).json({ success: true, products: orderedProducts });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const seedProductsForAllCategories = async (req: Request, res: Response) => {
+  try {
+    const categories = await Category.find({});
+    if (!categories || categories.length === 0) {
+      return res.status(400).json({ success: false, message: 'No categories found in database to seed.' });
+    }
+
+    const VendorModel = mongoose.model('Vendor');
+    const StoreProductModel = mongoose.model('StoreProduct');
+    const InventoryModel = mongoose.model('Inventory');
+    const CategoryProductSchemaModel = mongoose.models.CategoryProductSchema || mongoose.model('CategoryProductSchema');
+
+    // Find default vendor or admin seller
+    let vendor = await VendorModel.findOne({ status: 'active' });
+    if (!vendor) {
+      vendor = await VendorModel.findOne({});
+    }
+    const sellerId = vendor ? (vendor.userId || vendor._id) : new mongoose.Types.ObjectId();
+    const storeId = vendor ? vendor._id.toString() : sellerId.toString();
+
+    let createdCount = 0;
+    const details: any[] = [];
+
+    for (const cat of categories) {
+      let catId: any = cat._id;
+      let subCatId: any = null;
+      let childCatId: any = null;
+
+      if (cat.level === 1) {
+        catId = cat._id;
+      } else if (cat.level === 2) {
+        subCatId = cat._id;
+        catId = cat.parentId || cat._id;
+      } else if (cat.level === 3) {
+        childCatId = cat._id;
+        subCatId = cat.parentId;
+        if (subCatId) {
+          const parentSub = await Category.findById(subCatId);
+          if (parentSub) catId = parentSub.parentId || catId;
+        }
+      }
+
+      // Fetch schema attributes for this category
+      let schemaDoc = await CategoryProductSchemaModel.findOne({ categoryId: cat._id });
+      if (!schemaDoc && subCatId) {
+        schemaDoc = await CategoryProductSchemaModel.findOne({ categoryId: subCatId });
+      }
+
+      const sampleAttributes: Record<string, any> = {};
+      if (schemaDoc && Array.isArray(schemaDoc.attributes)) {
+        schemaDoc.attributes.forEach((attr: any) => {
+          if (attr.isDisabled) return;
+          if (attr.type === 'select' && Array.isArray(attr.options) && attr.options.length > 0) {
+            sampleAttributes[attr.key] = attr.options[0];
+          } else if (attr.type === 'multiselect' && Array.isArray(attr.options) && attr.options.length > 0) {
+            sampleAttributes[attr.key] = [attr.options[0]];
+          } else if (attr.type === 'number') {
+            sampleAttributes[attr.key] = attr.minValue || 10;
+          } else if (attr.type === 'boolean') {
+            sampleAttributes[attr.key] = true;
+          } else {
+            sampleAttributes[attr.key] = `Sample ${attr.name || attr.key}`;
+          }
+        });
+      }
+
+      const productName = `Premium ${cat.name}`;
+      const cleanCatName = cat.name.replace(/[^a-zA-Z0-9]/g, '');
+      const sku = `SEED-${(cleanCatName.substring(0, 4) || 'ITEM').toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+      // Create Product
+      const product = await Product.create({
+        name: productName,
+        slug: `seed-${makeSlug(cat.name)}-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+        description: `High quality ${cat.name} with verified category specifications and complete attributes.`,
+        categoryId: catId,
+        subCategoryId: subCatId,
+        subcategoryId: subCatId,
+        childCategoryId: childCatId,
+        createdBy: sellerId,
+        sellerId: sellerId,
+        sellerType: 'vendor',
+        brand: 'ApexBee Prime',
+        sku,
+        thumbnail: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=500&q=80',
+        images: ['https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=500&q=80'],
+        attributes: sampleAttributes,
+        variants: [],
+        baseMrp: 499,
+        discountPercent: 10,
+        baseSellingPrice: 449,
+        stock: 100,
+        status: 'Live',
+        isActive: true,
+        moderationStatus: 'approved',
+        adminPricingApproved: true,
+        sellerPricingAccepted: true,
+        liveAt: new Date(),
+        isStoreProduct: true,
+      });
+
+      // Create StoreProduct
+      await StoreProductModel.create({
+        storeId,
+        productId: product._id,
+        mrp: 499,
+        sellingPrice: 449,
+        minimumOrderQuantity: 1,
+        preparationTimeMinutes: 15,
+        isActive: true,
+      });
+
+      // Create Inventory
+      await InventoryModel.create({
+        storeId,
+        productId: product._id,
+        availableStock: 100,
+        reservedStock: 0,
+        damagedStock: 0,
+        lowStockThreshold: 5,
+      });
+
+      createdCount++;
+      details.push({
+        categoryName: cat.name,
+        level: cat.level,
+        productId: product._id,
+        sku: product.sku,
+        attributesSeeded: Object.keys(sampleAttributes),
+      });
+    }
+
+    res.status(201).json({
+      success: true,
+      message: `Successfully seeded ${createdCount} products across all categories (Level 1, Subcategories & Child Categories)!`,
+      createdCount,
+      details,
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: 'Failed to seed category products', error: error.message });
   }
 };

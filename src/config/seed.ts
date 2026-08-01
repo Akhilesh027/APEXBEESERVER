@@ -17,14 +17,17 @@ import { Restaurant } from "../models/Restaurant";
 import { ServiceProvider } from "../models/ServiceProvider";
 
 const seedCategories = async () => {
-  const parentCount = await Category.countDocuments({ parentId: null, image: { $exists: true } });
-  if (parentCount === 15) {
-    console.log("[Seeder] Categories already seeded with images.");
+  const catCount = await Category.countDocuments({});
+  if (catCount > 0) {
+    console.log("[Seeder] Categories already exist. Skipping automatic category re-seeding.");
+    return;
+  }
+  if (process.env.AUTO_SEED_CATEGORIES !== 'true') {
+    console.log("[Seeder] Automatic category re-seeding is disabled.");
     return;
   }
 
-  console.log("[Seeder] Re-seeding new category hierarchy with images...");
-  await Category.deleteMany({});
+  console.log("[Seeder] Re-seeding category hierarchy...");
 
   try {
     const Subcategory = mongoose.model('Subcategory');

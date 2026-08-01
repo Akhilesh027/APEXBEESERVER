@@ -220,3 +220,93 @@ export const removeFavourite = async (req: ExtendedRequest, res: Response) => {
     return res.status(500).json({ success: false, message: error.message });
   }
 };
+
+export const getFeaturedStores = async (req: Request, res: Response) => {
+  try {
+    let featured = await Vendor.find({
+      status: 'active',
+      $or: [{ verifiedBadge: true }, { 'rating.average': { $gte: 4.0 } }]
+    }).limit(6).lean();
+
+    if (featured.length === 0) {
+      featured = await Vendor.find({ status: 'active' }).limit(6).lean();
+    }
+
+    const data = featured.map((shop) => ({
+      ...shop,
+      computedAvailability: VendorMarketplaceService.calculateAvailability(shop.businessHours, shop.liveStatus)
+    }));
+
+    return res.status(200).json({ success: true, data });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const getStoreDeals = async (req: Request, res: Response) => {
+  try {
+    const vendors = await Vendor.find({ status: 'active', offers: { $exists: true, $not: { $size: 0 } } }).limit(10).lean();
+    const deals: any[] = [];
+
+    vendors.forEach((v) => {
+      if (Array.isArray(v.offers)) {
+        v.offers.forEach((offer: any) => {
+          deals.push({
+            id: offer._id || offer.id || `${v._id}-${offer.title}`,
+            vendorId: v._id,
+            vendorName: v.businessName,
+            title: offer.title || 'Special Discount Offer',
+            description: offer.description || 'Exclusive deal on daily essentials and local store items',
+            tag: offer.discountType === 'percentage' ? `${offer.discountValue}% OFF` : `₹${offer.discountValue} OFF`,
+            verified: v.verifiedBadge || false,
+            badge: offer.isFlashDeal ? 'Flash Deal' : 'Local Special'
+          });
+        });
+      }
+    });
+
+    return res.status(200).json({ success: true, deals });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const getStoreCategories = async (req: Request, res: Response) => {
+  try {
+    const categories = [
+      { key: "ALL", label: "All Shops", icon: "🏪" },
+      { key: "Grocery", label: "Grocery & Milk", icon: "🛒" },
+      { key: "Dairy", label: "Milk & Dairy", icon: "🥛" },
+      { key: "Fruits & Vegetables", label: "Fruits & Veg", icon: "🥦" },
+      { key: "Bakery", label: "Bakery & Food", icon: "🍞" },
+      { key: "Medical", label: "Medical & Health", icon: "💊" },
+      { key: "Services", label: "Services & Repair", icon: "🛠" },
+      { key: "Water", label: "Water Suppliers", icon: "💧" },
+    ];
+
+    const counts: Record<string, number> = {};
+    const totalCount = await Vendor.countDocuments({ status: "active" });
+    counts["ALL"] = totalCount;
+
+    for (const cat of categories) {
+      if (cat.key !== "ALL") {
+        const count = await Vendor.countDocuments({
+          status: "active",
+          $or: [
+            { categories: new RegExp(cat.key, "i") },
+            { businessTypes: new RegExp(cat.key, "i") },
+            { industryType: new RegExp(cat.key, "i") },
+            { businessName: new RegExp(cat.key, "i") }
+          ]
+        });
+        counts[cat.key] = count;
+      }
+    }
+
+    const data = categories.map(c => ({ ...c, count: counts[c.key] || 0 }));
+    return res.status(200).json({ success: true, categories: data });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+

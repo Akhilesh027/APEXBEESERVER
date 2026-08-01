@@ -112,6 +112,9 @@ export interface IVendor extends Document {
   storeConfig?: IVendorStoreConfig;
   allowedCategories?: mongoose.Types.ObjectId[];
   primaryCategory?: string;
+  category?: string;
+  subCategory?: string;
+  approvedSubcategories?: string[];
   subCategories?: string[];
   categories: string[];
   estimatedDeliveryMinutes: number;
@@ -291,6 +294,9 @@ const VendorSchema = new Schema<IVendor>(
       sanctifiedBadge: { type: Boolean, default: false }
     },
     primaryCategory: { type: String, default: "" },
+    category: { type: String, default: "" },
+    subCategory: { type: String, default: "" },
+    approvedSubcategories: { type: [String], default: [] },
     subCategories: { type: [String], default: [] },
     categories: { type: [String], default: [] },
     estimatedDeliveryMinutes: { type: Number, default: 30 },

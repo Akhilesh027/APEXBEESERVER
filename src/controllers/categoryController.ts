@@ -3,9 +3,19 @@ import streamifier from 'streamifier';
 import mongoose from 'mongoose';
 import Category from '../models/Category';
 import Subcategory from '../models/Subcategory';
+import CategoryExperienceConfig from '../models/CategoryExperienceConfig';
 import cloudinary from '../config/cloudinary';
 import { seedVendor50Products } from '../seeds/seedVendorProducts';
 import { seedFullMvpCategories } from '../seeds/seedFullMvpCategories';
+import { seedCoreTaxonomies, verifyCoreTaxonomies } from '../seeds/seedCoreTaxonomies';
+import { seedDailyNeedsTaxonomy } from '../seeds/seedDailyNeedsTaxonomy';
+import { verifyDailyNeedsTaxonomy } from '../seeds/verifyDailyNeedsTaxonomy';
+import { seedShoppingTaxonomy } from '../seeds/seedShoppingTaxonomy';
+import { verifyShoppingTaxonomy } from '../seeds/verifyShoppingTaxonomy';
+import { seedServicesTaxonomy } from '../seeds/seedServicesTaxonomy';
+import { verifyServicesTaxonomy } from '../seeds/verifyServicesTaxonomy';
+import { seedAcademyTaxonomy } from '../seeds/seedAcademyTaxonomy';
+import { verifyAcademyTaxonomy } from '../seeds/verifyAcademyTaxonomy';
 
 const makeSlug = (name: string) =>
   name
@@ -205,7 +215,7 @@ export const getCategories = async (_req: Request, res: Response) => {
       .populate('parentId', 'name slug level')
       .sort({ level: 1, sortOrder: 1, createdAt: -1 });
 
-    res.json({ categories });
+    res.json({ success: true, categories });
   } catch (error: any) {
     res.status(500).json({
       message: 'Failed to fetch categories',
@@ -220,7 +230,24 @@ export const getCategoryTree = async (_req: Request, res: Response) => {
       .sort({ sortOrder: 1, name: 1 })
       .lean();
 
-    res.json({ categories: buildTree(categories) });
+    const configs = await CategoryExperienceConfig.find().lean();
+    const configMap = new Map<string, any>();
+    configs.forEach(c => configMap.set(c.categoryId.toString(), c));
+
+    const categoriesWithConfig = categories.map(cat => {
+      const config = configMap.get(cat._id.toString());
+      return {
+        ...cat,
+        experienceType: config ? config.experienceType : 'catalogue',
+        experienceRoute: config ? config.experienceRoute : undefined,
+        comingSoon: config ? config.comingSoon : undefined,
+        leadCaptureEnabled: config ? config.leadCaptureEnabled : undefined,
+        productCreationEnabled: config ? config.productCreationEnabled : undefined,
+        purchaseEnabled: config ? config.purchaseEnabled : undefined,
+      };
+    });
+
+    res.json({ categories: buildTree(categoriesWithConfig) });
   } catch (error: any) {
     res.status(500).json({
       message: 'Failed to fetch category tree',
@@ -236,7 +263,27 @@ export const getCategoryDropdown = async (_req: Request, res: Response) => {
       .sort({ sortOrder: 1, name: 1 })
       .lean();
 
-    res.json({ categories: buildTree(categories) });
+    const configs = await CategoryExperienceConfig.find().lean();
+    const configMap = new Map<string, any>();
+    configs.forEach(c => configMap.set(c.categoryId.toString(), c));
+
+    const categoriesWithConfig = categories.map(cat => {
+      const config = configMap.get(cat._id.toString());
+      return {
+        ...cat,
+        experienceType: config ? config.experienceType : 'catalogue',
+        experienceRoute: config ? config.experienceRoute : undefined,
+        comingSoon: config ? config.comingSoon : undefined,
+        leadCaptureEnabled: config ? config.leadCaptureEnabled : undefined,
+        productCreationEnabled: config ? config.productCreationEnabled : undefined,
+        purchaseEnabled: config ? config.purchaseEnabled : undefined,
+      };
+    });
+
+    // Exclude categories where product creation is disabled
+    const allowedCategories = categoriesWithConfig.filter(cat => cat.productCreationEnabled !== false);
+
+    res.json({ categories: buildTree(allowedCategories) });
   } catch (error: any) {
     res.status(500).json({
       message: 'Failed to fetch dropdown categories',
@@ -527,6 +574,109 @@ export const seedFullMvpController = async (_req: Request, res: Response) => {
     res.status(500).json({ success: false, error: error.message, stack: error.stack });
   }
 };
+
+export const seedCatalogueCoreController = async (req: Request, res: Response) => {
+  try {
+    const isDryRun = req.query.dryRun === 'true';
+    const isVerifyOnly = req.query.verifyOnly === 'true';
+    const result = await seedCoreTaxonomies({ dryRun: isDryRun, verifyOnly: isVerifyOnly });
+    res.status(200).json({ success: true, message: 'Core Catalogue (Devotional, Restaurant, Daily Needs, Shopping) seeded successfully!', result });
+  } catch (error: any) {
+    console.error('[seedCatalogueCoreController] Error:', error);
+    res.status(500).json({ success: false, error: error.message, stack: error.stack });
+  }
+};
+
+export const verifyCatalogueCoreController = async (_req: Request, res: Response) => {
+  try {
+    const result = await verifyCoreTaxonomies();
+    res.status(200).json({ success: true, message: 'Catalogue Core verification completed', result });
+  } catch (error: any) {
+    console.error('[verifyCatalogueCoreController] Error:', error);
+    res.status(500).json({ success: false, error: error.message, stack: error.stack });
+  }
+};
+
+export const seedDailyNeedsController = async (_req: Request, res: Response) => {
+  try {
+    const result = await seedDailyNeedsTaxonomy();
+    res.status(200).json({ success: true, message: 'Daily Needs Taxonomy seeded successfully!', result });
+  } catch (error: any) {
+    console.error('[seedDailyNeedsController] Error:', error);
+    res.status(500).json({ success: false, error: error.message, stack: error.stack });
+  }
+};
+
+export const verifyDailyNeedsController = async (_req: Request, res: Response) => {
+  try {
+    const result = await verifyDailyNeedsTaxonomy();
+    res.status(200).json({ success: true, message: 'Daily Needs taxonomy verification completed', result });
+  } catch (error: any) {
+    console.error('[verifyDailyNeedsController] Error:', error);
+    res.status(500).json({ success: false, error: error.message, stack: error.stack });
+  }
+};
+
+export const seedShoppingController = async (_req: Request, res: Response) => {
+  try {
+    const result = await seedShoppingTaxonomy();
+    res.status(200).json({ success: true, message: 'Shopping Taxonomy seeded successfully!', result });
+  } catch (error: any) {
+    console.error('[seedShoppingController] Error:', error);
+    res.status(500).json({ success: false, error: error.message, stack: error.stack });
+  }
+};
+
+export const verifyShoppingController = async (_req: Request, res: Response) => {
+  try {
+    const result = await verifyShoppingTaxonomy();
+    res.status(200).json({ success: true, message: 'Shopping taxonomy verification completed', result });
+  } catch (error: any) {
+    console.error('[verifyShoppingController] Error:', error);
+    res.status(500).json({ success: false, error: error.message, stack: error.stack });
+  }
+};
+
+export const seedServicesController = async (_req: Request, res: Response) => {
+  try {
+    const result = await seedServicesTaxonomy();
+    res.status(200).json({ success: true, message: 'Services Taxonomy seeded successfully!', result });
+  } catch (error: any) {
+    console.error('[seedServicesController] Error:', error);
+    res.status(500).json({ success: false, error: error.message, stack: error.stack });
+  }
+};
+
+export const verifyServicesController = async (_req: Request, res: Response) => {
+  try {
+    const result = await verifyServicesTaxonomy();
+    res.status(200).json({ success: true, message: 'Services taxonomy verification completed', result });
+  } catch (error: any) {
+    console.error('[verifyServicesController] Error:', error);
+    res.status(500).json({ success: false, error: error.message, stack: error.stack });
+  }
+};
+
+export const seedAcademyController = async (_req: Request, res: Response) => {
+  try {
+    await seedAcademyTaxonomy();
+    res.status(200).json({ success: true, message: 'Academy Taxonomy seeded successfully!' });
+  } catch (error: any) {
+    console.error('[seedAcademyController] Error:', error);
+    res.status(500).json({ success: false, error: error.message, stack: error.stack });
+  }
+};
+
+export const verifyAcademyController = async (_req: Request, res: Response) => {
+  try {
+    const result = await verifyAcademyTaxonomy();
+    res.status(200).json({ success: true, message: 'Academy taxonomy verification completed', result });
+  } catch (error: any) {
+    console.error('[verifyAcademyController] Error:', error);
+    res.status(500).json({ success: false, error: error.message, stack: error.stack });
+  }
+};
+
 
 export const getMergedCategoryAttributes = async (req: Request, res: Response) => {
   try {

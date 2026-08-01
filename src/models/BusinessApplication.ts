@@ -52,6 +52,9 @@ export interface IBusinessApplication extends Document {
   };
   category?: string;
   primaryCategory?: string;
+  subCategory?: string;
+  approvedSubcategories?: string[];
+  requestedCapabilities?: string[];
   status: "pending" | "pending_approval" | "pre_approved" | "kyc_submitted" | "under_review" | "approved" | "verified" | "rejected";
   adminRemarks?: string;
   createdAt: Date;
@@ -66,6 +69,9 @@ const BusinessApplicationSchema = new Schema<IBusinessApplication>(
     roleId: { type: String },
     category: { type: String, default: "" },
     primaryCategory: { type: String, default: "" },
+    subCategory: { type: String, default: "" },
+    approvedSubcategories: [{ type: String, trim: true }],
+    requestedCapabilities: [{ type: String, trim: true }],
 
     businessName: { type: String, required: true },
     ownerName: { type: String, required: true },

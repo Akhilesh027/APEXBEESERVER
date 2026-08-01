@@ -2,6 +2,9 @@ import { Router } from 'express';
 import { protect } from '../middleware/auth';
 import {
   getNearbyStores,
+  getFeaturedStores,
+  getStoreDeals,
+  getStoreCategories,
   getStoreBySlug,
   getStoreCatalog,
   getStoreOffers,
@@ -15,6 +18,10 @@ const router = Router();
 
 // Public marketplace store routes
 router.get('/nearby', getNearbyStores);
+router.get('/featured', getFeaturedStores);
+router.get('/deals', getStoreDeals);
+router.get('/categories', getStoreCategories);
+
 router.get('/favourites', protect, getFavourites);
 router.post('/:id/favourite', protect, addFavourite);
 router.delete('/:id/favourite', protect, removeFavourite);
@@ -25,3 +32,4 @@ router.get('/:id/offers', getStoreOffers);
 router.get('/:id/reviews', getStoreReviews);
 
 export default router;
+

@@ -61,6 +61,8 @@ import homeRoutes from './routes/homeRoutes';
 import communityRoutes from './routes/communityRoutes';
 import bannerRoutes from './routes/bannerRoutes';
 import orderTrackingRoutes from './routes/orderTrackingRoutes';
+import academyRoutes from './routes/academyRoutes';
+import biRoutes from './routes/biRoutes';
 
 // Initialize express app
 const app = express();
@@ -115,6 +117,8 @@ app.use('/uploads', express.static(path.join(__dirname, '../public/uploads')));
 app.use(ipRateLimiter);
 app.use(userRateLimiter);
 
+import devotionalRoutes from './routes/devotionalRoutes';
+
 // Routes mapping
 app.use('/api/auth', criticalRateLimiter, authRoutes);
 app.use('/api/user', userRoutes);
@@ -124,6 +128,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/vendor', vendorRoutes);
+app.use('/api/devotional', devotionalRoutes);
 app.use('/api/service-provider', serviceProviderRoutes);
 app.use('/api/franchise', franchiseRoutes);
 app.use('/api/entrepreneur', entrepreneurRoutes);
@@ -146,7 +151,9 @@ app.use("/api/cart", cartRoutes);
 app.use("/api/wishlist", wishlistRoutes);
 app.use("/api/discovery", discoveryRoutes);
 app.use("/api/business", businessRoutes);
+app.use("/api", devotionalRoutes);
 app.use("/api", miscRoutes);
+
 app.use("/api/delivery", deliveryRoutes);
 app.use("/api/service", serviceBookingRoutes);
 app.use('/api/table-bookings', tableBookingRoutes);
@@ -159,6 +166,8 @@ app.use("/api/banners", bannerRoutes);
 app.use("/api/order-tracking", orderTrackingRoutes);
 app.use('/api/home', homeRoutes);
 app.use('/api/v1/community', communityRoutes);
+app.use('/api', academyRoutes);
+app.use('/api', biRoutes);
 
 app.get('/api/v1/seed-50-vendor-products', async (req, res) => {
   try {
@@ -332,6 +341,11 @@ const startServer = async () => {
       try { await seedReferralDefaults(); } catch (e: any) { console.error('seedReferralDefaults non-fatal error:', e.message); }
       try { await seedNotificationTemplates(); } catch (e: any) { console.error('seedNotificationTemplates non-fatal error:', e.message); }
       try { await seedBannerDefaults(); } catch (e: any) { console.error('seedBannerDefaults non-fatal error:', e.message); }
+      try {
+        const { seedDevotionalAndRestaurant } = await import('./seeds/seedDevotionalAndRestaurant');
+        await seedDevotionalAndRestaurant();
+      } catch (e: any) { console.error('seedDevotionalAndRestaurant non-fatal error:', e.message); }
+
     } else {
       console.log(`[Server] Skipping referral defaults, database, and notification template seeding on clustered instance ${process.env.NODE_APP_INSTANCE}`);
     }
@@ -421,3 +435,4 @@ if (process.env.NODE_ENV !== 'test') {
 }
 
 export { app };
+// Trigger reload 1

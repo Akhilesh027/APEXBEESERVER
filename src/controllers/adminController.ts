@@ -29,6 +29,8 @@ const createNotificationCompat = async (
   }
 };
 import { Vendor } from "../models/Vendor";
+import VendorCategoryAccess from "../models/VendorCategoryAccess";
+import Category from "../models/Category";
 import { Referral } from "../models/Referral";
 import { Manufacturer } from "../models/Manufacturer";
 import { Wholesaler } from "../models/Wholesaler";
@@ -51,7 +53,6 @@ import { Order } from "../models/Order";
 import { CommissionSettlement } from "../models/CommissionSettlement";
 import { ReferralTransaction } from "../models/ReferralTransaction";
 import Product from "../models/Product";
-import Category from "../models/Category";
 
 const getTargetRole = (app: any): RoleType => {
   const type = String(app.applicationType || app.roleId || "").toLowerCase().trim();
@@ -456,65 +457,63 @@ export const getApplications = async (
   try {
     const apps = await BusinessApplication.find().sort({ createdAt: -1 });
 
-    const enrichedApps = await Promise.all(
-      apps.map(async (app: any) => {
-        const appObj = app.toObject();
+    const activeFranchises = await Franchise.find({ status: "active" })
+      .select("_id businessName ownerName franchiseCode franchiseLevel state district mandal")
+      .lean();
 
-        const stateFranchise = await Franchise.findOne({
-          franchiseLevel: "state",
-          state: app.state,
-          status: "active",
-        });
+    const franchiseMap = new Map<string, any>();
+    activeFranchises.forEach((f: any) => {
+      if (f.franchiseLevel === "state" && f.state) {
+        franchiseMap.set(`state:${f.state.trim().toLowerCase()}`, f);
+      }
+      if (f.franchiseLevel === "district" && f.state && f.district) {
+        franchiseMap.set(`district:${f.state.trim().toLowerCase()}:${f.district.trim().toLowerCase()}`, f);
+      }
+      if (f.franchiseLevel === "mandal" && f.state && f.district && f.mandal) {
+        franchiseMap.set(`mandal:${f.state.trim().toLowerCase()}:${f.district.trim().toLowerCase()}:${f.mandal.trim().toLowerCase()}`, f);
+      }
+    });
 
-        const districtFranchise = app.district
-          ? await Franchise.findOne({
-              franchiseLevel: "district",
-              state: app.state,
-              district: app.district,
-              status: "active",
-            })
-          : null;
+    const enrichedApps = apps.map((app: any) => {
+      const appObj = app.toObject();
 
-        const mandalFranchise = app.mandal
-          ? await Franchise.findOne({
-              franchiseLevel: "mandal",
-              state: app.state,
-              district: app.district,
-              mandal: app.mandal,
-              status: "active",
-            })
-          : null;
+      const stKey = app.state ? `state:${app.state.trim().toLowerCase()}` : "";
+      const distKey = app.state && app.district ? `district:${app.state.trim().toLowerCase()}:${app.district.trim().toLowerCase()}` : "";
+      const mandalKey = app.state && app.district && app.mandal ? `mandal:${app.state.trim().toLowerCase()}:${app.district.trim().toLowerCase()}:${app.mandal.trim().toLowerCase()}` : "";
 
-        appObj.dependencies = {
-          stateFranchise: stateFranchise
-            ? {
-                _id: stateFranchise._id,
-                businessName: stateFranchise.businessName,
-                ownerName: stateFranchise.ownerName,
-                franchiseCode: stateFranchise.franchiseCode,
-              }
-            : null,
-          districtFranchise: districtFranchise
-            ? {
-                _id: districtFranchise._id,
-                businessName: districtFranchise.businessName,
-                ownerName: districtFranchise.ownerName,
-                franchiseCode: districtFranchise.franchiseCode,
-              }
-            : null,
-          mandalFranchise: mandalFranchise
-            ? {
-                _id: mandalFranchise._id,
-                businessName: mandalFranchise.businessName,
-                ownerName: mandalFranchise.ownerName,
-                franchiseCode: mandalFranchise.franchiseCode,
-              }
-            : null,
-        };
+      const stateFranchise = stKey ? franchiseMap.get(stKey) : null;
+      const districtFranchise = distKey ? franchiseMap.get(distKey) : null;
+      const mandalFranchise = mandalKey ? franchiseMap.get(mandalKey) : null;
 
-        return appObj;
-      })
-    );
+      appObj.dependencies = {
+        stateFranchise: stateFranchise
+          ? {
+              _id: stateFranchise._id,
+              businessName: stateFranchise.businessName,
+              ownerName: stateFranchise.ownerName,
+              franchiseCode: stateFranchise.franchiseCode,
+            }
+          : null,
+        districtFranchise: districtFranchise
+          ? {
+              _id: districtFranchise._id,
+              businessName: districtFranchise.businessName,
+              ownerName: districtFranchise.ownerName,
+              franchiseCode: districtFranchise.franchiseCode,
+            }
+          : null,
+        mandalFranchise: mandalFranchise
+          ? {
+              _id: mandalFranchise._id,
+              businessName: mandalFranchise.businessName,
+              ownerName: mandalFranchise.ownerName,
+              franchiseCode: mandalFranchise.franchiseCode,
+            }
+          : null,
+      };
+
+      return appObj;
+    });
 
     res.status(200).json({
       success: true,
@@ -616,7 +615,7 @@ export const approveApplication = async (
 ): Promise<void> => {
   try {
     const { id } = req.params;
-    const { adminRemarks, primaryCategory, category } = req.body;
+    const { adminRemarks, primaryCategory, category, subCategory, approvedSubcategories } = req.body;
 
     const app = await BusinessApplication.findById(id);
 
@@ -632,6 +631,12 @@ export const approveApplication = async (
     const assignedCat = primaryCategory || category || (app as any).primaryCategory || (app as any).category || "Food & Restaurant";
     (app as any).primaryCategory = assignedCat;
     (app as any).category = assignedCat;
+    if (subCategory || (req.body as any).subCategory) {
+      (app as any).subCategory = subCategory || (req.body as any).subCategory;
+    }
+    if (Array.isArray(approvedSubcategories)) {
+      (app as any).approvedSubcategories = approvedSubcategories;
+    }
     app.status = "pre_approved";
 
     await app.save();
@@ -816,11 +821,20 @@ export const verifyKycApplication = async (
         ? (app as any).location
         : undefined;
 
+      const vendorSubCategories = Array.isArray((app as any).approvedSubcategories) && (app as any).approvedSubcategories.length > 0
+        ? (app as any).approvedSubcategories
+        : (app as any).subCategory
+        ? String((app as any).subCategory).split(',').map((s: string) => s.trim()).filter(Boolean)
+        : [];
+
       const updateObj: any = {
         $set: {
           ...profileFields,
           category: (app as any).primaryCategory || (app as any).category || 'Food & Restaurant',
           primaryCategory: (app as any).primaryCategory || (app as any).category || 'Food & Restaurant',
+          subCategory: vendorSubCategories[0] || (app as any).subCategory || '',
+          approvedSubcategories: vendorSubCategories,
+          subCategories: vendorSubCategories,
           kycStatus: 'Verified',
           gstNumber: app.gstNumber,
           panNumber: app.panNumber,
@@ -847,6 +861,41 @@ export const verifyKycApplication = async (
 
       if (savedVendor) {
         await assignTerritoryAndMapFranchises("vendor", savedVendor);
+
+        // Auto-initialize VendorCategoryAccess in pending status (no auto-approval of pooja_store)
+        const vendorCat = (savedVendor.primaryCategory || (savedVendor as any).category || '').toLowerCase();
+        if (vendorCat.includes('devotional') || vendorCat.includes('puja')) {
+          const devotionalParent = await Category.findOne({ level: 1, $or: [{ slug: 'devotional' }, { name: /devotional/i }] });
+          if (devotionalParent) {
+            const existingAccess = await VendorCategoryAccess.findOne({
+              vendorId: savedVendor._id,
+              parentCategoryId: devotionalParent._id
+            });
+            if (!existingAccess) {
+              const reqCaps = (app as any).requestedCapabilities && Array.isArray((app as any).requestedCapabilities) && (app as any).requestedCapabilities.length > 0
+                ? (app as any).requestedCapabilities
+                : [];
+              await VendorCategoryAccess.create({
+                vendorId: savedVendor._id,
+                storeId: savedVendor._id,
+                parentCategoryId: devotionalParent._id,
+                requestedCapabilities: reqCaps,
+                approvedCapabilities: [],
+                approvedSubcategoryIds: [],
+                approvedChildCategoryIds: [],
+                status: 'pending',
+                restrictions: {
+                  canCreateProducts: false,
+                  canCreateServices: false,
+                  canJoinFestivalCombos: false,
+                  canAcceptBulkOrders: false,
+                  canSellWholesale: false,
+                  canOfferSubscriptions: false,
+                }
+              });
+            }
+          }
+        }
       }
     } else if (targetRole === "manufacturer") {
       const savedManufacturer = await Manufacturer.findOneAndUpdate(
@@ -1575,7 +1624,26 @@ export const getVendors = async (
   res: Response
 ): Promise<void> => {
   try {
-    const vendors = await Vendor.find().sort({ createdAt: -1 });
+    const rawVendors = await Vendor.find().sort({ createdAt: -1 });
+    const userIds = rawVendors.map(v => v.userId).filter(Boolean);
+
+    const applications = await BusinessApplication.find({ userId: { $in: userIds } });
+    const appMap = new Map();
+    applications.forEach(a => appMap.set(String(a.userId), a));
+
+    const vendors = rawVendors.map(v => {
+      const vObj: any = v.toObject();
+      const app = appMap.get(String(v.userId));
+      if (app) {
+        vObj.primaryCategory = vObj.primaryCategory || app.primaryCategory || app.category || vObj.category;
+        vObj.category = vObj.primaryCategory || vObj.category;
+        vObj.subCategory = vObj.subCategory || app.subCategory;
+        vObj.approvedSubcategories = (Array.isArray(vObj.approvedSubcategories) && vObj.approvedSubcategories.length > 0)
+          ? vObj.approvedSubcategories
+          : (app.approvedSubcategories || (app.subCategory ? [app.subCategory] : []));
+      }
+      return vObj;
+    });
 
     res.status(200).json({
       success: true,
@@ -1585,6 +1653,34 @@ export const getVendors = async (
     console.error("Get admin vendors error:", error);
     res.status(500).json({
       message: "Server error retrieving vendors",
+      error: error.message,
+    });
+  }
+};
+
+export const getVendorProducts = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const { userId } = req.params;
+    const products = await Product.find({
+      $or: [
+        { vendorId: userId },
+        { userId: userId },
+        { sellerId: userId }
+      ]
+    }).sort({ createdAt: -1 });
+
+    res.status(200).json({
+      success: true,
+      products,
+    });
+  } catch (error: any) {
+    console.error("Get vendor products error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error retrieving vendor products",
       error: error.message,
     });
   }
@@ -2828,5 +2924,45 @@ export const getMetrics = async (req: Request, res: Response): Promise<void> => 
       message: "Server error retrieving metrics",
       error: error.message,
     });
+  }
+};
+
+export const updateVendorCategoryGovernance = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { userId } = req.params;
+    const { primaryCategory, subCategory, approvedSubcategories } = req.body;
+
+    const app = await BusinessApplication.findOne({ userId });
+    if (app) {
+      if (primaryCategory) app.primaryCategory = primaryCategory;
+      if (subCategory) app.subCategory = subCategory;
+      if (Array.isArray(approvedSubcategories)) app.approvedSubcategories = approvedSubcategories;
+      await app.save();
+    }
+
+    const vendor = await Vendor.findOne({ userId });
+    if (vendor) {
+      if (primaryCategory) {
+        vendor.primaryCategory = primaryCategory;
+        vendor.category = primaryCategory;
+      }
+      if (subCategory) {
+        vendor.subCategory = subCategory;
+      }
+      if (Array.isArray(approvedSubcategories)) {
+        vendor.approvedSubcategories = approvedSubcategories;
+        vendor.subCategories = approvedSubcategories;
+      }
+      await vendor.save();
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Vendor category governance updated successfully',
+      data: { primaryCategory, subCategory, approvedSubcategories }
+    });
+  } catch (error: any) {
+    console.error('Update vendor category governance error:', error);
+    res.status(500).json({ success: false, message: 'Failed to update vendor category governance', error: error.message });
   }
 };

@@ -8,8 +8,10 @@ import {
   verifyKycApplication,
   getDashboardStats,
   getVendors,
+  getVendorProducts,
   updateVendorDocumentStatus,
   updateVendorStatus,
+  updateVendorCategoryGovernance,
   getServiceProviderKycs,
   updateServiceProviderKycStatus,
   updateServiceProviderDocumentStatus,
@@ -56,8 +58,10 @@ router.patch('/applications/:id/review', protect, restrictTo('admin'), reviewApp
 router.patch('/applications/:id/verify-kyc', protect, restrictTo('admin'), verifyKycApplication);
 router.post('/vendors/:userId/request-document', protect, restrictTo('admin'), requestVendorDocument);
 router.get('/vendors', protect, restrictTo('admin'), getVendors);
+router.get('/vendors/:userId/products', protect, restrictTo('admin'), getVendorProducts);
 router.patch('/vendors/:userId/documents/:docId', protect, restrictTo('admin'), updateVendorDocumentStatus);
 router.patch('/vendors/:userId/status', protect, restrictTo('admin'), updateVendorStatus);
+router.put('/vendors/:userId/category-governance', protect, restrictTo('admin'), updateVendorCategoryGovernance);
 router.get('/service-providers/kyc', protect, restrictTo('admin'), getServiceProviderKycs);
 router.patch('/service-providers/kyc/:id', protect, restrictTo('admin'), updateServiceProviderKycStatus);
 router.patch('/service-providers/:userId/documents/:docId', protect, restrictTo('admin'), updateServiceProviderDocumentStatus);

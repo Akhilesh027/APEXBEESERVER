@@ -18,15 +18,18 @@ import {
   getInventoryMovements,
   createInventoryMovement,
   getProductBySku,
-  getBuyAgainProducts
+  getBuyAgainProducts,
+  seedProductsForAllCategories
 } from '../controllers/productController';
 
 import { productUpload } from '../middleware/multer';
 import { protect, restrictTo } from '../middleware/auth';
+import { assertVendorCategoryAccess, validateCategoryProductPayload } from '../middleware/vendorCategoryAccessMiddleware';
 
 const router = express.Router();
 
 // Public routes & specific endpoints
+router.all('/seed-all-categories', seedProductsForAllCategories);
 router.get('/', getAllProducts);
 router.get('/buy-again', getBuyAgainProducts);
 router.get('/my-products', protect, getMyProducts);
@@ -39,9 +42,10 @@ router.get('/sku/:sku', getProductBySku);
 router.get('/:id', getProductById);
 
 // Seller/Admin only routes for product creation & edit
-router.post('/', protect, restrictTo('vendor', 'wholesaler', 'manufacturer', 'admin'), productUpload, createProduct);
-router.put('/:id', protect, restrictTo('vendor', 'wholesaler', 'manufacturer', 'admin'), productUpload, updateProduct);
-router.post('/:id/duplicate', protect, restrictTo('vendor', 'wholesaler', 'manufacturer', 'admin'), duplicateProduct);
+router.post('/', protect, restrictTo('vendor', 'wholesaler', 'manufacturer', 'admin'), productUpload, assertVendorCategoryAccess, validateCategoryProductPayload, createProduct);
+router.put('/:id', protect, restrictTo('vendor', 'wholesaler', 'manufacturer', 'admin'), productUpload, assertVendorCategoryAccess, validateCategoryProductPayload, updateProduct);
+router.post('/:id/duplicate', protect, restrictTo('vendor', 'wholesaler', 'manufacturer', 'admin'), assertVendorCategoryAccess, duplicateProduct);
+
 router.patch('/:id/archive', protect, restrictTo('vendor', 'wholesaler', 'manufacturer', 'admin'), archiveProduct);
 router.delete('/:id', protect, restrictTo('vendor', 'wholesaler', 'manufacturer', 'admin'), deleteProduct);
 router.post('/bulk-update', protect, restrictTo('vendor', 'wholesaler', 'manufacturer', 'admin'), bulkUpdateProducts);

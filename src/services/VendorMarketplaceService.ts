@@ -180,6 +180,24 @@ export class VendorMarketplaceService {
       rawVendors = vendors.map(v => ({ ...v, distanceInKm: null }));
     }
 
+    // ── Stage 4: Global active vendors fallback ───────────────────────
+    if (rawVendors.length === 0) {
+      searchMode = 'city';
+      const query: any = {
+        status: "active",
+        marketplaceStatus: { $nin: ["Suspended", "Hidden", "Rejected"] },
+        $or: [
+          { isMarketplaceListed: true },
+          { isMarketplaceListed: { $exists: false } }
+        ]
+      };
+      if (options.category && options.category !== "ALL") {
+        query.categories = options.category;
+      }
+      const vendors = await Vendor.find(query).limit(limitNum).lean();
+      rawVendors = vendors.map(v => ({ ...v, distanceInKm: 1.5 }));
+    }
+
     // Populate favorites if user is logged in
     let favoriteVendorIds: string[] = [];
     if (options.userId) {

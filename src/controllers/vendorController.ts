@@ -19,6 +19,7 @@ import { FavoriteVendor } from '../models/FavoriteVendors';
 import { VendorVisit } from '../models/VendorVisits';
 import { VendorMarketplaceService } from '../services/VendorMarketplaceService';
 import { requireSelfOrAdmin } from '../utils/authz';
+import { BusinessApplication } from '../models/BusinessApplication';
 
 
 
@@ -43,12 +44,44 @@ export const getVendorProfile = async (req: Request, res: Response): Promise<voi
       return;
     }
     const resObj = await getProfileAndModel(userId);
+    let vendor: any = null;
+
     if (!resObj) {
+      const app = await BusinessApplication.findOne({ userId });
+      if (app) {
+        vendor = {
+          userId: app.userId,
+          businessName: app.businessName,
+          ownerName: app.ownerName,
+          category: app.category || app.primaryCategory,
+          primaryCategory: app.primaryCategory || app.category,
+          subCategory: app.subCategory,
+          approvedSubcategories: app.approvedSubcategories || (app.subCategory ? [app.subCategory] : []),
+          state: app.state,
+          district: app.district,
+          mandal: app.mandal,
+          gstNumber: app.gstNumber,
+          panNumber: app.panNumber,
+        };
+        res.status(200).json({ success: true, vendor });
+        return;
+      }
       res.status(404).json({ message: 'Profile not found' });
       return;
     }
-    const vendor = resObj.doc.toObject();
+
+    vendor = resObj.doc.toObject();
     vendor.businessType = resObj.type;
+
+    const app = await BusinessApplication.findOne({ userId });
+    if (app) {
+      vendor.primaryCategory = app.primaryCategory || app.category || vendor.primaryCategory || vendor.category;
+      vendor.category = vendor.primaryCategory;
+      vendor.subCategory = app.subCategory || vendor.subCategory;
+      vendor.approvedSubcategories = Array.isArray(app.approvedSubcategories) && app.approvedSubcategories.length > 0
+        ? app.approvedSubcategories
+        : (vendor.subCategory ? [vendor.subCategory] : (vendor.approvedSubcategories || []));
+    }
     if (resObj.doc.userId) {
       let referralCode = (resObj.doc.userId as any).referralCode || "";
       if (!referralCode) {
@@ -80,14 +113,17 @@ export const getVendorProfile = async (req: Request, res: Response): Promise<voi
 
 export const updateVendorProfile = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { userId } = req.params;
-    if (!requireSelfOrAdmin(req, userId)) {
-      res.status(404).json({ success: false, message: 'Resource not found' });
+    const authUser = (req as any).user;
+    const isAdminUser = authUser?.roles?.includes('admin');
+    const targetUserId = isAdminUser && req.params.userId ? req.params.userId : authUser?.id || req.params.userId;
+
+    if (!requireSelfOrAdmin(req, targetUserId)) {
+      res.status(403).json({ success: false, message: 'Forbidden: Cannot modify another vendor profile' });
       return;
     }
     const updates = req.body;
 
-    const resObj = await getProfileAndModel(userId);
+    const resObj = await getProfileAndModel(targetUserId);
     if (!resObj) {
       res.status(404).json({ message: 'Profile not found' });
       return;
@@ -102,7 +138,6 @@ export const updateVendorProfile = async (req: Request, res: Response): Promise<
     if (updates.pincode !== undefined) vendor.pincode = updates.pincode;
     if (updates.gstNumber !== undefined) vendor.gstNumber = updates.gstNumber;
     if (updates.panNumber !== undefined) vendor.panNumber = updates.panNumber;
-    if (updates.status !== undefined) vendor.status = updates.status;
     if (updates.bankAccounts !== undefined) vendor.bankAccounts = updates.bankAccounts;
     if (updates.storeDesign !== undefined) {
       vendor.storeDesign = { ...vendor.storeDesign, ...updates.storeDesign };
@@ -117,7 +152,6 @@ export const updateVendorProfile = async (req: Request, res: Response): Promise<
     if (updates.minOrder !== undefined) vendor.minOrder = Number(updates.minOrder);
     if (updates.deliveryCharge !== undefined) vendor.deliveryCharge = Number(updates.deliveryCharge);
     if (updates.fssaiNumber !== undefined) vendor.fssaiNumber = updates.fssaiNumber;
-    if (updates.verifiedBadge !== undefined) vendor.verifiedBadge = !!updates.verifiedBadge;
     if (updates.liveStatus !== undefined) vendor.liveStatus = updates.liveStatus;
     if (updates.businessHours !== undefined) vendor.businessHours = { ...vendor.businessHours, ...updates.businessHours };
     if (updates.whatsappNumber !== undefined) vendor.whatsappNumber = updates.whatsappNumber;
@@ -128,11 +162,17 @@ export const updateVendorProfile = async (req: Request, res: Response): Promise<
     if (updates.village !== undefined) vendor.village = updates.village;
     if (updates.storeTags !== undefined) vendor.storeTags = updates.storeTags;
     if (updates.storeServices !== undefined) vendor.storeServices = updates.storeServices;
-    if (updates.marketplaceStatus !== undefined) vendor.marketplaceStatus = updates.marketplaceStatus;
-    if (updates.storeType !== undefined) vendor.storeType = updates.storeType;
-    if (updates.primaryCategory !== undefined) vendor.primaryCategory = updates.primaryCategory;
     if (updates.subCategories !== undefined) vendor.subCategories = updates.subCategories;
-    if (updates.isMarketplaceListed !== undefined) vendor.isMarketplaceListed = !!updates.isMarketplaceListed;
+
+    // Admin-only field updates
+    if (isAdminUser) {
+      if (updates.status !== undefined) vendor.status = updates.status;
+      if (updates.verifiedBadge !== undefined) vendor.verifiedBadge = !!updates.verifiedBadge;
+      if (updates.marketplaceStatus !== undefined) vendor.marketplaceStatus = updates.marketplaceStatus;
+      if (updates.storeType !== undefined) vendor.storeType = updates.storeType;
+      if (updates.primaryCategory !== undefined) vendor.primaryCategory = updates.primaryCategory;
+      if (updates.isMarketplaceListed !== undefined) vendor.isMarketplaceListed = !!updates.isMarketplaceListed;
+    }
 
     const saved = await vendor.save();
     const vendorObj = saved.toObject();

@@ -14,7 +14,9 @@ export type RoleType =
   | "service_provider"
   | "course_provider"
   | "delivery_partner"
-  | "customer";
+  | "customer"
+  | "academy_manager"
+  | "counsellor";
 
 export interface IUser extends Document {
   name: string;
@@ -127,6 +129,8 @@ const UserSchema = new Schema<IUser>(
           "course_provider",
           "delivery_partner",
           "customer",
+          "academy_manager",
+          "counsellor",
         ],
         required: true,
       },
