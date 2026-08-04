@@ -22,6 +22,8 @@ export type DeliveryAssignmentStatus =
 export interface IDeliveryAssignment extends Document {
   orderId: mongoose.Types.ObjectId;
   deliveryPartnerId: mongoose.Types.ObjectId;
+  vendorId?: mongoose.Types.ObjectId;
+  customerId?: mongoose.Types.ObjectId;
   partnerSnapshot: {
     name: string;
     phoneMasked: string;
@@ -52,6 +54,8 @@ const DeliveryAssignmentSchema = new Schema<IDeliveryAssignment>(
   {
     orderId: { type: Schema.Types.ObjectId, ref: 'Order', required: true },
     deliveryPartnerId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    vendorId: { type: Schema.Types.ObjectId, ref: 'User' },
+    customerId: { type: Schema.Types.ObjectId, ref: 'User' },
     partnerSnapshot: {
       name: { type: String, required: true },
       phoneMasked: { type: String, required: true },

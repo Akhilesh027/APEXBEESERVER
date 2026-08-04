@@ -63,6 +63,8 @@ const seedCatalog = async (dryRun = false) => {
             isFeatured: cat.isFeatured,
             isSeasonal: cat.isSeasonal,
             supportedItemTypes: cat.supportedItemTypes,
+            attributes: cat.attributes || [],
+            brands: cat.brands || [],
             seo: cat.seo,
         });
         catMap[cat.seedKey] = doc._id.toString();

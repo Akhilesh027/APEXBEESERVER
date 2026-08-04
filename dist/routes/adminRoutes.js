@@ -16,8 +16,10 @@ router.patch('/applications/:id/review', auth_1.protect, (0, auth_1.restrictTo)(
 router.patch('/applications/:id/verify-kyc', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.verifyKycApplication);
 router.post('/vendors/:userId/request-document', auth_1.protect, (0, auth_1.restrictTo)('admin'), vendorController_1.requestVendorDocument);
 router.get('/vendors', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.getVendors);
+router.get('/vendors/:userId/products', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.getVendorProducts);
 router.patch('/vendors/:userId/documents/:docId', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.updateVendorDocumentStatus);
 router.patch('/vendors/:userId/status', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.updateVendorStatus);
+router.put('/vendors/:userId/category-governance', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.updateVendorCategoryGovernance);
 router.get('/service-providers/kyc', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.getServiceProviderKycs);
 router.patch('/service-providers/kyc/:id', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.updateServiceProviderKycStatus);
 router.patch('/service-providers/:userId/documents/:docId', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.updateServiceProviderDocumentStatus);

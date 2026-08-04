@@ -37,15 +37,11 @@ exports.ProductVariant = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
 const ProductVariantSchema = new mongoose_1.Schema({
     productId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Product', required: true },
+    name: { type: String },
+    seedKey: { type: String, sparse: true, index: true },
     sku: { type: String, required: true, unique: true, trim: true },
     barcode: { type: String, trim: true },
-    attributes: {
-        size: { type: String },
-        colour: { type: String },
-        flavour: { type: String },
-        packSize: { type: String },
-        unit: { type: String },
-    },
+    attributes: { type: mongoose_1.Schema.Types.Mixed, default: {} },
     weight: { type: Number },
     dimensions: {
         length: { type: Number },

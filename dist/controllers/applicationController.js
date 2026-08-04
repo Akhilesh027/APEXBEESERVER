@@ -98,10 +98,10 @@ const createApplication = async (req, res) => {
             return;
         }
         if (["vendor", "wholesaler", "manufacturer"].includes(targetRole)) {
-            if (!gstNumber || !panNumber) {
+            if (!panNumber) {
                 res.status(400).json({
                     success: false,
-                    message: "GST Number and PAN Number are required.",
+                    message: "PAN Number is required.",
                 });
                 return;
             }
@@ -173,7 +173,25 @@ const createApplication = async (req, res) => {
             sampleVideoLink,
             vehicleType,
             licenseNumber,
-            aadhaarNumber,
+            primaryCategory: req.body.primaryCategory || req.body.category || "",
+            category: req.body.primaryCategory || req.body.category || "",
+            subCategory: (Array.isArray(req.body.approvedSubcategories) && req.body.approvedSubcategories.length > 0)
+                ? req.body.approvedSubcategories[0]
+                : (Array.isArray(req.body.subCategories) && req.body.subCategories.length > 0)
+                    ? req.body.subCategories[0]
+                    : (req.body.subCategory || req.body.subcategory || ""),
+            approvedSubcategories: (() => {
+                const raw = req.body.approvedSubcategories || req.body.subCategories || req.body.subcategories;
+                if (Array.isArray(raw) && raw.length > 0) {
+                    return raw.flatMap((s) => typeof s === 'string' && s.includes(',') ? s.split(',').map(x => x.trim()) : String(s).trim()).filter(Boolean);
+                }
+                const single = req.body.subCategory || req.body.subcategory;
+                if (typeof single === 'string' && single.trim()) {
+                    return single.split(',').map(s => s.trim()).filter(Boolean);
+                }
+                return [];
+            })(),
+            requestedCapabilities: req.body.requestedCapabilities || [],
             status: "pending",
         });
         // Link application to Referral

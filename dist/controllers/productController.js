@@ -1,14 +1,49 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getBuyAgainProducts = exports.getProductBySku = exports.createInventoryMovement = exports.getInventoryMovements = exports.getAiProductSuggestions = exports.archiveProduct = exports.duplicateProduct = exports.getProductsByVendor = exports.bulkUpdateProducts = exports.rejectProduct = exports.sellerNegotiatePricing = exports.sellerAcceptPricing = exports.configureAdminPricing = exports.deleteProduct = exports.updateProduct = exports.getProductById = exports.getMyProducts = exports.getAllProducts = exports.createProduct = void 0;
+exports.removeSeededProducts = exports.seedProductsForAllCategories = exports.getBuyAgainProducts = exports.getProductBySku = exports.createInventoryMovement = exports.getInventoryMovements = exports.getAiProductSuggestions = exports.archiveProduct = exports.duplicateProduct = exports.getProductsByVendor = exports.bulkUpdateProducts = exports.quickApproveVendorEdit = exports.rejectProduct = exports.sellerNegotiatePricing = exports.sellerAcceptPricing = exports.configureAdminPricing = exports.deleteProduct = exports.updateProduct = exports.getProductById = exports.getMyProducts = exports.getAllProducts = exports.createProduct = void 0;
 const mongoose_1 = __importDefault(require("mongoose"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const Product_1 = __importDefault(require("../models/Product"));
 const Category_1 = __importDefault(require("../models/Category"));
+const CategoryExperienceConfig_1 = __importDefault(require("../models/CategoryExperienceConfig"));
 const Vendor_1 = require("../models/Vendor");
+const Order_1 = __importDefault(require("../models/Order"));
 const cloudinary_1 = require("../config/cloudinary");
 const validateProductFields = (body, res) => {
     const protectedFields = [
@@ -104,20 +139,21 @@ const populateProduct = (query) => {
         .populate('subCategoryId', 'name slug level brands attributes')
         .populate('childCategoryId', 'name slug level brands attributes');
 };
-const calculatePricing = (body) => {
+const roundMoney = (val) => Math.round((val + Number.EPSILON) * 100) / 100;
+const buildAdminPricing = (body) => {
+    const mrp = normalizeNumber(body.mrp);
     const sellingPrice = normalizeNumber(body.sellingPrice);
-    const mrp = normalizeNumber(body.mrp, sellingPrice);
     const platformFeePercent = normalizeNumber(body.platformFeePercent);
-    const platformFeeAmount = body.platformFeeAmount !== undefined
+    const platformFeeAmount = roundMoney(body.platformFeeAmount !== undefined
         ? normalizeNumber(body.platformFeeAmount)
-        : (sellingPrice * platformFeePercent) / 100;
+        : (sellingPrice * platformFeePercent) / 100);
     const shippingCharge = normalizeNumber(body.shippingCharge);
     const packingCharge = normalizeNumber(body.packingCharge);
     const commissionShares = parseJson(body.commissionShares, []).map((item) => {
         const percent = normalizeNumber(item.percent);
-        const amount = item.amount !== undefined
+        const amount = roundMoney(item.amount !== undefined
             ? normalizeNumber(item.amount)
-            : (platformFeeAmount * percent) / 100;
+            : (platformFeeAmount * percent) / 100);
         return {
             type: item.type,
             label: item.label,
@@ -126,14 +162,14 @@ const calculatePricing = (body) => {
             isActive: item.isActive !== false,
         };
     });
-    const totalCommissionAmount = commissionShares.reduce((sum, item) => sum + normalizeNumber(item.amount), 0);
-    const finalSellerAmount = sellingPrice - platformFeeAmount;
-    const customerSellingAmount = body.customerSellingAmount !== undefined
+    const totalCommissionAmount = roundMoney(commissionShares.reduce((sum, item) => sum + normalizeNumber(item.amount), 0));
+    const finalSellerAmount = roundMoney(sellingPrice - platformFeeAmount);
+    const customerSellingAmount = roundMoney(body.customerSellingAmount !== undefined
         ? normalizeNumber(body.customerSellingAmount)
-        : sellingPrice + shippingCharge + packingCharge;
-    const platformNetProfit = body.platformNetProfit !== undefined
+        : sellingPrice + shippingCharge + packingCharge);
+    const platformNetProfit = roundMoney(body.platformNetProfit !== undefined
         ? normalizeNumber(body.platformNetProfit)
-        : platformFeeAmount - totalCommissionAmount;
+        : platformFeeAmount - totalCommissionAmount);
     return {
         mrp,
         sellingPrice,
@@ -157,16 +193,85 @@ const createProduct = async (req, res) => {
             return;
         }
         const { name, description, categoryId, subCategoryId, childCategoryId, brand, sku, baseMrp, discountPercent, baseSellingPrice, stock, sellerType, } = req.body;
-        if (!name?.trim() || !categoryId || !sku?.trim()) {
-            res.status(400).json({
-                message: 'Product name, category and SKU are required',
+        // Block product creation if experience config restricts it
+        const targetCategoryIds = [categoryId, subCategoryId, childCategoryId].filter(Boolean);
+        if (targetCategoryIds.length > 0) {
+            const blockedConfig = await CategoryExperienceConfig_1.default.findOne({
+                categoryId: { $in: targetCategoryIds },
+                productCreationEnabled: false,
             });
-            return;
+            if (blockedConfig) {
+                res.status(403).json({
+                    success: false,
+                    message: 'Product creation is disabled for this category.',
+                });
+                return;
+            }
         }
+        let finalCategoryId = categoryId;
         const sellerId = isAdmin ? (req.body.sellerId || authUser.id) : authUser.id;
         if (!sellerId) {
             res.status(401).json({
                 message: 'Seller not found. Login required.',
+            });
+            return;
+        }
+        if (!isAdmin) {
+            const vendor = await Vendor_1.Vendor.findOne({ $or: [{ userId: sellerId }, { _id: sellerId }] });
+            if (vendor) {
+                try {
+                    const { EntitlementService } = await Promise.resolve().then(() => __importStar(require('../modules/subscription/services/EntitlementService')));
+                    const isRestaurant = vendor.storeType === 'restaurant' || vendor.primaryCategory === 'Food & Dining';
+                    const featKey = isRestaurant ? 'MAX_MENU_ITEMS' : 'MAX_PRODUCTS';
+                    const entitlement = await EntitlementService.getFeatureEntitlement(vendor._id.toString(), featKey);
+                    if (entitlement && !entitlement.enabled) {
+                        res.status(403).json({
+                            success: false,
+                            message: 'Product creation feature is disabled for your active subscription plan. Please upgrade your plan.'
+                        });
+                        return;
+                    }
+                    if (entitlement && entitlement.limit !== null && entitlement.limit !== undefined) {
+                        const currentCount = await Product_1.default.countDocuments({
+                            $or: [{ sellerId: sellerId }, { sellerId: vendor._id }]
+                        });
+                        if (currentCount >= entitlement.limit) {
+                            res.status(403).json({
+                                success: false,
+                                message: `Product limit reached (${entitlement.limit} items) for your active subscription plan. Please upgrade to Premium for more items.`,
+                                limit: entitlement.limit,
+                                currentCount
+                            });
+                            return;
+                        }
+                    }
+                }
+                catch (eErr) {
+                    console.warn('[Product Subscription Check Warning]:', eErr.message);
+                }
+            }
+        }
+        if (!finalCategoryId && sellerId) {
+            const vendor = await Vendor_1.Vendor.findOne({ $or: [{ userId: sellerId }, { _id: sellerId }] });
+            if (vendor) {
+                const catSearchStr = vendor.primaryCategory || (vendor.categories && vendor.categories[0]);
+                if (catSearchStr) {
+                    const matchedCat = await Category_1.default.findOne({
+                        $or: [
+                            { _id: mongoose_1.default.Types.ObjectId.isValid(catSearchStr) ? catSearchStr : null },
+                            { name: new RegExp(`^${catSearchStr.replace(/[^a-zA-Z0-9]/g, '.*')}`, 'i') },
+                            { slug: makeSlug(catSearchStr) }
+                        ]
+                    });
+                    if (matchedCat) {
+                        finalCategoryId = matchedCat._id;
+                    }
+                }
+            }
+        }
+        if (!name?.trim() || !finalCategoryId || !sku?.trim()) {
+            res.status(400).json({
+                message: 'Product name, category and SKU are required',
             });
             return;
         }
@@ -185,38 +290,79 @@ const createProduct = async (req, res) => {
         const mrp = normalizeNumber(baseMrp);
         const discount = normalizeNumber(discountPercent);
         const calculatedSelling = mrp > 0 ? Math.round(mrp - (mrp * discount) / 100) : 0;
-        const product = await Product_1.default.create({
-            sellerId,
-            sellerType: sellerType || 'vendor',
-            name: name.trim(),
-            slug,
-            description: description || '',
-            categoryId,
-            subCategoryId: subCategoryId || null,
-            childCategoryId: childCategoryId || null,
-            brand: brand || '',
-            sku: cleanSku,
-            thumbnail: uploaded.thumbnail,
-            images: uploaded.images,
-            attributes: parsedAttributes,
-            variants: parsedVariants,
-            baseMrp: mrp,
-            discountPercent: discount,
-            baseSellingPrice: baseSellingPrice !== undefined && baseSellingPrice !== ''
-                ? normalizeNumber(baseSellingPrice)
-                : calculatedSelling,
-            stock: normalizeNumber(stock),
-            status: 'Pending Review',
-            isActive: false,
-            adminPricingApproved: false,
-            sellerPricingAccepted: false,
-            submittedAt: new Date(),
-            isStoreProduct: req.body.isStoreProduct === 'true' || req.body.isStoreProduct === true,
-            isSubscriptionAvailable: req.body.isSubscriptionAvailable === 'true' || req.body.isSubscriptionAvailable === true,
-        });
+        let product;
+        const vendor = await Vendor_1.Vendor.findOne({ $or: [{ userId: sellerId }, { _id: sellerId }] });
+        const storeId = vendor ? vendor._id.toString() : sellerId.toString();
+        // Perform atomic creation with rollback protection
+        try {
+            product = await Product_1.default.create({
+                sellerId,
+                sellerType: sellerType || 'vendor',
+                name: name.trim(),
+                slug,
+                description: description || '',
+                categoryId: finalCategoryId,
+                subCategoryId: subCategoryId || null,
+                subcategoryId: subCategoryId || null,
+                childCategoryId: childCategoryId || null,
+                createdBy: sellerId,
+                brand: brand || '',
+                sku: cleanSku,
+                thumbnail: uploaded.thumbnail,
+                images: uploaded.images,
+                attributes: parsedAttributes,
+                variants: parsedVariants,
+                baseMrp: mrp,
+                discountPercent: discount,
+                baseSellingPrice: baseSellingPrice !== undefined && baseSellingPrice !== ''
+                    ? normalizeNumber(baseSellingPrice)
+                    : calculatedSelling,
+                stock: normalizeNumber(stock),
+                status: isAdmin ? (req.body.status || 'Live') : 'Pending Review',
+                isActive: isAdmin ? (req.body.isActive !== false) : false,
+                moderationStatus: isAdmin ? 'approved' : 'pending',
+                adminPricingApproved: isAdmin ? true : false,
+                sellerPricingAccepted: isAdmin ? true : false,
+                submittedAt: new Date(),
+                isStoreProduct: req.body.isStoreProduct === 'true' || req.body.isStoreProduct === true,
+                isSubscriptionAvailable: req.body.isSubscriptionAvailable === 'true' || req.body.isSubscriptionAvailable === true,
+                deliveryScope: req.body.deliveryScope || (req.body.isPanIndia === 'true' || req.body.isPanIndia === true ? 'pan_india' : 'local'),
+                isPanIndia: req.body.deliveryScope === 'pan_india' || req.body.isPanIndia === 'true' || req.body.isPanIndia === true,
+            });
+            const StoreProductModel = mongoose_1.default.model('StoreProduct');
+            const InventoryModel = mongoose_1.default.model('Inventory');
+            await StoreProductModel.create({
+                storeId,
+                productId: product._id,
+                mrp: mrp || 0,
+                sellingPrice: calculatedSelling || mrp || 0,
+                minimumOrderQuantity: 1,
+                preparationTimeMinutes: 15,
+                isActive: true,
+            });
+            await InventoryModel.create({
+                storeId,
+                productId: product._id,
+                availableStock: normalizeNumber(stock, 50),
+                reservedStock: 0,
+                damagedStock: 0,
+                lowStockThreshold: 5,
+            });
+        }
+        catch (createErr) {
+            if (product && product._id) {
+                await Product_1.default.findByIdAndDelete(product._id);
+                const StoreProductModel = mongoose_1.default.model('StoreProduct');
+                const InventoryModel = mongoose_1.default.model('Inventory');
+                await StoreProductModel.deleteMany({ productId: product._id });
+                await InventoryModel.deleteMany({ productId: product._id });
+            }
+            throw new Error(`Atomic product creation failed: ${createErr.message}`);
+        }
         const populatedProduct = await populateProduct(Product_1.default.findById(product._id));
         res.status(201).json({
-            message: 'Product added successfully and sent for admin review',
+            success: true,
+            message: 'Product added successfully and is live!',
             product: populatedProduct,
         });
     }
@@ -241,55 +387,121 @@ const calculateDistance = (lat1, lon1, lat2, lon2) => {
 const getAllProducts = async (req, res) => {
     try {
         const { category, categoryId, status, isActive, excludeId, limit, page, sellerId, sellerType } = req.query;
-        // Parse user location details from query parameters
         const lat = req.query.lat ? parseFloat(req.query.lat) : null;
         const lng = req.query.lng ? parseFloat(req.query.lng) : null;
         const pincode = req.query.pincode ? String(req.query.pincode).trim() : '';
+        const state = req.query.state ? String(req.query.state).trim() : '';
+        const district = req.query.district ? String(req.query.district).trim() : '';
+        const mandal = req.query.mandal ? String(req.query.mandal).trim() : '';
         const filter = {};
         const pageNum = Math.max(1, Number(page) || 1);
         const limitNum = Math.min(100, Math.max(1, Number(limit) || 20));
+        // Enforce Hyperlocal vs Pan-India Product Visibility based on Customer Location (when sellerId is not specified)
+        if (!sellerId && (state || district || mandal || pincode || (lat && lng))) {
+            const vendorLocationOr = [];
+            if (pincode) {
+                vendorLocationOr.push({ pincode });
+            }
+            if (mandal) {
+                vendorLocationOr.push({ mandal: { $regex: new RegExp(`^${mandal.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}$`, 'i') } });
+            }
+            if (district) {
+                vendorLocationOr.push({ district: { $regex: new RegExp(`^${district.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}$`, 'i') } });
+            }
+            if (state) {
+                vendorLocationOr.push({ state: { $regex: new RegExp(`^${state.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}$`, 'i') } });
+            }
+            vendorLocationOr.push({ isGlobalDelivery: true });
+            vendorLocationOr.push({ deliveryMode: 'national_courier' });
+            const matchingVendors = await Vendor_1.Vendor.find({
+                status: { $in: ['active', 'Approved', 'approved'] },
+                marketplaceStatus: { $in: ['Approved', 'Approved & Verified', 'active'] },
+                isMarketplaceListed: true,
+                $or: vendorLocationOr
+            }).select('_id userId');
+            const allowedSellerIds = matchingVendors.flatMap(v => [v._id, v.userId]).filter(Boolean);
+            filter.$or = [
+                ...(allowedSellerIds.length > 0 ? [{ sellerId: { $in: allowedSellerIds } }] : []),
+                { deliveryScope: { $in: ['pan_india', 'both'] } },
+                { isPanIndia: true }
+            ];
+        }
         if (sellerId) {
-            filter.sellerId = sellerId;
+            const vendor = await Vendor_1.Vendor.findOne({ $or: [{ userId: sellerId }, { _id: sellerId }] });
+            if (vendor) {
+                filter.$or = [
+                    { sellerId: sellerId },
+                    { sellerId: vendor._id },
+                    { sellerId: vendor.userId },
+                    { createdBy: sellerId },
+                    { createdBy: vendor.userId }
+                ];
+            }
+            else {
+                filter.sellerId = sellerId;
+            }
         }
         if (sellerType) {
             filter.sellerType = sellerType;
         }
-        if (status) {
+        // Strict Live Product Enforcement for Customer User Panel
+        const liveStatuses = ['Live', 'Active', 'Approved', 'approved', 'active', 'published'];
+        if (status && status !== 'all' && status !== 'draft' && status !== 'pending' && status !== 'rejected') {
+            filter.status = { $in: liveStatuses };
+        }
+        else if (!status && !sellerId) {
+            filter.status = { $in: liveStatuses };
+        }
+        else if (status) {
             filter.status = status;
         }
         if (isActive !== undefined) {
             filter.isActive = isActive === 'true';
         }
-        if (categoryId) {
-            filter.categoryId = categoryId;
+        else if (!sellerId) {
+            filter.isActive = true;
         }
-        if (excludeId) {
-            filter._id = { $ne: excludeId };
+        if (!sellerId) {
+            filter.isArchived = { $ne: true };
+            filter.moderationStatus = { $ne: 'rejected' };
         }
-        if (category) {
-            const foundCategory = await Category_1.default.findOne({
-                $or: [
-                    { name: String(category).trim() },
-                    { slug: String(category).trim().toLowerCase() }
-                ]
-            }).collation({ locale: 'en', strength: 2 });
+        if (category || categoryId) {
+            const catParam = String(categoryId || category).trim();
+            const cleanParam = catParam.replace(/[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDC00-\uDFFF]/g, '').trim();
+            let foundCategory = null;
+            if (mongoose_1.default.Types.ObjectId.isValid(catParam)) {
+                foundCategory = await Category_1.default.findById(catParam);
+            }
+            if (!foundCategory && cleanParam) {
+                const regex = new RegExp(cleanParam.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&'), 'i');
+                foundCategory = await Category_1.default.findOne({
+                    $or: [
+                        { name: regex },
+                        { slug: catParam.toLowerCase() },
+                        { slug: cleanParam.toLowerCase().replace(/[^a-z0-9]+/g, '-') }
+                    ]
+                });
+            }
             if (foundCategory) {
+                const childCats = await Category_1.default.find({ parentId: foundCategory._id }).select('_id');
+                const childCatIds = childCats.map((c) => c._id);
+                const grandChildCats = await Category_1.default.find({ parentId: { $in: childCatIds } }).select('_id');
+                const allCatIds = [foundCategory._id, ...childCatIds, ...grandChildCats.map((c) => c._id)];
                 filter.$or = [
-                    { categoryId: foundCategory._id },
-                    { subCategoryId: foundCategory._id },
-                    { childCategoryId: foundCategory._id }
+                    { categoryId: { $in: allCatIds } },
+                    { subCategoryId: { $in: allCatIds } },
+                    { subcategoryId: { $in: allCatIds } },
+                    { childCategoryId: { $in: allCatIds } }
                 ];
             }
             else {
-                return res.json({
-                    products: [],
-                    pagination: {
-                        page: pageNum,
-                        limit: limitNum,
-                        totalPages: 0,
-                        totalProducts: 0
-                    }
-                });
+                const regex = new RegExp(cleanParam.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&'), 'i');
+                filter.$or = [
+                    { category: regex },
+                    { subcategory: regex },
+                    { name: regex },
+                    { brand: regex }
+                ];
             }
         }
         let authUser = undefined;
@@ -314,45 +526,87 @@ const getAllProducts = async (req, res) => {
             .limit(limitNum);
         const rawProducts = await populateProduct(query.select(selectString));
         const sellerIds = rawProducts.map((p) => p.sellerId?._id || p.sellerId).filter(Boolean);
-        const vendors = await Vendor_1.Vendor.find({ userId: { $in: sellerIds } });
-        const vendorMap = new Map(vendors.map((v) => [v.userId.toString(), v]));
+        const vendors = await Vendor_1.Vendor.find({ $or: [{ userId: { $in: sellerIds } }, { _id: { $in: sellerIds } }] });
+        const vendorMap = new Map();
+        vendors.forEach((v) => {
+            if (v.userId)
+                vendorMap.set(v.userId.toString(), v);
+            if (v._id)
+                vendorMap.set(v._id.toString(), v);
+        });
         const products = rawProducts.map((p) => {
             const productObj = p.toObject ? p.toObject() : p;
             const sellerIdStr = (p.sellerId?._id || p.sellerId || '').toString();
             const vendor = vendorMap.get(sellerIdStr);
-            let distance = 1.2; // default
-            let duration = 10; // default mins
-            let shippingCharge = 0; // default shipping charge
-            if (lat && lng && vendor && vendor.location && vendor.location.coordinates) {
-                const vLng = vendor.location.coordinates[0];
-                const vLat = vendor.location.coordinates[1];
-                if (typeof vLng === 'number' && typeof vLat === 'number') {
-                    distance = calculateDistance(lat, lng, vLat, vLng);
-                    duration = Math.max(10, Math.round(10 + distance * 2.5));
-                    shippingCharge = distance > 3 ? Math.round(distance * 8) : 0;
-                }
+            let distanceKm = null;
+            let duration = 15;
+            let shippingCharge = 0;
+            let deliveryTimeLabel = '⚡ Fast [15 MINS]';
+            let isCourierShipping = false;
+            const isPanIndiaItem = productObj.isPanIndia || productObj.deliveryScope === 'pan_india' || productObj.deliveryScope === 'both';
+            const vendorLat = vendor?.location?.coordinates?.[1];
+            const vendorLng = vendor?.location?.coordinates?.[0];
+            if (lat && lng && typeof vendorLat === 'number' && typeof vendorLng === 'number') {
+                distanceKm = calculateDistance(lat, lng, vendorLat, vendorLng);
             }
-            else if (pincode && vendor && vendor.pincode) {
-                if (vendor.pincode === pincode) {
-                    distance = 1.5;
-                    duration = 12;
+            else if (pincode && vendor?.pincode) {
+                if (pincode === vendor.pincode) {
+                    distanceKm = 1.5;
+                }
+                else if (district && vendor?.district && district.toLowerCase() !== vendor.district.toLowerCase()) {
+                    distanceKm = 280; // Inter-district (e.g. Hyderabad vs Adilabad)
                 }
                 else {
-                    distance = 4.8;
-                    duration = 25;
-                    shippingCharge = 15;
+                    distanceKm = 8.5;
                 }
+            }
+            else if (district && vendor?.district) {
+                if (district.toLowerCase() === vendor.district.toLowerCase()) {
+                    distanceKm = 3.5;
+                }
+                else {
+                    distanceKm = 280; // Inter-district
+                }
+            }
+            if (distanceKm !== null && distanceKm > 20) {
+                isCourierShipping = true;
+                deliveryTimeLabel = '🌐 Courier [2-4 Days]';
+                duration = 2880; // 2 days in minutes
+                shippingCharge = distanceKm > 100 ? 50 : 30;
+            }
+            else if (distanceKm !== null) {
+                isCourierShipping = false;
+                duration = Math.max(10, Math.round(10 + distanceKm * 2));
+                deliveryTimeLabel = `⚡ Fast [${duration} MINS]`;
+                shippingCharge = distanceKm > 3 ? Math.round(distanceKm * 6) : 0;
+            }
+            else if (isPanIndiaItem) {
+                isCourierShipping = true;
+                deliveryTimeLabel = '🌐 Pan-India Courier';
+                duration = 2880;
+                shippingCharge = 40;
+            }
+            else {
+                isCourierShipping = false;
+                duration = 15;
+                deliveryTimeLabel = '⚡ Fast [15 MINS]';
+                shippingCharge = 0;
+                distanceKm = 1.5;
             }
             if (!productObj.adminPricing) {
                 productObj.adminPricing = {};
             }
             productObj.adminPricing.shippingCharge = shippingCharge;
-            productObj.calculatedDistanceKm = parseFloat(distance.toFixed(1));
+            productObj.shippingCharge = shippingCharge;
+            productObj.calculatedDistanceKm = distanceKm !== null ? parseFloat(distanceKm.toFixed(1)) : null;
             productObj.estimatedDeliveryMinutes = duration;
+            productObj.deliveryTimeLabel = deliveryTimeLabel;
+            productObj.isCourierShipping = isCourierShipping;
             productObj.deliveryMode = vendor?.deliveryMode || 'self_delivery';
+            productObj.vendorLocationName = vendor?.district || vendor?.city || vendor?.state || '';
             // Store name & store rating override
             productObj.brand = vendor?.businessName || productObj.brand || 'ApexBee Seller';
-            productObj.vendorRating = 4.8; // default store rating
+            productObj.vendorRating = 4.8;
             return productObj;
         });
         res.json({
@@ -384,7 +638,7 @@ const getMyProducts = async (req, res) => {
             });
             return;
         }
-        const products = await populateProduct(Product_1.default.find({ sellerId })).sort({
+        const products = await populateProduct(Product_1.default.find({ sellerId, isArchived: { $ne: true } })).sort({
             createdAt: -1,
         });
         res.json({ products });
@@ -419,8 +673,10 @@ const getProductById = async (req, res) => {
         }
         const isOwner = authUser && String(product.sellerId._id || product.sellerId) === String(authUser.id);
         const isAdmin = authUser && authUser.roles?.includes('admin');
-        if (product.status !== 'Live' && !isOwner && !isAdmin) {
-            res.status(404).json({ success: false, message: 'Resource not found' });
+        const liveStatuses = ['Live', 'Active', 'Approved', 'approved', 'active', 'published'];
+        const isLive = liveStatuses.includes(product.status) && product.isActive !== false && product.isArchived !== true && product.moderationStatus !== 'rejected';
+        if (!isLive && !isOwner && !isAdmin) {
+            res.status(404).json({ success: false, message: 'Product is currently not live or unavailable' });
             return;
         }
         const productObj = product.toObject();
@@ -463,11 +719,25 @@ const updateProduct = async (req, res) => {
         if (!isAdmin && !validateProductFields(req.body, res)) {
             return;
         }
-        if (product.status === 'Live' && !isAdmin) {
-            res.status(400).json({
-                message: 'Live product cannot be edited directly',
-            });
-            return;
+        // Capture pre-edit snapshot for vendor edits so admin can compare changes
+        if (!isAdmin) {
+            product.preEditSnapshot = {
+                name: product.name,
+                description: product.description,
+                baseMrp: product.baseMrp,
+                baseSellingPrice: product.baseSellingPrice,
+                stock: product.stock,
+                sku: product.sku,
+                thumbnail: product.thumbnail,
+                images: [...(product.images || [])],
+                attributes: product.attributes ? JSON.parse(JSON.stringify(product.attributes)) : {},
+                minimumOrderQuantity: product.minimumOrderQuantity || 1,
+                isStoreProduct: product.isStoreProduct,
+                isSubscriptionAvailable: product.isSubscriptionAvailable,
+                deliveryScope: product.deliveryScope,
+                brand: product.brand,
+                snapshotAt: new Date(),
+            };
         }
         const uploaded = await getUploadedFiles(req);
         if (uploaded.thumbnail) {
@@ -523,23 +793,57 @@ const updateProduct = async (req, res) => {
         if (req.body.variants !== undefined) {
             product.variants = normalizeVariants(parseJson(req.body.variants, []));
         }
+        // Auto-extract MOQ from attributes or body
+        const findMoqFromAttrs = (attrs) => {
+            if (!attrs || typeof attrs !== 'object')
+                return 0;
+            for (const [k, v] of Object.entries(attrs)) {
+                if (k.toLowerCase().includes('moq') || k.toLowerCase().includes('minimum order')) {
+                    const n = Number(v);
+                    if (!isNaN(n) && n > 0)
+                        return n;
+                }
+            }
+            return 0;
+        };
+        const attrMoq = findMoqFromAttrs(product.attributes) || (Array.isArray(product.variants) ? findMoqFromAttrs(product.variants[0]?.attributes) : 0);
+        const reqMoq = Number(req.body.minimumOrderQuantity || req.body.moq) || 0;
+        const finalMoq = Math.max(1, reqMoq || attrMoq || Number(product.minimumOrderQuantity) || 1);
+        product.minimumOrderQuantity = finalMoq;
+        product.moq = finalMoq;
         if (req.body.isStoreProduct !== undefined) {
             product.isStoreProduct = req.body.isStoreProduct === 'true' || req.body.isStoreProduct === true;
         }
         if (req.body.isSubscriptionAvailable !== undefined) {
             product.isSubscriptionAvailable = req.body.isSubscriptionAvailable === 'true' || req.body.isSubscriptionAvailable === true;
         }
-        product.status = 'Pending Review';
-        product.adminPricingApproved = false;
-        product.sellerPricingAccepted = false;
-        product.isActive = false;
-        product.approvedByAdminAt = undefined;
-        product.sellerAcceptedAt = undefined;
-        product.liveAt = undefined;
+        if (req.body.deliveryScope) {
+            product.deliveryScope = req.body.deliveryScope;
+        }
+        if (req.body.isLocalDelivery !== undefined) {
+            product.isLocalDelivery = req.body.isLocalDelivery === 'true' || req.body.isLocalDelivery === true;
+        }
+        if (req.body.isPanIndia !== undefined) {
+            product.isPanIndia = req.body.isPanIndia === 'true' || req.body.isPanIndia === true;
+        }
+        if (!isAdmin) {
+            product.status = 'Vendor Edited';
+            product.isVendorEdit = true;
+            product.vendorEditedAt = new Date();
+            product.adminPricingApproved = false;
+            product.sellerPricingAccepted = false;
+            product.isActive = false;
+            product.approvedByAdminAt = undefined;
+            product.sellerAcceptedAt = undefined;
+            product.liveAt = undefined;
+        }
         await product.save();
         const populatedProduct = await populateProduct(Product_1.default.findById(product._id));
         res.json({
-            message: 'Product updated successfully and sent for review',
+            success: true,
+            message: isAdmin
+                ? 'Product updated successfully.'
+                : 'Product updated successfully and submitted to Admin for review & approval.',
             product: populatedProduct,
         });
     }
@@ -563,20 +867,28 @@ const deleteProduct = async (req, res) => {
             return;
         }
         const authUser = req.user;
-        const isOwner = authUser && String(product.sellerId) === String(authUser.id);
+        const isOwner = authUser && (String(product.sellerId) === String(authUser.id) || String(product.createdBy) === String(authUser.id));
         const isAdmin = authUser && authUser.roles?.includes('admin');
         if (!isOwner && !isAdmin) {
-            res.status(404).json({ success: false, message: 'Resource not found' });
+            res.status(403).json({ success: false, message: 'Not authorized to delete this product' });
             return;
         }
-        if (product.status === 'Live' && !isAdmin) {
-            res.status(400).json({
-                message: 'Live product cannot be deleted directly',
-            });
-            return;
+        // Soft-delete / Archive live products to protect order history integrity and prevent broken references
+        product.isArchived = true;
+        product.isActive = false;
+        product.status = 'Archived';
+        await product.save();
+        // Soft-deactivate associated StoreProduct & Inventory
+        try {
+            const StoreProductModel = mongoose_1.default.model('StoreProduct');
+            const InventoryModel = mongoose_1.default.model('Inventory');
+            await StoreProductModel.updateMany({ productId: product._id }, { $set: { isAvailableForDelivery: false, isAvailableForPickup: false } });
+            await InventoryModel.updateMany({ productId: product._id }, { $set: { availableQuantity: 0 } });
         }
-        await product.deleteOne();
-        res.json({ message: 'Product deleted successfully' });
+        catch (e) {
+            // Ignore model lookup errors if not loaded
+        }
+        res.json({ message: 'Product archived and removed from storefront successfully' });
     }
     catch (error) {
         res.status(500).json({
@@ -593,7 +905,7 @@ const configureAdminPricing = async (req, res) => {
             res.status(404).json({ message: 'Product not found' });
             return;
         }
-        const adminPricing = calculatePricing(req.body);
+        const adminPricing = buildAdminPricing(req.body);
         product.adminPricing = {
             ...adminPricing,
             configuredBy: req.user?._id || req.body.adminId,
@@ -621,6 +933,9 @@ const configureAdminPricing = async (req, res) => {
             }
         }
         product.status = 'Awaiting Seller Approval';
+        product.isVendorEdit = false;
+        product.preEditSnapshot = undefined;
+        product.vendorEditedAt = undefined;
         product.adminPricingApproved = true;
         product.sellerPricingAccepted = false;
         product.approvedByAdminAt = new Date();
@@ -735,6 +1050,9 @@ const rejectProduct = async (req, res) => {
             return;
         }
         product.status = 'Rejected';
+        product.isVendorEdit = false;
+        product.preEditSnapshot = undefined;
+        product.vendorEditedAt = undefined;
         product.isActive = false;
         product.adminPricingApproved = false;
         product.sellerPricingAccepted = false;
@@ -754,6 +1072,44 @@ const rejectProduct = async (req, res) => {
     }
 };
 exports.rejectProduct = rejectProduct;
+const quickApproveVendorEdit = async (req, res) => {
+    try {
+        const product = await Product_1.default.findById(req.params.id);
+        if (!product) {
+            res.status(404).json({ message: 'Product not found' });
+            return;
+        }
+        if (!product.isVendorEdit && product.status !== 'Vendor Edited') {
+            res.status(400).json({ message: 'Product is not a vendor edit' });
+            return;
+        }
+        product.status = 'Live';
+        product.isVendorEdit = false;
+        product.preEditSnapshot = undefined;
+        product.vendorEditedAt = undefined;
+        product.isActive = true;
+        product.adminPricingApproved = true;
+        product.sellerPricingAccepted = true;
+        product.approvedByAdminAt = new Date();
+        product.sellerAcceptedAt = new Date();
+        product.liveAt = new Date();
+        product.moderationStatus = 'approved';
+        await product.save();
+        const populatedProduct = await populateProduct(Product_1.default.findById(product._id));
+        res.json({
+            success: true,
+            message: 'Vendor edit approved. Product is now live.',
+            product: populatedProduct,
+        });
+    }
+    catch (error) {
+        res.status(500).json({
+            message: 'Failed to approve vendor edit',
+            error: error.message,
+        });
+    }
+};
+exports.quickApproveVendorEdit = quickApproveVendorEdit;
 const bulkUpdateProducts = async (req, res) => {
     try {
         const { productIds, updateData } = req.body;
@@ -782,25 +1138,27 @@ exports.bulkUpdateProducts = bulkUpdateProducts;
 const getProductsByVendor = async (req, res) => {
     try {
         const { vendorId } = req.params;
-        // Support querying by vendor.userId if the vendorId passed is vendor._id
-        let querySellerId = vendorId;
-        try {
-            const vendor = await Vendor_1.Vendor.findById(vendorId);
-            if (vendor && vendor.userId) {
-                querySellerId = vendor.userId.toString();
+        // Collect all possible ObjectIds for vendor (_id, userId)
+        const vendorObjectIds = [];
+        if (mongoose_1.default.Types.ObjectId.isValid(vendorId)) {
+            vendorObjectIds.push(new mongoose_1.default.Types.ObjectId(vendorId));
+        }
+        const vendor = await Vendor_1.Vendor.findOne({ $or: [{ _id: vendorId }, { userId: vendorId }] });
+        if (vendor) {
+            if (vendor._id && !vendorObjectIds.some(id => id.toString() === vendor._id.toString())) {
+                vendorObjectIds.push(vendor._id);
+            }
+            if (vendor.userId && !vendorObjectIds.some(id => id.toString() === vendor.userId.toString())) {
+                vendorObjectIds.push(vendor.userId);
             }
         }
-        catch (err) {
-            // Ignore if not a valid ObjectId
-        }
-        // Only return Live + active storefront products for customer-facing storefront view
+        // Query all active and live/approved products belonging to this vendor
         const products = await Product_1.default.find({
             $or: [
-                { sellerId: querySellerId },
-                { sellerId: vendorId }
+                { sellerId: { $in: vendorObjectIds } },
+                { createdBy: { $in: vendorObjectIds } }
             ],
-            isStoreProduct: true,
-            status: 'Live',
+            status: { $in: ['Live', 'Active', 'Approved', 'approved'] },
             isActive: true
         })
             .populate('categoryId', 'name')
@@ -812,13 +1170,13 @@ const getProductsByVendor = async (req, res) => {
                 vendorId: pObj.sellerId,
                 itemName: pObj.name,
                 images: pObj.images && pObj.images.length > 0 ? pObj.images : [pObj.thumbnail].filter(Boolean),
-                afterDiscount: pObj.baseSellingPrice,
-                userPrice: pObj.baseMrp,
+                afterDiscount: pObj.baseSellingPrice || pObj.baseMrp || 0,
+                userPrice: pObj.baseMrp || pObj.baseSellingPrice || 0,
                 category: pObj.categoryId ? {
                     _id: pObj.categoryId._id || pObj.categoryId,
                     name: pObj.categoryId.name || 'Category'
                 } : undefined,
-                subcategory: pObj.subCategoryId?.name || '',
+                subcategory: pObj.subCategoryId?.name || pObj.subcategory || '',
                 status: pObj.status,
                 isSubscriptionAvailable: !!pObj.isSubscriptionAvailable,
                 brand: pObj.brand || 'Fresh & Local',
@@ -834,7 +1192,7 @@ const getProductsByVendor = async (req, res) => {
         console.error('Error fetching products by vendor:', error);
         res.status(500).json({
             success: false,
-            message: 'Server error fetching products by vendor',
+            message: 'Failed to fetch vendor products',
             error: error.message
         });
     }
@@ -938,35 +1296,38 @@ const archiveProduct = async (req, res) => {
 exports.archiveProduct = archiveProduct;
 const getAiProductSuggestions = async (req, res) => {
     try {
-        const { name, categoryId } = req.body;
-        if (!name) {
-            res.status(400).json({ message: 'Product name is required for AI suggestions' });
-            return;
-        }
-        let categoryName = 'Premium Product';
-        if (categoryId && mongoose_1.default.Types.ObjectId.isValid(categoryId)) {
+        const { name, categoryId, categoryName: inputCategoryName, subCategoryName } = req.body;
+        let categoryName = inputCategoryName || 'Premium Quality Product';
+        if (!inputCategoryName && categoryId && mongoose_1.default.Types.ObjectId.isValid(categoryId)) {
             const cat = await Category_1.default.findById(categoryId);
             if (cat)
                 categoryName = cat.name;
         }
-        const desc = `Premium quality ${name} sourced directly from verified local suppliers/farmers. Cleaned, graded, and packed under strict hygiene conditions. Ideal for regular household requirements.`;
-        const teluguDesc = `తాజా మరియు మేలైన ${name}, అధిక నాణ్యత ప్రమాణాలతో ప్యాక్ చేయబడినది. local fresh sourced directly.`;
+        const rawName = name && name.trim().length > 0 ? name.trim() : (subCategoryName || categoryName || 'Fresh Item');
+        const formattedTitle = rawName.split(' ').map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+        const suggestedTitle = formattedTitle.includes('Fresh') || formattedTitle.includes('Premium')
+            ? formattedTitle
+            : `${formattedTitle} - Fresh & Premium Grade`;
+        const desc = `Experience the finest quality ${formattedTitle}. Sourced directly from verified local suppliers and farmers, processed under strict hygiene conditions to preserve natural taste, texture, and freshness. Cleaned, graded, and securely packaged. Ideal for everyday household consumption and commercial catering needs.`;
+        const teluguDesc = `అత్యుత్తమ నాణ్యత కలిగిన ${formattedTitle}, నేరుగా స్థానిక రైతులు మరియు సరఫరాదారుల నుండి సేకరించబడినది. ఎలాంటి రసాయనాలు లేకుండా పరిశుభ్రంగా ప్యాక్ చేయబడింది.`;
         const features = [
-            `100% Organic & Naturally Handpicked`,
+            `100% Authentic & Naturally Sourced`,
             `Quality tested under strict platform criteria`,
-            `Sustainable local sourcing support`
+            `Hygienically sealed to lock in natural freshness`,
+            `Direct local sourcing supporting regional sellers`
         ];
         const keywords = [
-            name.toLowerCase(),
-            `fresh ${name.toLowerCase()}`,
-            `buy ${name.toLowerCase()} online`,
-            `organic ${categoryName.toLowerCase()}`,
-            'apexbee local',
-            'nellore premium foods'
+            formattedTitle.toLowerCase(),
+            `fresh ${formattedTitle.toLowerCase()}`,
+            `buy ${formattedTitle.toLowerCase()} online`,
+            `best ${formattedTitle.toLowerCase()} price`,
+            `${categoryName.toLowerCase()} online delivery`,
+            'apexbee local'
         ].join(', ');
         res.json({
             success: true,
             data: {
+                title: suggestedTitle,
                 description: desc,
                 teluguDescription: `${teluguDesc}\n\nEnglish: ${desc}`,
                 features,
@@ -1059,19 +1420,18 @@ const getBuyAgainProducts = async (req, res) => {
     try {
         const authUser = req.user;
         if (!authUser) {
-            res.status(401).json({ success: false, message: 'Unauthorized access.' });
+            const fallbackProds = await Product_1.default.find({ isActive: true }).limit(6).lean();
+            res.status(200).json({ success: true, products: fallbackProds });
             return;
         }
         const userId = authUser.id || authUser._id;
-        const Order = mongoose_1.default.model('Order');
-        // Find all successfully placed/completed/delivered orders for this user
-        const orders = await Order.find({
+        const pastOrders = await Order_1.default.find({
             customerId: userId,
             orderStatus: { $nin: ['cancelled', 'Cancelled', 'pending_payment', 'Failed', 'Payment Rejected'] }
         }).sort({ createdAt: -1 });
         // Collect product IDs in order of recent purchases
         const productIds = new Set();
-        orders.forEach((order) => {
+        pastOrders.forEach((order) => {
             (order.items || []).forEach((item) => {
                 if (item.productId) {
                     productIds.add(item.productId.toString());
@@ -1080,7 +1440,8 @@ const getBuyAgainProducts = async (req, res) => {
         });
         const idsArray = Array.from(productIds);
         if (idsArray.length === 0) {
-            res.status(200).json({ success: true, products: [] });
+            const fallbackProds = await Product_1.default.find({ isActive: true }).limit(6).lean();
+            res.status(200).json({ success: true, products: fallbackProds });
             return;
         }
         const lat = req.query.lat ? parseFloat(req.query.lat) : null;
@@ -1089,12 +1450,17 @@ const getBuyAgainProducts = async (req, res) => {
         // Fetch the product documents
         const rawProducts = await Product_1.default.find({
             _id: { $in: idsArray },
-            status: 'Live',
             isActive: true
         });
         const sellerIds = rawProducts.map((p) => p.sellerId?._id || p.sellerId).filter(Boolean);
-        const vendors = await Vendor_1.Vendor.find({ userId: { $in: sellerIds } });
-        const vendorMap = new Map(vendors.map((v) => [v.userId.toString(), v]));
+        const vendors = await Vendor_1.Vendor.find({ $or: [{ userId: { $in: sellerIds } }, { _id: { $in: sellerIds } }] });
+        const vendorMap = new Map();
+        vendors.forEach((v) => {
+            if (v.userId)
+                vendorMap.set(v.userId.toString(), v);
+            if (v._id)
+                vendorMap.set(v._id.toString(), v);
+        });
         const mappedProducts = rawProducts.map((p) => {
             const productObj = p.toObject ? p.toObject() : p;
             const sellerIdStr = (p.sellerId?._id || p.sellerId || '').toString();
@@ -1145,3 +1511,198 @@ const getBuyAgainProducts = async (req, res) => {
     }
 };
 exports.getBuyAgainProducts = getBuyAgainProducts;
+const seedProductsForAllCategories = async (req, res) => {
+    try {
+        const categories = await Category_1.default.find({});
+        if (!categories || categories.length === 0) {
+            return res.status(400).json({ success: false, message: 'No categories found in database to seed.' });
+        }
+        const VendorModel = mongoose_1.default.model('Vendor');
+        const StoreProductModel = mongoose_1.default.model('StoreProduct');
+        const InventoryModel = mongoose_1.default.model('Inventory');
+        const CategoryProductSchemaModel = mongoose_1.default.models.CategoryProductSchema || mongoose_1.default.model('CategoryProductSchema');
+        // Find default vendor or admin seller
+        let vendor = await VendorModel.findOne({ status: 'active' });
+        if (!vendor) {
+            vendor = await VendorModel.findOne({});
+        }
+        const sellerId = vendor ? (vendor.userId || vendor._id) : new mongoose_1.default.Types.ObjectId();
+        const storeId = vendor ? vendor._id.toString() : sellerId.toString();
+        let createdCount = 0;
+        const details = [];
+        for (const cat of categories) {
+            let catId = cat._id;
+            let subCatId = null;
+            let childCatId = null;
+            if (cat.level === 1) {
+                catId = cat._id;
+            }
+            else if (cat.level === 2) {
+                subCatId = cat._id;
+                catId = cat.parentId || cat._id;
+            }
+            else if (cat.level === 3) {
+                childCatId = cat._id;
+                subCatId = cat.parentId;
+                if (subCatId) {
+                    const parentSub = await Category_1.default.findById(subCatId);
+                    if (parentSub)
+                        catId = parentSub.parentId || catId;
+                }
+            }
+            // Fetch schema attributes for this category
+            let schemaDoc = await CategoryProductSchemaModel.findOne({ categoryId: cat._id });
+            if (!schemaDoc && subCatId) {
+                schemaDoc = await CategoryProductSchemaModel.findOne({ categoryId: subCatId });
+            }
+            const sampleAttributes = {};
+            if (schemaDoc && Array.isArray(schemaDoc.attributes)) {
+                schemaDoc.attributes.forEach((attr) => {
+                    if (attr.isDisabled)
+                        return;
+                    if (attr.type === 'select' && Array.isArray(attr.options) && attr.options.length > 0) {
+                        sampleAttributes[attr.key] = attr.options[0];
+                    }
+                    else if (attr.type === 'multiselect' && Array.isArray(attr.options) && attr.options.length > 0) {
+                        sampleAttributes[attr.key] = [attr.options[0]];
+                    }
+                    else if (attr.type === 'number') {
+                        sampleAttributes[attr.key] = attr.minValue || 10;
+                    }
+                    else if (attr.type === 'boolean') {
+                        sampleAttributes[attr.key] = true;
+                    }
+                    else {
+                        sampleAttributes[attr.key] = `Sample ${attr.name || attr.key}`;
+                    }
+                });
+            }
+            const productName = `Premium ${cat.name}`;
+            const cleanCatName = cat.name.replace(/[^a-zA-Z0-9]/g, '');
+            const sku = `SEED-${(cleanCatName.substring(0, 4) || 'ITEM').toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
+            // Create Product
+            const product = await Product_1.default.create({
+                name: productName,
+                slug: `seed-${makeSlug(cat.name)}-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+                description: `High quality ${cat.name} with verified category specifications and complete attributes.`,
+                categoryId: catId,
+                subCategoryId: subCatId,
+                subcategoryId: subCatId,
+                childCategoryId: childCatId,
+                createdBy: sellerId,
+                sellerId: sellerId,
+                sellerType: 'vendor',
+                brand: 'ApexBee Prime',
+                sku,
+                thumbnail: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=500&q=80',
+                images: ['https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=500&q=80'],
+                attributes: sampleAttributes,
+                variants: [],
+                baseMrp: 499,
+                discountPercent: 10,
+                baseSellingPrice: 449,
+                stock: 100,
+                status: 'Live',
+                isActive: true,
+                moderationStatus: 'approved',
+                adminPricingApproved: true,
+                sellerPricingAccepted: true,
+                liveAt: new Date(),
+                isStoreProduct: true,
+            });
+            // Create StoreProduct
+            await StoreProductModel.create({
+                storeId,
+                productId: product._id,
+                mrp: 499,
+                sellingPrice: 449,
+                minimumOrderQuantity: 1,
+                preparationTimeMinutes: 15,
+                isActive: true,
+            });
+            // Create Inventory
+            await InventoryModel.create({
+                storeId,
+                productId: product._id,
+                availableStock: 100,
+                reservedStock: 0,
+                damagedStock: 0,
+                lowStockThreshold: 5,
+            });
+            createdCount++;
+            details.push({
+                categoryName: cat.name,
+                level: cat.level,
+                productId: product._id,
+                sku: product.sku,
+                attributesSeeded: Object.keys(sampleAttributes),
+            });
+        }
+        res.status(201).json({
+            success: true,
+            message: `Successfully seeded ${createdCount} products across all categories (Level 1, Subcategories & Child Categories)!`,
+            createdCount,
+            details,
+        });
+    }
+    catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to seed category products', error: error.message });
+    }
+};
+exports.seedProductsForAllCategories = seedProductsForAllCategories;
+const removeSeededProducts = async (req, res) => {
+    try {
+        const { deleteAll, all } = req.query;
+        let filter = {
+            $or: [
+                { sku: /^SEED-/i },
+                { sku: /^DEMO-SEED-/i },
+                { slug: /^seed-/i },
+                { brand: 'ApexBee Prime' },
+                { name: /^Premium /i }
+            ]
+        };
+        if (deleteAll === 'true' || all === 'true') {
+            filter = {};
+        }
+        const seededProducts = await Product_1.default.find(filter).select('_id');
+        const productIds = seededProducts.map((p) => p._id);
+        if (productIds.length === 0) {
+            return res.status(200).json({
+                success: true,
+                message: 'No seeded products found to remove.',
+                removedCount: 0
+            });
+        }
+        const prodRes = await Product_1.default.deleteMany({ _id: { $in: productIds } });
+        const StoreProductModel = mongoose_1.default.models.StoreProduct;
+        if (StoreProductModel) {
+            await StoreProductModel.deleteMany({ productId: { $in: productIds } });
+        }
+        const InventoryModel = mongoose_1.default.models.Inventory;
+        if (InventoryModel) {
+            await InventoryModel.deleteMany({ productId: { $in: productIds } });
+        }
+        const ProductVariantModel = mongoose_1.default.models.ProductVariant;
+        if (ProductVariantModel) {
+            await ProductVariantModel.deleteMany({ productId: { $in: productIds } });
+        }
+        const SearchDocumentModel = mongoose_1.default.models.SearchDocument;
+        if (SearchDocumentModel) {
+            await SearchDocumentModel.deleteMany({ entityId: { $in: productIds } });
+        }
+        res.status(200).json({
+            success: true,
+            message: `Successfully removed ${prodRes.deletedCount} seeded products and associated records.`,
+            removedCount: prodRes.deletedCount
+        });
+    }
+    catch (error) {
+        res.status(500).json({
+            success: false,
+            message: 'Failed to remove seeded products',
+            error: error.message
+        });
+    }
+};
+exports.removeSeededProducts = removeSeededProducts;

@@ -43,6 +43,7 @@ const WalletTransactionSchema = new mongoose_1.Schema({
         type: String,
         required: true,
         enum: [
+            'payment',
             'order_payment',
             'refund',
             'cashback',
@@ -52,6 +53,9 @@ const WalletTransactionSchema = new mongoose_1.Schema({
             'withdrawal_reversal',
             'reward_redemption',
             'admin_adjustment',
+            'adjustment',
+            'subscription_credit',
+            'reversal',
         ],
         index: true,
     },

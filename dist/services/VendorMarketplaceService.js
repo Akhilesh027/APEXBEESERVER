@@ -63,12 +63,9 @@ class VendorMarketplaceService {
                         spherical: true,
                         maxDistance: radiusMeters,
                         query: {
-                            status: "active",
-                            marketplaceStatus: { $nin: ["Suspended", "Hidden", "Rejected"] },
-                            $or: [
-                                { isMarketplaceListed: true },
-                                { isMarketplaceListed: { $exists: false } } // migration safety
-                            ]
+                            status: { $in: ["active", "Approved", "approved"] },
+                            marketplaceStatus: { $in: ["Approved", "Approved & Verified", "active"] },
+                            isMarketplaceListed: true
                         }
                     }
                 },
@@ -115,12 +112,9 @@ class VendorMarketplaceService {
         else if (options.pincode) {
             searchMode = 'pincode';
             const query = {
-                status: "active",
-                marketplaceStatus: { $nin: ["Suspended", "Hidden", "Rejected"] },
-                $or: [
-                    { isMarketplaceListed: true },
-                    { isMarketplaceListed: { $exists: false } }
-                ],
+                status: { $in: ["active", "Approved", "approved"] },
+                marketplaceStatus: { $in: ["Approved", "Approved & Verified", "active"] },
+                isMarketplaceListed: true,
                 pincode: options.pincode.trim()
             };
             if (options.category && options.category !== "ALL") {
@@ -134,12 +128,9 @@ class VendorMarketplaceService {
             searchMode = 'city';
             const cityRegex = new RegExp(options.city.trim(), 'i');
             const query = {
-                status: "active",
-                marketplaceStatus: { $nin: ["Suspended", "Hidden", "Rejected"] },
-                $or: [
-                    { isMarketplaceListed: true },
-                    { isMarketplaceListed: { $exists: false } }
-                ],
+                status: { $in: ["active", "Approved", "approved"] },
+                marketplaceStatus: { $in: ["Approved", "Approved & Verified", "active"] },
+                isMarketplaceListed: true,
                 $and: [{
                         $or: [
                             { district: cityRegex },
@@ -154,6 +145,20 @@ class VendorMarketplaceService {
             }
             const vendors = await Vendor_1.Vendor.find(query).limit(limitNum).lean();
             rawVendors = vendors.map(v => ({ ...v, distanceInKm: null }));
+        }
+        // ── Stage 4: Global active vendors fallback ───────────────────────
+        if (rawVendors.length === 0) {
+            searchMode = 'city';
+            const query = {
+                status: { $in: ["active", "Approved", "approved"] },
+                marketplaceStatus: { $in: ["Approved", "Approved & Verified", "active"] },
+                isMarketplaceListed: true
+            };
+            if (options.category && options.category !== "ALL") {
+                query.categories = options.category;
+            }
+            const vendors = await Vendor_1.Vendor.find(query).limit(limitNum).lean();
+            rawVendors = vendors.map(v => ({ ...v, distanceInKm: 1.5 }));
         }
         // Populate favorites if user is logged in
         let favoriteVendorIds = [];

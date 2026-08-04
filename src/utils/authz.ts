@@ -24,9 +24,11 @@ export const sameObjectId = (a: any, b: any): boolean => {
   return a.toString() === b.toString();
 };
 
-export const requireSelfOrAdmin = (req: any, userId: string): boolean => {
+export const requireSelfOrAdmin = (req: any, targetId: string): boolean => {
   const authUser = req.user;
   if (!authUser) return false;
-  return authUser.id.toString() === userId.toString() || authUser.roles.includes('admin');
+  if (authUser.roles.includes('admin')) return true;
+  if (authUser.id && targetId && authUser.id.toString() === targetId.toString()) return true;
+  return false;
 };
 

@@ -1,4 +1,3 @@
-
 import express from 'express';
 import {
   createProduct,
@@ -11,6 +10,7 @@ import {
   sellerAcceptPricing,
   sellerNegotiatePricing,
   rejectProduct,
+  quickApproveVendorEdit,
   bulkUpdateProducts,
   getProductsByVendor,
   duplicateProduct,
@@ -55,6 +55,7 @@ router.post('/inventory/movements', protect, createInventoryMovement);
 
 // Admin-only pricing actions
 router.patch('/:id/admin-pricing', protect, restrictTo('admin'), configureAdminPricing);
+router.patch('/:id/quick-approve-edit', protect, restrictTo('admin'), quickApproveVendorEdit);
 router.patch('/:id/reject', protect, restrictTo('admin'), rejectProduct);
 
 // Seller-specific pricing acceptance/negotiation

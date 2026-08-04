@@ -39,7 +39,7 @@ const scheduleAutoAssignmentTimeout = (assignmentId: string) => {
       if (assignment && assignment.status === 'Assigned') {
         console.log(`[AutoAssign Timeout] Assignment ${assignmentId} expired without acceptance.`);
         assignment.status = 'Failed';
-        assignment.failedReason = 'Acceptance timeout (30 seconds expired)';
+        assignment.failedReason = 'Acceptance timeout (15 minutes expired)';
         await assignment.save();
 
         const order = await Order.findById(assignment.orderId);
@@ -55,7 +55,7 @@ const scheduleAutoAssignmentTimeout = (assignmentId: string) => {
     } finally {
       activeAssignmentTimeouts.delete(assignmentId);
     }
-  }, 30000); // 30 seconds
+  }, 15 * 60 * 1000); // 15 minutes
 
   activeAssignmentTimeouts.set(assignmentId, timeoutId);
 };
@@ -112,19 +112,22 @@ const autoAssignDeliveryPartner = async (order: any, excludedPartnerIds: string[
         notes: `Auto-assigned delivery partner: ${bestPartner.name} (Score: ${highestScore.toFixed(1)})`
       });
 
-      // Create Assignment
+      // Create Assignment with all required fields
       const assignment = new DeliveryAssignment({
         orderId: order._id,
+        deliveryPartnerId: bestPartner.userId || bestPartner._id,
         vendorId: order.sellerId,
         customerId: order.customerId,
         partnerId: bestPartner._id,
+        partnerSnapshot: {
+          name: bestPartner.name || 'Delivery Partner',
+          phoneMasked: bestPartner.mobile || 'N/A'
+        },
         status: 'Assigned',
         assignedAt: new Date(),
         codCollection: {
           expected: order.totalAmount,
-          collected: 0,
-          submitted: false,
-          verified: false
+          collected: 0
         }
       });
       await assignment.save();
@@ -140,33 +143,51 @@ const autoAssignDeliveryPartner = async (order: any, excludedPartnerIds: string[
 const handleManualAssignment = async (order: any, agentId: string) => {
   try {
     let partner = null;
-    if (mongoose.Types.ObjectId.isValid(agentId)) {
+    if (agentId && mongoose.Types.ObjectId.isValid(agentId)) {
       partner = await DeliveryPartner.findById(agentId);
       if (!partner) {
         partner = await DeliveryPartner.findOne({ userId: agentId });
       }
-    } else {
+    } else if (agentId) {
       partner = await DeliveryPartner.findOne({ userId: agentId });
     }
 
+    const partnerUserId = partner?.userId ? partner.userId.toString() : (partner?._id?.toString() || agentId);
+    const partnerName = partner?.name || 'Delivery Partner';
+    const partnerPhone = partner?.mobile || 'N/A';
+
+    const partnerIdObj = partner ? partner._id : (mongoose.Types.ObjectId.isValid(agentId) ? new mongoose.Types.ObjectId(agentId) : agentId);
+    const deliveryPartnerIdObj = partner?.userId
+      ? partner.userId
+      : (mongoose.Types.ObjectId.isValid(partnerUserId) ? new mongoose.Types.ObjectId(partnerUserId) : partnerIdObj);
+
+    // Upsert DeliveryAssignment with ALL required fields
     let assignment = await DeliveryAssignment.findOne({ orderId: order._id });
     if (!assignment) {
       assignment = new DeliveryAssignment({
         orderId: order._id,
+        deliveryPartnerId: deliveryPartnerIdObj,
+        partnerId: partnerIdObj,
         vendorId: order.sellerId,
         customerId: order.customerId,
-        partnerId: partner ? partner._id : undefined,
+        partnerSnapshot: {
+          name: partnerName,
+          phoneMasked: partnerPhone
+        },
         status: 'Assigned',
         assignedAt: new Date(),
         codCollection: {
-          expected: order.totalAmount,
-          collected: 0,
-          submitted: false,
-          verified: false
+          expected: order.totalAmount || 0,
+          collected: 0
         }
       });
-    } else if (partner) {
-      assignment.partnerId = partner._id;
+    } else {
+      (assignment as any).deliveryPartnerId = deliveryPartnerIdObj;
+      (assignment as any).partnerId = partnerIdObj;
+      assignment.partnerSnapshot = {
+        name: partnerName,
+        phoneMasked: partnerPhone
+      };
       assignment.status = 'Assigned';
       assignment.assignedAt = new Date();
     }
@@ -182,7 +203,6 @@ const handleManualAssignment = async (order: any, agentId: string) => {
         verified: false,
         verificationMethod: 'None'
       };
-      await order.save();
     } else {
       otpCode = order.deliveryVerification.otp;
     }
@@ -192,20 +212,19 @@ const handleManualAssignment = async (order: any, agentId: string) => {
         otp: Math.floor(1000 + Math.random() * 9000).toString(),
         verified: false
       };
-      await order.save();
     }
+
+    order.deliveryAgentId = partnerUserId;
+    await order.save();
 
     console.log(`\n======================================================`);
-    console.log(`[DELIVERY MANUAL ASSIGNMENT]`);
+    console.log(`[DELIVERY MANUAL ASSIGNMENT SUCCESS]`);
     console.log(`Order ID:        ${order._id}`);
     console.log(`Order Number:    ${order.orderNumber}`);
-    console.log(`Assigned Partner: ${partner ? partner.name : 'None'}`);
+    console.log(`Assigned Partner: ${partnerName}`);
+    console.log(`Assignment ID:   ${assignment._id}`);
     console.log(`Generated OTP:   ${otpCode}`);
     console.log(`======================================================\n`);
-
-    if (partner) {
-      await Order.findByIdAndUpdate(order._id, { deliveryAgentId: partner.userId.toString() });
-    }
   } catch (err) {
     console.error('[ManualAssign] Error:', err);
   }
@@ -442,24 +461,42 @@ export const getOrdersByUserId = async (req: Request, res: Response) => {
 
     const total = await Order.countDocuments({ customerId: userId });
     const orders = await Order.find({ customerId: userId })
+      .populate({
+        path: 'items.productId',
+        select: 'name thumbnail images baseSellingPrice userPrice price attributes SKU sku'
+      })
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);
 
     const mappedOrders = orders.map((order: any) => {
+      const rawList = (order.orderItems && order.orderItems.length) ? order.orderItems : (order.items || []);
+      const resolvedItems = rawList.map((it: any) => {
+        const prod = (typeof it.productId === 'object' && it.productId) ? it.productId : null;
+        const prodName = it.name || it.itemName || it.productName || prod?.name || prod?.itemName || 'Product';
+        const prodImg = it.image || it.thumbnail || prod?.thumbnail || prod?.images?.[0] || '/placeholder.svg';
+        const prodPrice = Number(it.price ?? it.sellingPrice ?? prod?.baseSellingPrice ?? prod?.price ?? 0);
+        return {
+          _id: it._id || prod?._id,
+          productId: prod?._id || it.productId,
+          name: prodName,
+          itemName: prodName,
+          price: prodPrice,
+          originalPrice: Number(it.originalPrice || prod?.baseMrp || prodPrice),
+          quantity: Number(it.quantity || 1),
+          itemTotal: prodPrice * Number(it.quantity || 1),
+          image: prodImg,
+          color: it.color || it.selectedColor || 'default',
+          size: it.size || it.selectedSize || 'default',
+          attributes: it.selectedAttributes || it.attributes || prod?.attributes
+        };
+      });
+
       return {
         _id: order._id,
         orderNumber: order.orderNumber,
         createdAt: order.createdAt,
-        orderItems: order.orderItems && order.orderItems.length ? order.orderItems : order.items.map((it: any) => ({
-          productId: it.productId,
-          name: it.productName,
-          itemName: it.productName,
-          price: it.price,
-          quantity: it.quantity,
-          itemTotal: it.price * it.quantity,
-          image: '/placeholder.png'
-        })),
+        orderItems: resolvedItems,
         orderSummary: order.orderSummary || {
           total: order.totalAmount,
           subtotal: order.totalAmount,

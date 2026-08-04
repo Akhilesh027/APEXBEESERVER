@@ -100,12 +100,12 @@ const UserSchema = new Schema<IUser>(
       trim: true,
     },
 
-    passwordHash: { type: String, required: true },
+    passwordHash: { type: String, default: "" },
 
     phone: {
       type: String,
-      required: true,
       unique: true,
+      sparse: true,
       trim: true,
     },
 

@@ -19,10 +19,14 @@ const sameObjectId = (a, b) => {
     return a.toString() === b.toString();
 };
 exports.sameObjectId = sameObjectId;
-const requireSelfOrAdmin = (req, userId) => {
+const requireSelfOrAdmin = (req, targetId) => {
     const authUser = req.user;
     if (!authUser)
         return false;
-    return authUser.id.toString() === userId.toString() || authUser.roles.includes('admin');
+    if (authUser.roles.includes('admin'))
+        return true;
+    if (authUser.id && targetId && authUser.id.toString() === targetId.toString())
+        return true;
+    return false;
 };
 exports.requireSelfOrAdmin = requireSelfOrAdmin;

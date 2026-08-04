@@ -836,6 +836,9 @@ export const verifyKycApplication = async (
           approvedSubcategories: vendorSubCategories,
           subCategories: vendorSubCategories,
           kycStatus: 'Verified',
+          status: 'active',
+          marketplaceStatus: 'Approved',
+          isMarketplaceListed: true,
           gstNumber: app.gstNumber,
           panNumber: app.panNumber,
           documents: existingVendor?.documents?.length
@@ -1387,7 +1390,8 @@ export const getDashboardStats = async (
       revenueChartData,
       categorySalesData,
       orderStatusStats,
-      franchiseGrowthData
+      franchiseGrowthData,
+      commissionSettlementAgg
     ] = await Promise.all([
       User.countDocuments(),
       User.countDocuments({
@@ -1521,6 +1525,10 @@ export const getDashboardStats = async (
             count: "$count"
           }
         }
+      ]),
+      CommissionSettlement.aggregate([
+        { $match: { status: { $ne: "cancelled" } } },
+        { $group: { _id: null, totalPlatformFee: { $sum: "$totalPlatformFee" } } }
       ])
     ]);
 
@@ -1532,7 +1540,8 @@ export const getDashboardStats = async (
 
     // Build platform KPIs
     const platformGMV = totalRevenue || 0;
-    const platformNetRevenue = Number((platformGMV * 0.1).toFixed(2));
+    const settlementFeeFromDocs = commissionSettlementAgg[0]?.totalPlatformFee || 0;
+    const platformNetRevenue = settlementFeeFromDocs > 0 ? settlementFeeFromDocs : Number((platformGMV * 0.1).toFixed(2));
     const settlementLiability = totalAvailable || 0;
     const riskAlerts = (await Order.countDocuments({ orderStatus: "Payment Rejected" })) +
                        (await BusinessApplication.countDocuments({ status: "rejected" }));
@@ -1591,6 +1600,7 @@ export const getDashboardStats = async (
         activeDistricts: uniqueDistricts.length,
         activeMandals: uniqueMandals.length,
         totalRevenue,
+        totalPlatformFee: platformNetRevenue,
         totalOrders,
         pendingProducts,
         pendingPayments,

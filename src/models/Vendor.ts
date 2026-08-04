@@ -352,5 +352,8 @@ VendorSchema.pre("save", function (next) {
 });
 
 VendorSchema.index({ location: "2dsphere" });
+VendorSchema.index({ userId: 1 });
+VendorSchema.index({ status: 1 });
+VendorSchema.index({ businessName: 1 });
 
 export const Vendor = mongoose.model<IVendor>("Vendor", VendorSchema);

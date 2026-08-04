@@ -40,9 +40,9 @@ const ProductSchema = new mongoose_1.Schema({
     slug: { type: String, required: true, unique: true, lowercase: true, trim: true },
     description: { type: String, required: true, default: '' },
     categoryId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Category', required: true },
-    subcategoryId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Subcategory', required: true },
+    subcategoryId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Subcategory', required: false },
     brandId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Brand' },
-    productType: { type: String, enum: ['physical'], default: 'physical', required: true },
+    productType: { type: String, enum: ['physical'], default: 'physical', required: false },
     thumbnailAssetId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'MediaAsset' },
     galleryAssetIds: [{ type: mongoose_1.Schema.Types.ObjectId, ref: 'MediaAsset' }],
     specifications: { type: mongoose_1.Schema.Types.Mixed, default: {} },
@@ -51,11 +51,11 @@ const ProductSchema = new mongoose_1.Schema({
     moderationStatus: {
         type: String,
         enum: ['draft', 'pending', 'approved', 'rejected'],
-        default: 'draft',
-        required: true,
+        default: 'pending',
+        required: false,
     },
     isActive: { type: Boolean, default: true },
-    createdBy: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true },
+    createdBy: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: false },
     approvedBy: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User' },
     sellerId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User' },
     sellerType: { type: String },
@@ -75,6 +75,9 @@ const ProductSchema = new mongoose_1.Schema({
     attributes: { type: mongoose_1.Schema.Types.Mixed },
     isStoreProduct: { type: Boolean, default: false },
     isSubscriptionAvailable: { type: Boolean, default: false },
+    deliveryScope: { type: String, enum: ['local', 'pan_india', 'both'], default: 'local' },
+    isLocalDelivery: { type: Boolean, default: true },
+    isPanIndia: { type: Boolean, default: false },
     adminPricingApproved: { type: Boolean, default: false },
     sellerPricingAccepted: { type: Boolean, default: false },
     approvedByAdminAt: { type: Date },
@@ -85,6 +88,28 @@ const ProductSchema = new mongoose_1.Schema({
     rejectionReason: { type: String },
     badges: [{ type: String }],
     isArchived: { type: Boolean, default: false },
+    // Catalogue Master Seed Metadata
+    catalogueSource: { type: String, enum: ['system', 'vendor', 'migration'], default: 'vendor' },
+    seedKey: { type: String, sparse: true },
+    isCatalogueMaster: { type: Boolean, default: false },
+    seedVersion: { type: Number, default: 1 },
+    schemaVersion: { type: Number, default: 1 },
+    productMode: { type: String, default: 'standard' },
+    keywords: [{ type: String }],
+    tags: [{ type: String }],
+    supportedUnits: [{ type: String }],
+    inventoryRules: { type: mongoose_1.Schema.Types.Mixed, default: {} },
+    deliveryRules: { type: mongoose_1.Schema.Types.Mixed, default: {} },
+    complianceRules: { type: mongoose_1.Schema.Types.Mixed, default: {} },
+    customizationRules: { type: mongoose_1.Schema.Types.Mixed, default: {} },
+    mediaRules: { type: mongoose_1.Schema.Types.Mixed, default: {} },
+    wholesaleRules: { type: mongoose_1.Schema.Types.Mixed, default: {} },
+    serviceRules: { type: mongoose_1.Schema.Types.Mixed, default: {} },
+    minimumOrderQuantity: { type: Number, default: 1 },
+    moq: { type: Number, default: 1 },
+    isVendorEdit: { type: Boolean, default: false },
+    vendorEditedAt: { type: Date },
+    preEditSnapshot: { type: mongoose_1.Schema.Types.Mixed },
 }, { timestamps: true });
 ProductSchema.index({ name: 1 });
 ProductSchema.index({ slug: 1 });
@@ -92,5 +117,7 @@ ProductSchema.index({ categoryId: 1 });
 ProductSchema.index({ subcategoryId: 1 });
 ProductSchema.index({ moderationStatus: 1 });
 ProductSchema.index({ isActive: 1 });
+ProductSchema.index({ seedKey: 1 }, { unique: true, sparse: true });
+ProductSchema.index({ catalogueSource: 1 });
 exports.Product = mongoose_1.default.model('Product', ProductSchema);
 exports.default = exports.Product;

@@ -209,7 +209,31 @@ export const adminDeleteReview = async (req: Request, res: Response) => {
 
     res.status(200).json({ success: true, message: 'Review deleted successfully' });
   } catch (error: any) {
-    console.error('Delete review error:', error);
+    console.error('Admin delete review error:', error);
     res.status(500).json({ success: false, message: 'Server error deleting review', error: error.message });
+  }
+};
+
+// 8. GET /api/reviews/user/my - Get reviews submitted by logged in user
+export const getMyUserReviews = async (req: Request, res: Response) => {
+  try {
+    const customerId = (req as any).user?._id || (req as any).user?.id;
+    if (!customerId) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+    const reviews = await ProductReview.find({ customerId })
+      .populate('productId', 'name title thumbnail image')
+      .sort({ createdAt: -1 });
+
+    const mapped = reviews.map((r: any) => {
+      const obj = r.toObject();
+      obj.productName = r.productId?.name || r.productId?.title || 'ApexBee Product';
+      return obj;
+    });
+
+    res.status(200).json({ success: true, reviews: mapped });
+  } catch (error: any) {
+    console.error('Get my reviews error:', error);
+    res.status(500).json({ success: false, message: 'Server error fetching user reviews', error: error.message });
   }
 };

@@ -28,6 +28,7 @@ import {
   getVendorReportsHeatmap,
   getVendorReportsComparison,
   getVendorDeliveryZones,
+  getVendorMarketDemand,
   updateCustomerNote,
   getCustomerNote
 } from '../controllers/vendorController';
@@ -58,6 +59,7 @@ router.put('/profile/:userId/document', protect, updateVendorDocument);
 router.post('/profile/:userId/request-document', protect, requestVendorDocument);
 router.get('/dashboard-stats/:userId', protect, getVendorDashboardStats);
 router.get('/dashboard/analytics/:userId', protect, getVendorDashboardAnalytics);
+router.get('/market-demand/:userId', protect, getVendorMarketDemand);
 router.get('/reports/export/:userId', protect, exportVendorReport);
 router.get('/reports/heatmap/:userId', protect, getVendorReportsHeatmap);
 router.get('/reports/comparison/:userId', protect, getVendorReportsComparison);

@@ -22,6 +22,12 @@ const requiredEnv = (name) => {
     }
     return value.trim();
 };
+if (['production', 'staging'].includes(process.env.NODE_ENV || '')) {
+    if (!process.env.RAZORPAY_WEBHOOK_SECRET && !process.env.PAYMENT_WEBHOOK_SECRET) {
+        console.error('[CONFIG ERROR] Missing mandatory RAZORPAY_WEBHOOK_SECRET or PAYMENT_WEBHOOK_SECRET environment variable for production/staging');
+        process.exit(1);
+    }
+}
 exports.env = {
     NODE_ENV: process.env.NODE_ENV || 'development',
     PROCESS_TYPE: process.env.PROCESS_TYPE || 'combined', // 'api', 'worker', 'combined'

@@ -15,6 +15,7 @@ import {
   getCoupons,
   deleteCoupon,
   updateCoupon,
+  validateCoupon,
   createSupportTicket,
   getSupportTickets,
   replySupportTicket,
@@ -42,8 +43,9 @@ router.delete("/campaigns/:id", deleteCampaign);
 
 
 // Coupons
-router.get("/coupons", protect, getCoupons);
+router.get("/coupons", getCoupons);
 router.post("/coupons", protect, createCoupon);
+router.post("/coupons/validate", validateCoupon);
 router.put("/coupons/:id", protect, updateCoupon);
 router.delete("/coupons/:id", protect, deleteCoupon);
 

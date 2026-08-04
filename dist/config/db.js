@@ -12,7 +12,13 @@ const ServiceProvider_1 = require("../models/ServiceProvider");
 const env_1 = require("./env");
 const migrateServiceProviders = async () => {
     try {
-        const providers = await ServiceProvider_1.ServiceProvider.find({ providerCode: { $exists: false } });
+        const providers = await ServiceProvider_1.ServiceProvider.find({
+            $or: [
+                { providerCode: { $exists: false } },
+                { providerCode: null },
+                { providerCode: '' }
+            ]
+        });
         let updatedCount = 0;
         for (const sp of providers) {
             if (!sp.providerCode) {
@@ -83,26 +89,30 @@ const migrateServiceProviderKycs = async () => {
 };
 const seedAdmin = async () => {
     try {
-        const adminEmail = 'admin@apexmarket.in';
-        const existingAdmin = await User_1.User.findOne({ email: adminEmail });
-        if (!existingAdmin) {
-            const salt = await bcryptjs_1.default.genSalt(10);
-            const passwordHash = await bcryptjs_1.default.hash('admin123', salt);
-            const adminUser = new User_1.User({
-                name: 'Super Admin',
-                email: adminEmail,
-                passwordHash,
-                phone: '9999999999',
-                mobile: '9999999999',
-                roles: ['admin', 'customer'],
-                status: 'active',
-                isVerified: true
+        const adminAccounts = [
+            { email: 'admin@apexmarket.in', name: 'Super Admin', phone: '9999999999' },
+            { email: 'admin@apexbee.com', name: 'ApexBee Admin', phone: '9999999998' }
+        ];
+        for (const acc of adminAccounts) {
+            const existingAdmin = await User_1.User.findOne({
+                $or: [{ email: acc.email }, { phone: acc.phone }]
             });
-            await adminUser.save();
-            console.log('Super Admin user seeded successfully! (admin@apexmarket.in / admin123)');
-        }
-        else {
-            console.log('Super Admin user exists or already seeded.');
+            if (!existingAdmin) {
+                const salt = await bcryptjs_1.default.genSalt(10);
+                const passwordHash = await bcryptjs_1.default.hash('admin123', salt);
+                const adminUser = new User_1.User({
+                    name: acc.name,
+                    email: acc.email,
+                    passwordHash,
+                    phone: acc.phone,
+                    mobile: acc.phone,
+                    roles: ['admin', 'customer'],
+                    status: 'active',
+                    isVerified: true
+                });
+                await adminUser.save();
+                console.log(`[Seed] ${acc.name} user created! (${acc.email} / admin123)`);
+            }
         }
     }
     catch (error) {
@@ -138,9 +148,24 @@ const connectDB = async () => {
         });
         console.log(`MongoDB Atlas connected successfully to database "${dbName}"!`);
         if (process.env.NODE_APP_INSTANCE === undefined || process.env.NODE_APP_INSTANCE === '0') {
-            await seedAdmin();
-            await migrateServiceProviders();
-            await migrateServiceProviderKycs();
+            try {
+                await seedAdmin();
+            }
+            catch (e) {
+                console.error('seedAdmin non-fatal error:', e.message);
+            }
+            try {
+                await migrateServiceProviders();
+            }
+            catch (e) {
+                console.error('migrateServiceProviders non-fatal error:', e.message);
+            }
+            try {
+                await migrateServiceProviderKycs();
+            }
+            catch (e) {
+                console.error('migrateServiceProviderKycs non-fatal error:', e.message);
+            }
         }
         else {
             console.log(`[Database] Skipping admin/service provider seeding/migrations on clustered instance ${process.env.NODE_APP_INSTANCE}`);

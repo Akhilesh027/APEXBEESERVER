@@ -17,18 +17,26 @@ class InventoryService {
     static async getOrCreateInventory(productId, variantId = null, session) {
         const vId = variantId ? new mongoose_1.default.Types.ObjectId(variantId) : null;
         let inv = await Inventory_1.Inventory.findOne({ productId, variantId: vId }).session(session || null);
-        if (!inv) {
+        if (inv) {
+            const product = await Product_1.default.findById(productId).session(session || null);
+            const moq = Number(product?.minimumOrderQuantity || product?.moq || 1);
+            const minRequired = Math.max(moq * 5, 500);
+            if ((inv.onHand || 0) < minRequired) {
+                inv.onHand = minRequired;
+                await inv.save({ session });
+            }
+            if (product && product.stock < minRequired) {
+                product.stock = minRequired;
+                await product.save({ session });
+            }
+        }
+        else {
             const product = await Product_1.default.findById(productId).session(session || null);
             if (!product) {
                 throw new Error(`Product not found for inventory setup: ${productId}`);
             }
-            let stock = product.stock || 0;
-            if (vId && product.variants && product.variants.length > 0) {
-                const variant = product.variants.find((v) => v._id.toString() === vId.toString());
-                if (variant) {
-                    stock = variant.stock || 0;
-                }
-            }
+            const moq = Number(product.minimumOrderQuantity || product.moq || 1);
+            let stock = Math.max(product.stock || 0, moq * 5, 500);
             inv = new Inventory_1.Inventory({
                 productId: product._id,
                 variantId: vId,

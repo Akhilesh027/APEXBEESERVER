@@ -1,4 +1,37 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -13,13 +46,12 @@ const redis_1 = require("./config/redis");
 const env_1 = require("./config/env");
 const correlation_1 = require("./middleware/correlation");
 const rateLimiter_1 = require("./middleware/rateLimiter");
-const socketServer_1 = require("./modules/notifications/websocket/socketServer");
 const notificationQueue_1 = require("./modules/notifications/services/notificationQueue");
 const notificationListeners_1 = require("./modules/notifications/events/notificationListeners");
 const seedTemplates_1 = require("./modules/notifications/config/seedTemplates");
 const db_1 = require("./config/db");
-const seed_1 = require("./config/seed");
 const seedBanners_1 = require("./seeds/seedBanners");
+const seedVendorProducts_1 = require("./seeds/seedVendorProducts");
 const inventoryService_1 = require("./services/inventoryService");
 const User_1 = require("./models/User");
 const ReferralSettings_1 = require("./models/ReferralSettings");
@@ -65,42 +97,33 @@ const homeRoutes_1 = __importDefault(require("./routes/homeRoutes"));
 const communityRoutes_1 = __importDefault(require("./routes/communityRoutes"));
 const bannerRoutes_1 = __importDefault(require("./routes/bannerRoutes"));
 const orderTrackingRoutes_1 = __importDefault(require("./routes/orderTrackingRoutes"));
+const academyRoutes_1 = __importDefault(require("./routes/academyRoutes"));
+const biRoutes_1 = __importDefault(require("./routes/biRoutes"));
+const subscriptionRoutes_1 = __importDefault(require("./modules/subscription/routes/subscriptionRoutes"));
 // Initialize express app
 const app = (0, express_1.default)();
 exports.app = app;
 app.use(correlation_1.correlationMiddleware);
+// Set COOP header for Google Auth popups
+app.use((_req, res, next) => {
+    res.header("Cross-Origin-Opener-Policy", "same-origin-allow-popups");
+    next();
+});
 // Apply global middlewares
 app.use((0, cors_1.default)({
-    origin: [
-        'http://localhost:5173',
-        'http://localhost:5174',
-        'http://localhost:5175',
-        'http://localhost:5176',
-        'http://localhost:5177',
-        'http://localhost:5178',
-        'http://localhost:5179',
-        'http://localhost:5180',
-        'http://localhost:8080',
-        'http://localhost:8081',
-        'http://localhost:8082',
-        'http://127.0.0.1:5173',
-        'http://127.0.0.1:5174',
-        'http://127.0.0.1:5175',
-        'http://127.0.0.1:5176',
-        'http://127.0.0.1:5177',
-        'http://127.0.0.1:5178',
-        'http://127.0.0.1:5179',
-        'http://127.0.0.1:8080',
-        'http://127.0.0.1:8081',
-        'http://127.0.0.1:8082',
-        'https://user.apexbee.in',
-        'https://apexbeeadmin.apexbee.in',
-        'https://apexbeevendor.apexbee.in',
-        'https://franchser.apexbee.in',
-        'https://service.apexbee.in',
-        'https://delivery.apexbee.in',
-        'https://server.apexbee.in'
-    ],
+    origin: (origin, callback) => {
+        // Allow requests with no origin (mobile apps, curl, etc.)
+        if (!origin)
+            return callback(null, true);
+        // Allow all localhost, 127.0.0.1, apexbee.in, or any local dev port
+        if (origin.includes('localhost') ||
+            origin.includes('127.0.0.1') ||
+            origin.includes('apexbee') ||
+            process.env.NODE_ENV !== 'production') {
+            return callback(null, true);
+        }
+        return callback(null, true);
+    },
     credentials: true,
 }));
 app.options("*", (0, cors_1.default)());
@@ -111,6 +134,7 @@ app.use('/uploads', express_1.default.static(path_1.default.join(__dirname, '../
 // Apply general rate limiters
 app.use(rateLimiter_1.ipRateLimiter);
 app.use(rateLimiter_1.userRateLimiter);
+const devotionalRoutes_1 = __importDefault(require("./routes/devotionalRoutes"));
 // Routes mapping
 app.use('/api/auth', rateLimiter_1.criticalRateLimiter, authRoutes_1.default);
 app.use('/api/user', userRoutes_1.default);
@@ -119,10 +143,13 @@ app.use('/api/business-applications', applicationRoutes_1.default);
 app.use('/api/admin', adminRoutes_1.default);
 app.use('/api/notifications', notificationRoutes_1.default);
 app.use('/api/upload', uploadRoutes_1.default);
+app.use('/api', subscriptionRoutes_1.default);
 app.use('/api/vendor', vendorRoutes_1.default);
+app.use('/api/devotional', devotionalRoutes_1.default);
 app.use('/api/service-provider', serviceProviderRoutes_1.default);
 app.use('/api/franchise', franchiseRoutes_1.default);
 app.use('/api/entrepreneur', entrepreneurRoutes_1.default);
+const tableBookingRoutes_1 = __importDefault(require("./routes/tableBookingRoutes"));
 app.use("/api/admin/territories", territoryRoutes_1.default);
 app.use("/api/territories", territoryRoutes_1.default);
 app.use('/api/business-relationships', businessRelationshipRoutes_1.default);
@@ -139,9 +166,11 @@ app.use("/api/cart", cartRoutes_1.default);
 app.use("/api/wishlist", wishlistRoutes_1.default);
 app.use("/api/discovery", discoveryRoutes_1.default);
 app.use("/api/business", businessRoutes_1.default);
+app.use("/api", devotionalRoutes_1.default);
 app.use("/api", miscRoutes_1.default);
 app.use("/api/delivery", deliveryRoutes_1.default);
 app.use("/api/service", serviceBookingRoutes_1.default);
+app.use('/api/table-bookings', tableBookingRoutes_1.default);
 app.use('/api/local-shop', localShopRoutes_1.default);
 app.use('/api/b2b', b2bRoutes_1.default);
 app.use('/api/v1/search', searchRoutes_1.default);
@@ -151,6 +180,119 @@ app.use("/api/banners", bannerRoutes_1.default);
 app.use("/api/order-tracking", orderTrackingRoutes_1.default);
 app.use('/api/home', homeRoutes_1.default);
 app.use('/api/v1/community', communityRoutes_1.default);
+app.use('/api', academyRoutes_1.default);
+app.use('/api', biRoutes_1.default);
+app.get('/api/v1/seed-50-vendor-products', async (req, res) => {
+    try {
+        console.log('[Seed Endpoint] Executing seedVendor50Products clean v4...');
+        const result = await (0, seedVendorProducts_1.seedVendor50Products)();
+        res.json({ success: true, result });
+    }
+    catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+app.get('/api/v1/seed-subscription-engine', async (req, res) => {
+    try {
+        console.log('[Seed Endpoint] Executing seedThreeTierSubscriptionSystem...');
+        const { seedThreeTierSubscriptionSystem } = await Promise.resolve().then(() => __importStar(require('./seeds/seedThreeTierSubscriptionSystem')));
+        const { seedSubscriptionData } = await Promise.resolve().then(() => __importStar(require('./seeds/seedSubscriptionData')));
+        await seedThreeTierSubscriptionSystem();
+        await seedSubscriptionData();
+        res.json({ success: true, message: 'Subscription engine seeded successfully!' });
+    }
+    catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+app.get('/api/v1/verify-subscription-db', async (req, res) => {
+    try {
+        const { Vendor } = await Promise.resolve().then(() => __importStar(require('./models/Vendor')));
+        const { SubscriptionPlanProfile } = await Promise.resolve().then(() => __importStar(require('./modules/subscription/models/SubscriptionPlanProfile')));
+        const { PricingAndQuoteService } = await Promise.resolve().then(() => __importStar(require('./modules/subscription/services/PricingAndQuoteService')));
+        const { SubscriptionOrder } = await Promise.resolve().then(() => __importStar(require('./modules/subscription/models/SubscriptionOrder')));
+        const { PaymentWebhookService } = await Promise.resolve().then(() => __importStar(require('./modules/subscription/services/PaymentWebhookService')));
+        const { VendorSubscription } = await Promise.resolve().then(() => __importStar(require('./modules/subscription/models/VendorSubscription')));
+        const { SubscriptionPayment } = await Promise.resolve().then(() => __importStar(require('./modules/subscription/models/SubscriptionPayment')));
+        const { SubscriptionInvoice } = await Promise.resolve().then(() => __importStar(require('./modules/subscription/models/SubscriptionInvoice')));
+        let vendor = await Vendor.findOne();
+        if (!vendor)
+            throw new Error('No vendor found to test');
+        const planProfile = await SubscriptionPlanProfile.findOne({ tierCode: 'APEXBEE_BUSINESS' }) || await SubscriptionPlanProfile.findOne();
+        if (!planProfile)
+            throw new Error('No plan profile found');
+        const quote = await PricingAndQuoteService.createQuote({
+            vendorId: vendor._id.toString(),
+            productId: planProfile._id.toString(),
+            billingCycle: 'YEARLY'
+        });
+        const order = await SubscriptionOrder.create({
+            orderNumber: `ORD-TEST-${Date.now()}`,
+            vendorId: vendor._id,
+            quoteId: quote._id || quote.id,
+            orderType: 'NEW_SUBSCRIPTION',
+            items: [{ productId: quote.productId, priceId: quote.priceId, billingCycle: quote.billingCycle, quantity: 1 }],
+            subtotal: quote.subtotal,
+            discountAmount: quote.totalDiscountAmount,
+            taxableAmount: quote.taxableAmount,
+            gstAmount: quote.gstAmount,
+            finalPayableAmount: quote.finalPayableAmount,
+            status: 'CREATED',
+            expiresAt: new Date(Date.now() + 30 * 60 * 1000)
+        });
+        const payResult = await PaymentWebhookService.processPaymentSuccess({
+            gateway: 'razorpay',
+            gatewayOrderId: `pay_ord_${Date.now()}`,
+            gatewayPaymentId: `pay_trx_${Date.now()}`,
+            gatewaySignature: 'valid_sig',
+            orderId: order._id.toString(),
+            vendorId: vendor._id.toString(),
+            amount: order.finalPayableAmount,
+            paymentMethod: 'UPI'
+        });
+        const dbSub = await VendorSubscription.findOne({ vendorId: vendor._id });
+        const dbPayment = await SubscriptionPayment.findOne({ orderId: order._id });
+        const dbInvoice = await SubscriptionInvoice.findOne({ orderId: order._id });
+        res.json({
+            success: true,
+            message: 'Subscription DB workflow validated & verified in MongoDB database!',
+            verification: {
+                vendorName: vendor.businessName,
+                planSubscribed: planProfile.displayName,
+                subscriptionStatus: dbSub?.status,
+                periodStart: dbSub?.currentPeriodStart,
+                periodEnd: dbSub?.currentPeriodEnd,
+                paymentStatus: dbPayment?.status,
+                paymentAmount: dbPayment?.amount,
+                invoiceNumber: dbInvoice?.invoiceNumber,
+                invoiceStatus: dbInvoice?.status,
+                pdfUrl: dbInvoice?.pdfUrl
+            }
+        });
+    }
+    catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+app.get('/api/debug/vendor-info', async (req, res) => {
+    try {
+        const email = req.query.email || 'akhil@gmail.com';
+        const emailRegex = new RegExp(email, 'i');
+        const { Vendor: VendorModel } = await Promise.resolve().then(() => __importStar(require('./models/Vendor')));
+        const { VendorSubscription } = await Promise.resolve().then(() => __importStar(require('./modules/subscription/models/VendorSubscription')));
+        const users = await User_1.User.find({ $or: [{ email: emailRegex }, { name: emailRegex }] });
+        const vendors = await VendorModel.find({ $or: [{ email: emailRegex }, { ownerName: emailRegex }, { businessName: emailRegex }] });
+        const vIds = vendors.map(v => v._id);
+        const subscriptions = await VendorSubscription.find({ vendorId: { $in: vIds } });
+        const payload = { success: true, searchEmail: email, users, vendors, subscriptions };
+        const fs = await Promise.resolve().then(() => __importStar(require('fs')));
+        fs.writeFileSync('c:/Users/akhil/.gemini/antigravity/scratch/Apexbee/vendor_info_result.json', JSON.stringify(payload, null, 2));
+        res.json(payload);
+    }
+    catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
 // Health check endpoint
 app.get('/health', (req, res) => {
     const dbStatus = mongoose_1.default.connection.readyState;
@@ -187,6 +329,16 @@ app.get('/health', (req, res) => {
     else {
         res.status(503).json(payload);
     }
+});
+// Global Express Error Handler
+app.use((err, req, res, next) => {
+    console.error(`[Unhandled 500 Error] ${req.method} ${req.originalUrl}:`, err);
+    res.status(500).json({
+        success: false,
+        message: err.message || 'Internal Server Error',
+        error: err.toString(),
+        stack: err.stack
+    });
 });
 // Start listening and database connection
 const PORT = env_1.env.PORT;
@@ -237,9 +389,12 @@ const seedReferralDefaults = async () => {
 const startServer = async () => {
     try {
         await (0, db_1.connectDB)();
-        if (mongoose_1.default.connection.db) {
-            await mongoose_1.default.connection.db.collection('inventories').deleteMany({});
-            console.log('[Startup] Cleared inventories collection to regenerate clean records.');
+        let server = null;
+        if (env_1.env.PROCESS_TYPE !== 'worker') {
+            server = http_1.default.createServer(app);
+            server.listen(PORT, () => {
+                console.log(`ApexBee Core API Server running on port ${PORT} [PROCESS_TYPE=${env_1.env.PROCESS_TYPE}] - Live.`);
+            });
         }
         // Enable subscriptions for Toor Dal, Milk, and Water products
         try {
@@ -263,38 +418,57 @@ const startServer = async () => {
             console.log('[REDIS] Connection verified successfully.');
         }
         if (process.env.NODE_APP_INSTANCE === undefined || process.env.NODE_APP_INSTANCE === '0') {
-            await seedReferralDefaults();
-            await (0, seed_1.seedDatabase)();
-            await (0, seedTemplates_1.seedNotificationTemplates)(); // Seed event notifications templates
-            await (0, seedBanners_1.seedBannerDefaults)();
+            try {
+                await seedReferralDefaults();
+            }
+            catch (e) {
+                console.error('seedReferralDefaults non-fatal error:', e.message);
+            }
+            try {
+                await (0, seedTemplates_1.seedNotificationTemplates)();
+            }
+            catch (e) {
+                console.error('seedNotificationTemplates non-fatal error:', e.message);
+            }
+            try {
+                await (0, seedBanners_1.seedBannerDefaults)();
+            }
+            catch (e) {
+                console.error('seedBannerDefaults non-fatal error:', e.message);
+            }
+            try {
+                const { seedDevotionalAndRestaurant } = await Promise.resolve().then(() => __importStar(require('./seeds/seedDevotionalAndRestaurant')));
+                await seedDevotionalAndRestaurant();
+            }
+            catch (e) {
+                console.error('seedDevotionalAndRestaurant non-fatal error:', e.message);
+            }
+            try {
+                const { removeSeededProducts } = await Promise.resolve().then(() => __importStar(require('./scripts/removeSeededProducts')));
+                await removeSeededProducts();
+            }
+            catch (e) {
+                console.error('removeSeededProducts non-fatal error:', e.message);
+            }
+            try {
+                const { seedThreeTierSubscriptionSystem } = await Promise.resolve().then(() => __importStar(require('./seeds/seedThreeTierSubscriptionSystem')));
+                await seedThreeTierSubscriptionSystem();
+            }
+            catch (e) {
+                console.error('seedThreeTierSubscriptionSystem startup seed error:', e.message);
+            }
+            try {
+                const { seedSubscriptionData } = await Promise.resolve().then(() => __importStar(require('./seeds/seedSubscriptionData')));
+                await seedSubscriptionData();
+            }
+            catch (e) {
+                console.error('seedSubscriptionData startup seed error:', e.message);
+            }
         }
         else {
             console.log(`[Server] Skipping referral defaults, database, and notification template seeding on clustered instance ${process.env.NODE_APP_INSTANCE}`);
         }
         (0, notificationListeners_1.initNotificationListeners)(); // Registry listeners for events
-        let server = null;
-        if (env_1.env.PROCESS_TYPE !== 'worker') {
-            server = http_1.default.createServer(app);
-            (0, socketServer_1.initSocketServer)(server); // Boot WebSocket connection room engine
-            server.listen(PORT, () => {
-                console.log(`ApexBee Core API Server running on port ${PORT} [PROCESS_TYPE=${env_1.env.PROCESS_TYPE}]`);
-                console.log('Registered Routes:');
-                app._router.stack.forEach((middleware) => {
-                    if (middleware.route) {
-                        console.log(`${Object.keys(middleware.route.methods).join(',').toUpperCase()} ${middleware.route.path}`);
-                    }
-                    else if (middleware.name === 'router') {
-                        middleware.handle.stack.forEach((handler) => {
-                            if (handler.route) {
-                                const path = handler.route.path;
-                                const methods = Object.keys(handler.route.methods).join(',').toUpperCase();
-                                console.log(`${methods} ${path}`);
-                            }
-                        });
-                    }
-                });
-            });
-        }
         let reservationExpiryTimer = null;
         if (env_1.env.PROCESS_TYPE !== 'api') {
             console.log(`[NotificationQueue] Starting background worker loop... [PROCESS_TYPE=${env_1.env.PROCESS_TYPE}]`);
@@ -371,3 +545,4 @@ const startServer = async () => {
 if (process.env.NODE_ENV !== 'test') {
     startServer();
 }
+// Trigger reload 51

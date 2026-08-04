@@ -8,6 +8,7 @@ router.post('/send-otp', authController_1.sendOtp);
 router.post('/verify-otp', authController_1.verifyOtp);
 router.post('/register', authController_1.register);
 router.post('/login', authController_1.login);
+router.post('/google', authController_1.googleAuth);
 router.get('/me', auth_1.protect, authController_1.getMe);
 router.post('/change-password', auth_1.protect, authController_1.changePassword);
 exports.default = router;

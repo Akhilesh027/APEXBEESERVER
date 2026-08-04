@@ -6,7 +6,8 @@ import {
   getVendorProductReviews,
   getAllReviews,
   adminUpdateReview,
-  adminDeleteReview
+  adminDeleteReview,
+  getMyUserReviews
 } from '../controllers/productReviewController';
 import { protect, restrictTo } from '../middleware/auth';
 
@@ -18,6 +19,7 @@ router.get('/vendor/:vendorId', getVendorProductReviews);
 
 // Protected routes for writing / viewing personal reviews
 router.post('/', protect, submitProductReview);
+router.get('/user/my', protect, getMyUserReviews);
 router.get('/order/:orderId/user/:userId', protect, getOrderProductReviews);
 
 // Admin-only moderation routes

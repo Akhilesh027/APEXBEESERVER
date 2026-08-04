@@ -6,6 +6,7 @@ const auth_1 = require("../middleware/auth");
 const router = (0, express_1.Router)();
 // User Referral Endpoints
 router.get("/me", auth_1.protect, referralController_1.getMyReferralInfo);
+router.get("/my", auth_1.protect, referralController_1.getMyReferralInfo);
 router.get("/dashboard", auth_1.protect, referralController_1.getReferralDashboard);
 router.get("/history", auth_1.protect, referralController_1.getReferralHistory);
 router.get("/network", auth_1.protect, referralController_1.getReferralNetwork);

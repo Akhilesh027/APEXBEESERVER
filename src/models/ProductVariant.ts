@@ -2,15 +2,11 @@ import mongoose, { Document, Schema } from 'mongoose';
 
 export interface IProductVariant extends Document {
   productId: mongoose.Types.ObjectId;
+  name?: string;
+  seedKey?: string;
   sku: string;
   barcode?: string;
-  attributes: {
-    size?: string;
-    colour?: string;
-    flavour?: string;
-    packSize?: string;
-    unit?: string;
-  };
+  attributes: Record<string, any>;
   weight?: number;
   dimensions?: {
     length: number;
@@ -24,15 +20,11 @@ export interface IProductVariant extends Document {
 const ProductVariantSchema = new Schema<IProductVariant>(
   {
     productId: { type: Schema.Types.ObjectId, ref: 'Product', required: true },
+    name: { type: String },
+    seedKey: { type: String, sparse: true, index: true },
     sku: { type: String, required: true, unique: true, trim: true },
     barcode: { type: String, trim: true },
-    attributes: {
-      size: { type: String },
-      colour: { type: String },
-      flavour: { type: String },
-      packSize: { type: String },
-      unit: { type: String },
-    },
+    attributes: { type: Schema.Types.Mixed, default: {} },
     weight: { type: Number },
     dimensions: {
       length: { type: Number },

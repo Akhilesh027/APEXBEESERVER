@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.changePassword = exports.getMe = exports.login = exports.register = exports.verifyOtp = exports.sendOtp = void 0;
+exports.googleAuth = exports.changePassword = exports.getMe = exports.login = exports.register = exports.verifyOtp = exports.sendOtp = void 0;
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const User_1 = require("../models/User");
@@ -37,10 +37,14 @@ const sendOtp = async (req, res) => {
             res.status(400).json({ message: 'Phone or email is required' });
             return;
         }
+        const isProd = ['production', 'staging'].includes(process.env.NODE_ENV || '');
+        const generatedOtp = isProd
+            ? Math.floor(100000 + Math.random() * 900000).toString()
+            : '1234';
         const redis = (0, redis_1.getRedisClient)();
         const redisKey = `otp:${key}`;
-        await redis.set(redisKey, '1234', 'EX', 300);
-        console.log(`OTP "1234" sent to: ${key}`);
+        await redis.set(redisKey, generatedOtp, 'EX', 300);
+        console.log(`OTP generated for: ${key}`);
         res.status(200).json({ success: true, message: 'OTP sent successfully' });
     }
     catch (error) {
@@ -60,7 +64,8 @@ const verifyOtp = async (req, res) => {
         const redis = (0, redis_1.getRedisClient)();
         const redisKey = `otp:${key}`;
         const savedOtp = await redis.get(redisKey);
-        if (otp === '1234' || savedOtp === otp) {
+        const isDevFallback = process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'staging' && otp === '1234';
+        if (savedOtp === otp || isDevFallback) {
             const verifiedKey = `verified:${key}`;
             await redis.set(verifiedKey, 'true', 'EX', 600);
             await redis.del(redisKey);
@@ -83,7 +88,8 @@ const register = async (req, res) => {
         const redis = (0, redis_1.getRedisClient)();
         const isVerifiedPhone = await redis.get(`verified:${phone}`);
         const isVerifiedEmail = await redis.get(`verified:${email}`);
-        const isOtpVerified = isVerifiedPhone === 'true' || isVerifiedEmail === 'true' || (otp === '1234');
+        const isDevFallback = process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'staging' && otp === '1234';
+        const isOtpVerified = isVerifiedPhone === 'true' || isVerifiedEmail === 'true' || isDevFallback;
         if (!isOtpVerified) {
             res.status(400).json({ message: 'Phone/email verification is pending. Please verify OTP first.' });
             return;
@@ -381,6 +387,7 @@ const getMe = async (req, res) => {
                 roles: user.roles,
                 status: user.status,
                 isVerified: user.isVerified,
+                isProfileIncomplete: !user.phone || !user.phone.trim(),
                 profileImage: user.profileImage,
                 territory: user.territory,
                 assignedFranchise: user.assignedFranchise,
@@ -428,3 +435,95 @@ const changePassword = async (req, res) => {
     }
 };
 exports.changePassword = changePassword;
+const googleAuth = async (req, res) => {
+    try {
+        const { credential, referralCode } = req.body;
+        if (!credential) {
+            res.status(400).json({ message: 'Google credential token is required' });
+            return;
+        }
+        let payload = null;
+        // Verify or decode Google JWT ID Token
+        try {
+            const decoded = jsonwebtoken_1.default.decode(credential);
+            if (decoded && decoded.email) {
+                payload = decoded;
+            }
+        }
+        catch { }
+        if (!payload || !payload.email) {
+            try {
+                const verifyRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${credential}`);
+                if (verifyRes.ok) {
+                    payload = await verifyRes.json();
+                }
+            }
+            catch { }
+        }
+        if (!payload || !payload.email) {
+            res.status(400).json({ message: 'Failed to verify Google credential' });
+            return;
+        }
+        const email = payload.email.toLowerCase().trim();
+        const name = payload.name || payload.given_name || email.split('@')[0];
+        const picture = payload.picture || '';
+        let user = await User_1.User.findOne({ email });
+        if (!user) {
+            const userReferralCode = await generateReferralCode(name);
+            const randomPassword = Math.random().toString(36).slice(-10) + Math.random().toString(36).slice(-10);
+            const hashedPassword = await bcryptjs_1.default.hash(randomPassword, 10);
+            user = new User_1.User({
+                name,
+                email,
+                passwordHash: hashedPassword,
+                roles: ['customer'],
+                status: 'Active',
+                isVerified: true,
+                profileImage: picture,
+                referralCode: userReferralCode
+            });
+            if (referralCode && referralCode.trim()) {
+                const referrer = await User_1.User.findOne({ referralCode: referralCode.trim().toUpperCase() });
+                if (referrer) {
+                    user.referredBy = referrer._id;
+                    user.referredByCode = referrer.referralCode;
+                    const refDoc = new Referral_1.Referral({
+                        referrerId: referrer._id,
+                        referredUserId: user._id,
+                        referralCode: referrer.referralCode,
+                        status: 'registered',
+                        reward: 50
+                    });
+                    await refDoc.save();
+                }
+            }
+            await user.save();
+            const wallet = new Wallet_1.Wallet({ userId: user._id, availableBalance: 0, ledgerEntries: [] });
+            await wallet.save();
+        }
+        const token = generateToken(user._id.toString(), user.email, user.roles);
+        const isProfileIncomplete = !user.phone || !user.phone.trim();
+        res.status(200).json({
+            token,
+            user: {
+                id: user._id,
+                _id: user._id,
+                name: user.name,
+                email: user.email,
+                phone: user.phone || "",
+                mobile: user.mobile || "",
+                roles: user.roles,
+                status: user.status,
+                isVerified: user.isVerified,
+                isProfileIncomplete,
+                profileImage: user.profileImage,
+                referralCode: user.referralCode
+            }
+        });
+    }
+    catch (error) {
+        console.error('Google Auth error:', error);
+        res.status(500).json({ message: 'Google Authentication failed', error: error.message });
+    }
+};
+exports.googleAuth = googleAuth;

@@ -3,12 +3,24 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getCategorySubcategories = exports.deleteCategory = exports.updateCategory = exports.getCategoryById = exports.getCategoryDropdown = exports.getCategoryTree = exports.getCategories = exports.createCategory = void 0;
+exports.getMergedCategoryAttributes = exports.verifyAcademyController = exports.seedAcademyController = exports.verifyServicesController = exports.seedServicesController = exports.verifyShoppingController = exports.seedShoppingController = exports.verifyDailyNeedsController = exports.seedDailyNeedsController = exports.verifyCatalogueCoreController = exports.seedCatalogueCoreController = exports.seedFullMvpController = exports.applyAttributePreset = exports.ATTRIBUTE_PRESETS = exports.seedVendorController = exports.getCategorySubcategories = exports.deleteCategory = exports.updateCategory = exports.getCategoryById = exports.getCategoryDropdown = exports.getCategoryTree = exports.getCategories = exports.createCategory = void 0;
 const streamifier_1 = __importDefault(require("streamifier"));
 const mongoose_1 = __importDefault(require("mongoose"));
 const Category_1 = __importDefault(require("../models/Category"));
 const Subcategory_1 = __importDefault(require("../models/Subcategory"));
+const CategoryExperienceConfig_1 = __importDefault(require("../models/CategoryExperienceConfig"));
 const cloudinary_1 = __importDefault(require("../config/cloudinary"));
+const seedVendorProducts_1 = require("../seeds/seedVendorProducts");
+const seedFullMvpCategories_1 = require("../seeds/seedFullMvpCategories");
+const seedCoreTaxonomies_1 = require("../seeds/seedCoreTaxonomies");
+const seedDailyNeedsTaxonomy_1 = require("../seeds/seedDailyNeedsTaxonomy");
+const verifyDailyNeedsTaxonomy_1 = require("../seeds/verifyDailyNeedsTaxonomy");
+const seedShoppingTaxonomy_1 = require("../seeds/seedShoppingTaxonomy");
+const verifyShoppingTaxonomy_1 = require("../seeds/verifyShoppingTaxonomy");
+const seedServicesTaxonomy_1 = require("../seeds/seedServicesTaxonomy");
+const verifyServicesTaxonomy_1 = require("../seeds/verifyServicesTaxonomy");
+const seedAcademyTaxonomy_1 = require("../seeds/seedAcademyTaxonomy");
+const verifyAcademyTaxonomy_1 = require("../seeds/verifyAcademyTaxonomy");
 const makeSlug = (name) => name
     .toLowerCase()
     .trim()
@@ -41,15 +53,36 @@ const parseAttributes = (value) => {
         return [];
     }
 };
-const uploadToCloudinary = async (buffer, folder) => {
-    return new Promise((resolve, reject) => {
-        const stream = cloudinary_1.default.uploader.upload_stream({ folder }, (error, result) => {
-            if (error || !result)
-                return reject(error);
-            resolve(result.secure_url);
-        });
-        streamifier_1.default.createReadStream(buffer).pipe(stream);
-    });
+const path_1 = __importDefault(require("path"));
+const fs_1 = __importDefault(require("fs"));
+const saveFileLocalOrCloud = async (file, folder, prefix) => {
+    try {
+        const cloudName = process.env.CLOUDINARY_CLOUD_NAME || process.env.CLOUD_NAME;
+        if (cloudName && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET) {
+            const cloudUrl = await new Promise((resolve, reject) => {
+                const stream = cloudinary_1.default.uploader.upload_stream({ folder }, (error, result) => {
+                    if (error || !result)
+                        return reject(error);
+                    resolve(result.secure_url);
+                });
+                streamifier_1.default.createReadStream(file.buffer).pipe(stream);
+            });
+            if (cloudUrl)
+                return cloudUrl;
+        }
+    }
+    catch (err) {
+        console.warn(`[CategoryUpload] Cloudinary upload skipped/failed (${err}). Using local file storage fallback.`);
+    }
+    const uploadDir = path_1.default.join(__dirname, '../../../public/uploads/categories');
+    if (!fs_1.default.existsSync(uploadDir)) {
+        fs_1.default.mkdirSync(uploadDir, { recursive: true });
+    }
+    const ext = path_1.default.extname(file.originalname) || '.png';
+    const filename = `${prefix}-${Date.now()}-${Math.round(Math.random() * 1e6)}${ext}`;
+    const filePath = path_1.default.join(uploadDir, filename);
+    fs_1.default.writeFileSync(filePath, file.buffer);
+    return `/uploads/categories/${filename}`;
 };
 const buildTree = (categories) => {
     const map = {};
@@ -103,10 +136,10 @@ const createCategory = async (req, res) => {
         let image = '';
         let banner = '';
         if (files?.image?.[0]) {
-            image = await uploadToCloudinary(files.image[0].buffer, 'apexbee/categories/images');
+            image = await saveFileLocalOrCloud(files.image[0], 'apexbee/categories/images', 'cat-icon');
         }
         if (files?.banner?.[0]) {
-            banner = await uploadToCloudinary(files.banner[0].buffer, 'apexbee/categories/banners');
+            banner = await saveFileLocalOrCloud(files.banner[0], 'apexbee/categories/banners', 'cat-banner');
         }
         const category = await Category_1.default.create({
             name: name.trim(),
@@ -118,6 +151,7 @@ const createCategory = async (req, res) => {
             banner,
             brands: parseArray(req.body.brands),
             attributes: parseAttributes(req.body.attributes),
+            supportedItemTypes: parseArray(req.body.supportedItemTypes),
             isActive: isActive === 'false' ? false : true,
             sortOrder: Number(sortOrder) || 0,
         });
@@ -139,7 +173,7 @@ const getCategories = async (_req, res) => {
         const categories = await Category_1.default.find()
             .populate('parentId', 'name slug level')
             .sort({ level: 1, sortOrder: 1, createdAt: -1 });
-        res.json({ categories });
+        res.json({ success: true, categories });
     }
     catch (error) {
         res.status(500).json({
@@ -154,7 +188,22 @@ const getCategoryTree = async (_req, res) => {
         const categories = await Category_1.default.find({ isActive: true })
             .sort({ sortOrder: 1, name: 1 })
             .lean();
-        res.json({ categories: buildTree(categories) });
+        const configs = await CategoryExperienceConfig_1.default.find().lean();
+        const configMap = new Map();
+        configs.forEach(c => configMap.set(c.categoryId.toString(), c));
+        const categoriesWithConfig = categories.map(cat => {
+            const config = configMap.get(cat._id.toString());
+            return {
+                ...cat,
+                experienceType: config ? config.experienceType : 'catalogue',
+                experienceRoute: config ? config.experienceRoute : undefined,
+                comingSoon: config ? config.comingSoon : undefined,
+                leadCaptureEnabled: config ? config.leadCaptureEnabled : undefined,
+                productCreationEnabled: config ? config.productCreationEnabled : undefined,
+                purchaseEnabled: config ? config.purchaseEnabled : undefined,
+            };
+        });
+        res.json({ categories: buildTree(categoriesWithConfig) });
     }
     catch (error) {
         res.status(500).json({
@@ -167,10 +216,27 @@ exports.getCategoryTree = getCategoryTree;
 const getCategoryDropdown = async (_req, res) => {
     try {
         const categories = await Category_1.default.find({ isActive: true })
-            .select('name slug parentId level image attributes brands')
+            .select('name slug parentId level image attributes brands supportedItemTypes')
             .sort({ sortOrder: 1, name: 1 })
             .lean();
-        res.json({ categories: buildTree(categories) });
+        const configs = await CategoryExperienceConfig_1.default.find().lean();
+        const configMap = new Map();
+        configs.forEach(c => configMap.set(c.categoryId.toString(), c));
+        const categoriesWithConfig = categories.map(cat => {
+            const config = configMap.get(cat._id.toString());
+            return {
+                ...cat,
+                experienceType: config ? config.experienceType : 'catalogue',
+                experienceRoute: config ? config.experienceRoute : undefined,
+                comingSoon: config ? config.comingSoon : undefined,
+                leadCaptureEnabled: config ? config.leadCaptureEnabled : undefined,
+                productCreationEnabled: config ? config.productCreationEnabled : undefined,
+                purchaseEnabled: config ? config.purchaseEnabled : undefined,
+            };
+        });
+        // Exclude categories where product creation is disabled
+        const allowedCategories = categoriesWithConfig.filter(cat => cat.productCreationEnabled !== false);
+        res.json({ categories: buildTree(allowedCategories) });
     }
     catch (error) {
         res.status(500).json({
@@ -223,10 +289,10 @@ const updateCategory = async (req, res) => {
         }
         const files = req.files;
         if (files?.image?.[0]) {
-            category.image = await uploadToCloudinary(files.image[0].buffer, 'apexbee/categories/images');
+            category.image = await saveFileLocalOrCloud(files.image[0], 'apexbee/categories/images', 'cat-icon');
         }
         if (files?.banner?.[0]) {
-            category.banner = await uploadToCloudinary(files.banner[0].buffer, 'apexbee/categories/banners');
+            category.banner = await saveFileLocalOrCloud(files.banner[0], 'apexbee/categories/banners', 'cat-banner');
         }
         if (name && name.trim() !== category.name) {
             const slugBase = makeSlug(name);
@@ -316,3 +382,253 @@ const getCategorySubcategories = async (req, res) => {
     }
 };
 exports.getCategorySubcategories = getCategorySubcategories;
+const seedVendorController = async (req, res) => {
+    try {
+        console.log('[SeedVendorController] Executing seedVendor50Products v8...');
+        const result = await (0, seedVendorProducts_1.seedVendor50Products)();
+        res.status(200).json({ success: true, result });
+    }
+    catch (error) {
+        console.error('[seedVendorController] Error:', error);
+        res.status(200).json({ success: false, error: error.message, stack: error.stack });
+    }
+};
+exports.seedVendorController = seedVendorController;
+exports.ATTRIBUTE_PRESETS = {
+    grocery: [
+        { name: 'Net Weight / Pack Size', type: 'select', unit: 'kg/g', required: true, isVariant: true, options: ['250g', '500g', '1kg', '2kg', '5kg', '10kg', '25kg'] },
+        { name: 'Dietary Preference', type: 'select', required: true, isVariant: false, options: ['Veg', 'Non-Veg', 'Eggitarian', 'Vegan'] },
+        { name: 'Shelf Life', type: 'text', required: false, isVariant: false, placeholder: 'e.g. 6 Months' },
+        { name: 'Organic Certified', type: 'boolean', required: false, isVariant: false },
+        { name: 'Packaging Type', type: 'select', required: false, isVariant: false, options: ['Pouch', 'Box', 'Bottle', 'Can', 'Bag'] },
+    ],
+    restaurant: [
+        { name: 'Portion Size', type: 'select', required: true, isVariant: true, options: ['Quarter', 'Half', 'Full', 'Single', 'Family Pack'] },
+        { name: 'Spice Level', type: 'select', required: true, isVariant: false, options: ['Mild', 'Medium', 'Spicy', 'Extra Hot'] },
+        { name: 'Food Preference', type: 'select', required: true, isVariant: false, options: ['Pure Veg', 'Non-Veg', 'Jain', 'Eggitarian'] },
+        { name: 'Preparation Time', type: 'number', unit: 'Mins', required: false, isVariant: false, placeholder: 'e.g. 20' },
+        { name: 'Serving Temp', type: 'select', required: false, isVariant: false, options: ['Hot', 'Cold', 'Normal'] },
+    ],
+    devotional: [
+        { name: 'Material', type: 'select', required: true, isVariant: false, options: ['Brass', 'Copper', 'Silver', 'Panchaloha', 'Marble', 'Wood', 'Clay', 'Glass'] },
+        { name: 'Height / Size', type: 'select', unit: 'inches', required: true, isVariant: true, options: ['3 inches', '6 inches', '9 inches', '1 foot', '1.5 feet', '2 feet'] },
+        { name: 'Deity Name', type: 'select', required: false, isVariant: false, options: ['Lord Ganesha', 'Lord Shiva', 'Goddess Lakshmi', 'Lord Venkateswara', 'Goddess Durga', 'Lord Rama', 'Lord Hanuman', 'General'] },
+        { name: 'Sanctified Status', type: 'boolean', required: false, isVariant: false },
+        { name: 'Ritual Purpose', type: 'select', required: false, isVariant: false, options: ['Daily Pooja', 'Vinayaka Chavithi', 'Varalakshmi Vratham', 'Dasara', 'Diwali', 'Homam'] },
+    ],
+    fashion: [
+        { name: 'Apparel Size', type: 'select', required: true, isVariant: true, options: ['S', 'M', 'L', 'XL', 'XXL', 'Free Size'] },
+        { name: 'Color', type: 'select', required: true, isVariant: true, options: ['Red', 'Blue', 'Black', 'White', 'Green', 'Yellow', 'Gold', 'Pink'] },
+        { name: 'Fabric Material', type: 'select', required: false, isVariant: false, options: ['Cotton', 'Silk', 'Georgette', 'Denim', 'Polyester', 'Linen'] },
+        { name: 'Gender Target', type: 'select', required: true, isVariant: false, options: ['Men', 'Women', 'Unisex', 'Kids'] },
+    ],
+    electronics: [
+        { name: 'RAM & Storage', type: 'select', required: true, isVariant: true, options: ['4GB RAM / 64GB Storage', '8GB RAM / 128GB Storage', '12GB RAM / 256GB Storage', '16GB RAM / 512GB Storage'] },
+        { name: 'Warranty Period', type: 'select', unit: 'Months', required: true, isVariant: false, options: ['6 Months', '1 Year', '2 Years', 'No Warranty'] },
+        { name: 'Color Finish', type: 'select', required: false, isVariant: true, options: ['Space Black', 'Silver', 'Ocean Blue', 'Gold'] },
+        { name: 'Brand Model', type: 'text', required: true, isVariant: false },
+    ],
+    service_repair: [
+        { name: 'Service Package', type: 'select', required: true, isVariant: true, options: ['Basic Inspection', 'Standard Repair', 'Comprehensive Deep Service'] },
+        { name: 'Warranty on Service', type: 'select', unit: 'Days', required: true, isVariant: false, options: ['30 Days Warranty', '60 Days Warranty', '90 Days Warranty'] },
+        { name: 'Service Duration', type: 'number', unit: 'Mins', required: false, isVariant: false, placeholder: 'e.g. 60' },
+        { name: 'Spare Parts Included', type: 'boolean', required: false, isVariant: false },
+    ],
+    academy: [
+        { name: 'Course Duration Plan', type: 'select', required: true, isVariant: true, options: ['1 Month Access', '3 Months Bootcamp', 'Full Certification Pass'] },
+        { name: 'Course Level', type: 'select', required: true, isVariant: false, options: ['Beginner', 'Intermediate', 'Advanced'] },
+        { name: 'Mode of Instruction', type: 'select', required: true, isVariant: false, options: ['Live Online Class', 'Recorded Self-Paced', 'In-Person Workshop'] },
+        { name: 'Certificate Provided', type: 'boolean', required: true, isVariant: false },
+    ],
+};
+const applyAttributePreset = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { presetKey } = req.body;
+        const presetAttributes = exports.ATTRIBUTE_PRESETS[presetKey];
+        if (!presetAttributes) {
+            return res.status(400).json({ message: `Preset '${presetKey}' not found` });
+        }
+        const category = await Category_1.default.findById(id);
+        if (!category) {
+            return res.status(404).json({ message: 'Category not found' });
+        }
+        const existingNames = new Set(category.attributes?.map((a) => a.name.toLowerCase()));
+        const newAttributes = presetAttributes.filter((a) => !existingNames.has(a.name.toLowerCase()));
+        category.attributes = [...(category.attributes || []), ...newAttributes];
+        await category.save();
+        res.status(200).json({
+            success: true,
+            message: `Successfully applied preset '${presetKey}' to ${category.name}`,
+            category,
+        });
+    }
+    catch (error) {
+        res.status(500).json({ message: 'Failed to apply attribute preset', error: error.message });
+    }
+};
+exports.applyAttributePreset = applyAttributePreset;
+const seedFullMvpController = async (_req, res) => {
+    try {
+        console.log('[SeedFullMvpController] Seeding full MVP categories taxonomy...');
+        const result = await (0, seedFullMvpCategories_1.seedFullMvpCategories)();
+        res.status(200).json({ success: true, message: 'Full MVP Category Taxonomy seeded successfully!', result });
+    }
+    catch (error) {
+        console.error('[seedFullMvpController] Error:', error);
+        res.status(500).json({ success: false, error: error.message, stack: error.stack });
+    }
+};
+exports.seedFullMvpController = seedFullMvpController;
+const seedCatalogueCoreController = async (req, res) => {
+    try {
+        const isDryRun = req.query.dryRun === 'true';
+        const isVerifyOnly = req.query.verifyOnly === 'true';
+        const result = await (0, seedCoreTaxonomies_1.seedCoreTaxonomies)({ dryRun: isDryRun, verifyOnly: isVerifyOnly });
+        res.status(200).json({ success: true, message: 'Core Catalogue (Devotional, Restaurant, Daily Needs, Shopping) seeded successfully!', result });
+    }
+    catch (error) {
+        console.error('[seedCatalogueCoreController] Error:', error);
+        res.status(500).json({ success: false, error: error.message, stack: error.stack });
+    }
+};
+exports.seedCatalogueCoreController = seedCatalogueCoreController;
+const verifyCatalogueCoreController = async (_req, res) => {
+    try {
+        const result = await (0, seedCoreTaxonomies_1.verifyCoreTaxonomies)();
+        res.status(200).json({ success: true, message: 'Catalogue Core verification completed', result });
+    }
+    catch (error) {
+        console.error('[verifyCatalogueCoreController] Error:', error);
+        res.status(500).json({ success: false, error: error.message, stack: error.stack });
+    }
+};
+exports.verifyCatalogueCoreController = verifyCatalogueCoreController;
+const seedDailyNeedsController = async (_req, res) => {
+    try {
+        const result = await (0, seedDailyNeedsTaxonomy_1.seedDailyNeedsTaxonomy)();
+        res.status(200).json({ success: true, message: 'Daily Needs Taxonomy seeded successfully!', result });
+    }
+    catch (error) {
+        console.error('[seedDailyNeedsController] Error:', error);
+        res.status(500).json({ success: false, error: error.message, stack: error.stack });
+    }
+};
+exports.seedDailyNeedsController = seedDailyNeedsController;
+const verifyDailyNeedsController = async (_req, res) => {
+    try {
+        const result = await (0, verifyDailyNeedsTaxonomy_1.verifyDailyNeedsTaxonomy)();
+        res.status(200).json({ success: true, message: 'Daily Needs taxonomy verification completed', result });
+    }
+    catch (error) {
+        console.error('[verifyDailyNeedsController] Error:', error);
+        res.status(500).json({ success: false, error: error.message, stack: error.stack });
+    }
+};
+exports.verifyDailyNeedsController = verifyDailyNeedsController;
+const seedShoppingController = async (_req, res) => {
+    try {
+        const result = await (0, seedShoppingTaxonomy_1.seedShoppingTaxonomy)();
+        res.status(200).json({ success: true, message: 'Shopping Taxonomy seeded successfully!', result });
+    }
+    catch (error) {
+        console.error('[seedShoppingController] Error:', error);
+        res.status(500).json({ success: false, error: error.message, stack: error.stack });
+    }
+};
+exports.seedShoppingController = seedShoppingController;
+const verifyShoppingController = async (_req, res) => {
+    try {
+        const result = await (0, verifyShoppingTaxonomy_1.verifyShoppingTaxonomy)();
+        res.status(200).json({ success: true, message: 'Shopping taxonomy verification completed', result });
+    }
+    catch (error) {
+        console.error('[verifyShoppingController] Error:', error);
+        res.status(500).json({ success: false, error: error.message, stack: error.stack });
+    }
+};
+exports.verifyShoppingController = verifyShoppingController;
+const seedServicesController = async (_req, res) => {
+    try {
+        const result = await (0, seedServicesTaxonomy_1.seedServicesTaxonomy)();
+        res.status(200).json({ success: true, message: 'Services Taxonomy seeded successfully!', result });
+    }
+    catch (error) {
+        console.error('[seedServicesController] Error:', error);
+        res.status(500).json({ success: false, error: error.message, stack: error.stack });
+    }
+};
+exports.seedServicesController = seedServicesController;
+const verifyServicesController = async (_req, res) => {
+    try {
+        const result = await (0, verifyServicesTaxonomy_1.verifyServicesTaxonomy)();
+        res.status(200).json({ success: true, message: 'Services taxonomy verification completed', result });
+    }
+    catch (error) {
+        console.error('[verifyServicesController] Error:', error);
+        res.status(500).json({ success: false, error: error.message, stack: error.stack });
+    }
+};
+exports.verifyServicesController = verifyServicesController;
+const seedAcademyController = async (_req, res) => {
+    try {
+        await (0, seedAcademyTaxonomy_1.seedAcademyTaxonomy)();
+        res.status(200).json({ success: true, message: 'Academy Taxonomy seeded successfully!' });
+    }
+    catch (error) {
+        console.error('[seedAcademyController] Error:', error);
+        res.status(500).json({ success: false, error: error.message, stack: error.stack });
+    }
+};
+exports.seedAcademyController = seedAcademyController;
+const verifyAcademyController = async (_req, res) => {
+    try {
+        const result = await (0, verifyAcademyTaxonomy_1.verifyAcademyTaxonomy)();
+        res.status(200).json({ success: true, message: 'Academy taxonomy verification completed', result });
+    }
+    catch (error) {
+        console.error('[verifyAcademyController] Error:', error);
+        res.status(500).json({ success: false, error: error.message, stack: error.stack });
+    }
+};
+exports.verifyAcademyController = verifyAcademyController;
+const getMergedCategoryAttributes = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const cat = await Category_1.default.findById(id);
+        if (!cat) {
+            return res.status(404).json({ message: 'Category not found' });
+        }
+        const categoryChain = [cat];
+        let current = cat;
+        while (current.parentId) {
+            const parent = await Category_1.default.findById(current.parentId);
+            if (!parent)
+                break;
+            categoryChain.unshift(parent); // Top parent first
+            current = parent;
+        }
+        const attributeMap = new Map();
+        for (const item of categoryChain) {
+            if (Array.isArray(item.attributes)) {
+                for (const attr of item.attributes) {
+                    const key = attr.name ? attr.name.toLowerCase().trim() : (attr.key || '');
+                    if (key) {
+                        attributeMap.set(key, { ...attr, inheritedFrom: item.name, inheritedLevel: item.level });
+                    }
+                }
+            }
+        }
+        const mergedAttributes = Array.from(attributeMap.values());
+        res.json({
+            success: true,
+            category: cat,
+            categoryChain: categoryChain.map(c => ({ id: c._id, name: c.name, level: c.level })),
+            mergedAttributes
+        });
+    }
+    catch (error) {
+        res.status(500).json({ message: 'Failed to fetch merged attributes', error: error.message });
+    }
+};
+exports.getMergedCategoryAttributes = getMergedCategoryAttributes;

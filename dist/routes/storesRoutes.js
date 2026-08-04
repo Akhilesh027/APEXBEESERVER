@@ -6,6 +6,9 @@ const storesController_1 = require("../controllers/storesController");
 const router = (0, express_1.Router)();
 // Public marketplace store routes
 router.get('/nearby', storesController_1.getNearbyStores);
+router.get('/featured', storesController_1.getFeaturedStores);
+router.get('/deals', storesController_1.getStoreDeals);
+router.get('/categories', storesController_1.getStoreCategories);
 router.get('/favourites', auth_1.protect, storesController_1.getFavourites);
 router.post('/:id/favourite', auth_1.protect, storesController_1.addFavourite);
 router.delete('/:id/favourite', auth_1.protect, storesController_1.removeFavourite);

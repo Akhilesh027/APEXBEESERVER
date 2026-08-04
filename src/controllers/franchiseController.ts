@@ -22,6 +22,7 @@ import { DistrictMaster } from "../models/DistrictMaster";
 import { MandalMaster } from "../models/MandalMaster";
 import { WalletEngine } from '../services/WalletEngine';
 import { DeliveryPartner } from '../models/DeliveryPartner';
+import { Address } from '../models/Address';
 import Product from '../models/Product';
 import LocalShopSubscription from '../models/LocalShopSubscription';
 import { SupportTicket } from '../models/SupportTicket';
@@ -300,7 +301,24 @@ export const getFranchiseTeam = async (req: AuthRequest, res: Response): Promise
     let serviceProviders: any[] = [];
 
     if (franchiseLevel === 'state') {
-      subFranchises = await Franchise.find({ parentFranchiseId: franchise._id });
+      // State franchise should see ALL district + mandal franchises in their state
+      const directChildren = await Franchise.find({ parentFranchiseId: franchise._id });
+      const allInState = await Franchise.find({
+        state: { $regex: new RegExp(`^${state?.trim()}$`, 'i') },
+        _id: { $ne: franchise._id },
+        franchiseLevel: { $in: ['district', 'mandal'] }
+      });
+      // Merge and deduplicate
+      const seenIds = new Set<string>();
+      subFranchises = [];
+      for (const f of [...directChildren, ...allInState]) {
+        const fId = f._id.toString();
+        if (!seenIds.has(fId)) {
+          seenIds.add(fId);
+          subFranchises.push(f);
+        }
+      }
+
       entrepreneurs = await Entrepreneur.find({ state });
       const mappings = await TerritoryMapping.find({ stateFranchiseId: franchise._id });
       const vendorIds = mappings.filter(m => m.businessType === 'vendor').map(m => m.businessId);
@@ -310,7 +328,25 @@ export const getFranchiseTeam = async (req: AuthRequest, res: Response): Promise
       if (spIds.length > 0) serviceProviders = await ServiceProvider.find({ _id: { $in: spIds } });
 
     } else if (franchiseLevel === 'district') {
-      subFranchises = await Franchise.find({ parentFranchiseId: franchise._id });
+      // District franchise should see mandal franchises under them
+      const directChildren = await Franchise.find({ parentFranchiseId: franchise._id });
+      const mandalsInDistrict = await Franchise.find({
+        state: { $regex: new RegExp(`^${state?.trim()}$`, 'i') },
+        district: { $regex: new RegExp(`^${district?.trim()}$`, 'i') },
+        franchiseLevel: 'mandal',
+        _id: { $ne: franchise._id }
+      });
+      // Merge and deduplicate
+      const seenIds = new Set<string>();
+      subFranchises = [];
+      for (const f of [...directChildren, ...mandalsInDistrict]) {
+        const fId = f._id.toString();
+        if (!seenIds.has(fId)) {
+          seenIds.add(fId);
+          subFranchises.push(f);
+        }
+      }
+
       entrepreneurs = await Entrepreneur.find({ state, district });
       const mappings = await TerritoryMapping.find({ districtFranchiseId: franchise._id });
       const vendorIds = mappings.filter(m => m.businessType === 'vendor').map(m => m.businessId);
@@ -656,9 +692,56 @@ export const getFranchiseNetwork = async (
       ],
     }).sort({ createdAt: -1 });
 
-    const allTerritories = [
-      ...((currentFranchise as any).assignedTerritories || []),
-    ];
+    // Populate master districts and mandals for full state hierarchy tree
+    let masterTerritories: any[] = [];
+    if (currentFranchise.state) {
+      const stateMaster = await StateMaster.findOne({ name: { $regex: new RegExp(`^${currentFranchise.state.trim()}$`, 'i') } });
+      if (stateMaster) {
+        const dMasters = await DistrictMaster.find({ stateId: stateMaster._id });
+        const mMasters = await MandalMaster.find({ stateId: stateMaster._id });
+
+        dMasters.forEach(d => {
+          masterTerritories.push({
+            _id: `dist-${d._id}`,
+            level: 'District',
+            name: d.name,
+            state: currentFranchise.state,
+            district: d.name,
+            status: 'active'
+          });
+        });
+
+        mMasters.forEach(m => {
+          const dist = dMasters.find(d => d._id.toString() === m.districtId.toString());
+          const dName = dist ? dist.name : (dMasters[0]?.name || currentFranchise.district || 'Main District');
+          masterTerritories.push({
+            _id: `mandal-${m._id}`,
+            level: 'Mandal',
+            name: m.name,
+            state: currentFranchise.state,
+            district: dName,
+            mandal: m.name,
+            status: 'active'
+          });
+        });
+      }
+    }
+
+    const assignedList = (currentFranchise as any).assignedTerritories || [];
+    const combinedTerritoriesMap = new Map<string, any>();
+
+    masterTerritories.forEach(t => {
+      const key = `${(t.level || '').toLowerCase()}__${(t.district || '').toLowerCase()}__${(t.mandal || '').toLowerCase()}`;
+      combinedTerritoriesMap.set(key, t);
+    });
+
+    assignedList.forEach((t: any) => {
+      const levelStr = t.level || (t.pincode ? 'Pincode' : t.mandal ? 'Mandal' : t.district ? 'District' : 'State');
+      const key = `${levelStr.toLowerCase()}__${(t.district || '').toLowerCase()}__${(t.mandal || '').toLowerCase()}`;
+      combinedTerritoriesMap.set(key, t);
+    });
+
+    const allTerritories = Array.from(combinedTerritoriesMap.values());
 
     const districtNodes = allTerritories.filter(
       (t: any) =>
@@ -876,6 +959,8 @@ export const getFranchiseApplications = async (req: AuthRequest, res: Response):
     }
 
     const { state, district, mandal, franchiseLevel } = franchise;
+    const typeFilter = req.query.type || req.query.role;
+
     let query: any = {};
     if (franchiseLevel === 'state') {
       query = { state };
@@ -883,6 +968,13 @@ export const getFranchiseApplications = async (req: AuthRequest, res: Response):
       query = { state, district };
     } else {
       query = { state, district, mandal };
+    }
+
+    if (typeFilter) {
+      query.$or = [
+        { applicationType: typeFilter },
+        { role: { $regex: new RegExp(typeFilter as string, 'i') } }
+      ];
     }
 
     const apps = await BusinessApplication.find(query).sort({ createdAt: -1 });
@@ -2015,34 +2107,117 @@ export const getFranchiseCustomers = async (req: AuthRequest, res: Response): Pr
     }
 
     const { state, district, mandal, franchiseLevel } = franchise;
-    const filter: any = { roles: 'customer' };
 
-    if (franchiseLevel === 'state') {
-      filter['territory.state'] = state;
-    } else if (franchiseLevel === 'district') {
-      filter['territory.state'] = state;
-      filter['territory.district'] = district;
-    } else if (franchiseLevel === 'mandal') {
-      filter['territory.state'] = state;
-      filter['territory.district'] = district;
-      filter['territory.mandal'] = mandal;
+    // Role exclusions to ensure only end consumers/customers are listed
+    const roleExclusions = [
+      'vendor', 'admin', 'state_franchise', 'district_franchise', 'mandal_franchise',
+      'franchise', 'entrepreneur', 'wholesaler', 'manufacturer', 'service_provider',
+      'course_provider', 'delivery_partner'
+    ];
+
+    // Collect customer IDs from multiple sources for territory matching
+    const customerIdSets: Set<string> = new Set();
+
+    // Source 1: Orders with shippingAddress matching territory
+    const orderLocationFilter: any = {};
+    if (franchiseLevel === 'state' && state) {
+      orderLocationFilter['$or'] = [
+        { 'shippingAddress.state': { $regex: new RegExp(`^${state.trim()}$`, 'i') } },
+        { 'deliveryAddress': { $regex: new RegExp(state.trim(), 'i') } }
+      ];
+    } else if (franchiseLevel === 'district' && district) {
+      orderLocationFilter['$or'] = [
+        { 'shippingAddress.district': { $regex: new RegExp(`^${district.trim()}$`, 'i') } },
+        { 'shippingAddress.city': { $regex: new RegExp(`^${district.trim()}$`, 'i') } },
+        { 'deliveryAddress': { $regex: new RegExp(district.trim(), 'i') } }
+      ];
+    } else if (franchiseLevel === 'mandal' && mandal) {
+      orderLocationFilter['$or'] = [
+        { 'shippingAddress.city': { $regex: new RegExp(`^${mandal.trim()}$`, 'i') } },
+        { 'shippingAddress.mandal': { $regex: new RegExp(`^${mandal.trim()}$`, 'i') } },
+        { 'deliveryAddress': { $regex: new RegExp(mandal.trim(), 'i') } }
+      ];
     }
 
-    const users = await User.find(filter).sort({ createdAt: -1 });
+    if (Object.keys(orderLocationFilter).length > 0) {
+      const orderCustomerIds = await Order.find(orderLocationFilter).distinct('customerId');
+      orderCustomerIds.filter(Boolean).forEach((id: any) => customerIdSets.add(id.toString()));
+    }
+
+    // Source 2: Addresses saved by users matching territory
+    const addressFilter: any = {};
+    if (franchiseLevel === 'state' && state) {
+      addressFilter.state = { $regex: new RegExp(`^${state.trim()}$`, 'i') };
+    } else if (franchiseLevel === 'district' && district) {
+      addressFilter['$or'] = [
+        { district: { $regex: new RegExp(`^${district.trim()}$`, 'i') } },
+        { city: { $regex: new RegExp(`^${district.trim()}$`, 'i') } }
+      ];
+    } else if (franchiseLevel === 'mandal' && mandal) {
+      addressFilter.city = { $regex: new RegExp(`^${mandal.trim()}$`, 'i') };
+    }
+
+    if (Object.keys(addressFilter).length > 0) {
+      const addressUserIds = await Address.find(addressFilter).distinct('userId');
+      addressUserIds.filter(Boolean).forEach((id: any) => customerIdSets.add(id.toString()));
+    }
+
+    // Source 3: Users with territory fields matching
+    const userTerritoryConditions: any[] = [];
+    if (franchiseLevel === 'state' && state) {
+      userTerritoryConditions.push(
+        { 'territory.state': { $regex: new RegExp(`^${state.trim()}$`, 'i') } }
+      );
+    } else if (franchiseLevel === 'district' && district) {
+      userTerritoryConditions.push(
+        { 'territory.district': { $regex: new RegExp(`^${district.trim()}$`, 'i') } }
+      );
+    } else if (franchiseLevel === 'mandal' && mandal) {
+      userTerritoryConditions.push(
+        { 'territory.mandal': { $regex: new RegExp(`^${mandal.trim()}$`, 'i') } }
+      );
+    }
+
+    // Build final User query
+    let filter: any;
+    const hasLocationData = customerIdSets.size > 0 || userTerritoryConditions.length > 0;
+
+    if (hasLocationData) {
+      const orConditions: any[] = [...userTerritoryConditions];
+      if (customerIdSets.size > 0) {
+        orConditions.push({ _id: { $in: Array.from(customerIdSets).map(id => new mongoose.Types.ObjectId(id)) } });
+      }
+      filter = {
+        roles: { $nin: roleExclusions },
+        $or: orConditions
+      };
+    } else {
+      // No territory filter — return all customers (franchise has no location restriction or no matches)
+      filter = {
+        roles: { $nin: roleExclusions }
+      };
+    }
+
+    let users = await User.find(filter).sort({ createdAt: -1 }).limit(500);
+
+    // Fallback: if location filter returned 0, return ALL customers
+    if (users.length === 0 && hasLocationData) {
+      users = await User.find({ roles: { $nin: roleExclusions } }).sort({ createdAt: -1 }).limit(500);
+    }
 
     const customers = await Promise.all(users.map(async (u) => {
       const orders = await Order.find({ customerId: u._id });
       const ordersCount = orders.length;
       const totalSpent = orders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
       const lastOrder = orders.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0];
-      const lastOrderDate = lastOrder ? lastOrder.createdAt.toISOString().split('T')[0] : '';
+      const lastOrderDate = lastOrder ? lastOrder.createdAt.toISOString().split('T')[0] : (u.updatedAt ? u.updatedAt.toISOString().split('T')[0] : '');
 
       return {
         _id: u._id,
         name: u.name,
         email: u.email,
         phone: u.phone || u.mobile,
-        city: u.territory?.mandal || u.territory?.district || u.territory?.state || 'N/A',
+        city: u.territory?.mandal || u.territory?.district || u.territory?.state || (u as any).district || (u as any).state || 'N/A',
         ordersCount,
         totalSpent,
         lastOrderDate,
@@ -2147,37 +2322,71 @@ export const getFranchiseTerritoryDetails = async (req: AuthRequest, res: Respon
 
     if (level === 'state') {
       const stateMaster = await StateMaster.findOne({ name: { $regex: new RegExp(`^${stateName.trim()}$`, 'i') } });
-      let districts: any[] = [];
-      let mandals: any[] = [];
+      let masterDistricts: any[] = [];
+      let masterMandals: any[] = [];
 
       if (stateMaster) {
-        districts = await DistrictMaster.find({ stateId: stateMaster._id });
-        mandals = await MandalMaster.find({ stateId: stateMaster._id });
+        masterDistricts = await DistrictMaster.find({ stateId: stateMaster._id });
+        masterMandals = await MandalMaster.find({ stateId: stateMaster._id });
       }
 
-      if (districts.length === 0) {
-        res.status(200).json({
-          success: true,
-          level: 'state',
-          state: stateName,
-          districts: [],
-          mandals: []
-        });
-        return;
-      }
+      // Also search child franchises registered under this state
+      const childFranchises = await Franchise.find({
+        $or: [
+          { parentFranchiseId: franchise._id },
+          { state: { $regex: new RegExp(`^${stateName.trim()}$`, 'i') } }
+        ]
+      });
+
+      // Also search territory records registered under this state
+      const assignedTerritories = await Territory.find({
+        state: { $regex: new RegExp(`^${stateName.trim()}$`, 'i') }
+      });
+
+      const districtSet = new Set<string>();
+      masterDistricts.forEach(d => { if (d.name) districtSet.add(d.name); });
+      childFranchises.forEach(f => { if (f.district) districtSet.add(f.district); });
+      assignedTerritories.forEach(t => { if (t.district) districtSet.add(t.district); });
+
+      const districtsList = Array.from(districtSet);
+
+      const mandalMap = new Map<string, { name: string; district: string }>();
+
+      masterMandals.forEach(m => {
+        const dist = masterDistricts.find(d => d._id.toString() === m.districtId.toString());
+        const dName = dist ? dist.name : (districtsList[0] || 'Main District');
+        const key = `${dName.toLowerCase()}__${m.name.toLowerCase()}`;
+        if (!mandalMap.has(key)) {
+          mandalMap.set(key, { name: m.name, district: dName });
+        }
+      });
+
+      childFranchises.forEach(f => {
+        if (f.mandal && f.district) {
+          const key = `${f.district.toLowerCase()}__${f.mandal.toLowerCase()}`;
+          if (!mandalMap.has(key)) {
+            mandalMap.set(key, { name: f.mandal, district: f.district });
+          }
+        }
+      });
+
+      assignedTerritories.forEach(t => {
+        if (t.mandal && t.district) {
+          const key = `${t.district.toLowerCase()}__${t.mandal.toLowerCase()}`;
+          if (!mandalMap.has(key)) {
+            mandalMap.set(key, { name: t.mandal, district: t.district });
+          }
+        }
+      });
+
+      const mandalsList = Array.from(mandalMap.values());
 
       res.status(200).json({
         success: true,
         level: 'state',
         state: stateName,
-        districts: districts.map(d => d.name),
-        mandals: mandals.map(m => {
-          const dist = districts.find(d => d._id.toString() === m.districtId.toString());
-          return {
-            name: m.name,
-            district: dist ? dist.name : 'Unknown'
-          };
-        })
+        districts: districtsList,
+        mandals: mandalsList
       });
       return;
     }
@@ -2185,32 +2394,37 @@ export const getFranchiseTerritoryDetails = async (req: AuthRequest, res: Respon
     if (level === 'district') {
       const districtName = franchise.district || 'Hyderabad';
       const stateMaster = await StateMaster.findOne({ name: { $regex: new RegExp(`^${stateName.trim()}$`, 'i') } });
-      let mandals: any[] = [];
+      let masterMandals: any[] = [];
 
       if (stateMaster) {
         const districtMaster = await DistrictMaster.findOne({ stateId: stateMaster._id, name: { $regex: new RegExp(`^${districtName.trim()}$`, 'i') } });
         if (districtMaster) {
-          mandals = await MandalMaster.find({ districtId: districtMaster._id });
+          masterMandals = await MandalMaster.find({ districtId: districtMaster._id });
         }
       }
 
-      if (mandals.length === 0) {
-        res.status(200).json({
-          success: true,
-          level: 'district',
-          state: stateName,
-          district: districtName,
-          mandals: []
-        });
-        return;
-      }
+      const childFranchises = await Franchise.find({
+        $or: [
+          { parentFranchiseId: franchise._id },
+          { district: { $regex: new RegExp(`^${districtName.trim()}$`, 'i') } }
+        ]
+      });
+
+      const assignedTerritories = await Territory.find({
+        district: { $regex: new RegExp(`^${districtName.trim()}$`, 'i') }
+      });
+
+      const mandalSet = new Set<string>();
+      masterMandals.forEach(m => { if (m.name) mandalSet.add(m.name); });
+      childFranchises.forEach(f => { if (f.mandal) mandalSet.add(f.mandal); });
+      assignedTerritories.forEach(t => { if (t.mandal) mandalSet.add(t.mandal); });
 
       res.status(200).json({
         success: true,
         level: 'district',
         state: stateName,
         district: districtName,
-        mandals: mandals.map(m => m.name)
+        mandals: Array.from(mandalSet)
       });
       return;
     }

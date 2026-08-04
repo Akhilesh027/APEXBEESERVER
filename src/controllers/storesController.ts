@@ -225,11 +225,17 @@ export const getFeaturedStores = async (req: Request, res: Response) => {
   try {
     let featured = await Vendor.find({
       status: 'active',
+      marketplaceStatus: 'Approved',
+      isMarketplaceListed: true,
       $or: [{ verifiedBadge: true }, { 'rating.average': { $gte: 4.0 } }]
     }).limit(6).lean();
 
     if (featured.length === 0) {
-      featured = await Vendor.find({ status: 'active' }).limit(6).lean();
+      featured = await Vendor.find({
+        status: 'active',
+        marketplaceStatus: 'Approved',
+        isMarketplaceListed: true
+      }).limit(6).lean();
     }
 
     const data = featured.map((shop) => ({
@@ -245,7 +251,12 @@ export const getFeaturedStores = async (req: Request, res: Response) => {
 
 export const getStoreDeals = async (req: Request, res: Response) => {
   try {
-    const vendors = await Vendor.find({ status: 'active', offers: { $exists: true, $not: { $size: 0 } } }).limit(10).lean();
+    const vendors = await Vendor.find({
+      status: 'active',
+      marketplaceStatus: 'Approved',
+      isMarketplaceListed: true,
+      offers: { $exists: true, $not: { $size: 0 } }
+    }).limit(10).lean();
     const deals: any[] = [];
 
     vendors.forEach((v) => {

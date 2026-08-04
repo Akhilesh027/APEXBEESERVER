@@ -38,7 +38,7 @@ const mongoose_1 = __importStar(require("mongoose"));
 const StoreProductSchema = new mongoose_1.Schema({
     storeId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Vendor', required: true },
     productId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Product', required: true },
-    variantId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'ProductVariant', required: true },
+    variantId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'ProductVariant', required: false },
     mrp: { type: Number, required: true },
     sellingPrice: { type: Number, required: true },
     costPrice: { type: Number },

@@ -127,9 +127,9 @@ export const createCoupon = async (req: Request, res: Response) => {
     if (!user) {
       return res.status(401).json({ success: false, message: "Unauthorized" });
     }
-    const isAdmin = user.roles.includes('admin');
+    const isAdmin = user.roles?.includes('admin');
     const scope = isAdmin ? (req.body.scope || 'platform') : 'vendor';
-    const vendorId = scope === 'vendor' ? user.id : undefined;
+    const vendorId = scope === 'vendor' ? (req.body.vendorId || user.id) : undefined;
 
     const coupon = new Coupon({
       ...req.body,
@@ -146,18 +146,92 @@ export const createCoupon = async (req: Request, res: Response) => {
 export const getCoupons = async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
-    if (!user) {
-      return res.status(401).json({ success: false, message: "Unauthorized" });
+    let query: any = { status: 'Active' };
+
+    if (user) {
+      const isAdmin = user.roles?.includes('admin');
+      const isVendor = user.roles?.includes('vendor') || user.roles?.includes('seller');
+      if (isAdmin) {
+        query = {}; // Admin sees all
+      } else if (isVendor) {
+        query = {
+          $or: [
+            { scope: 'platform' },
+            { scope: 'vendor', vendorId: user.id }
+          ]
+        };
+      } else {
+        query = { status: 'Active' }; // Customers see active coupons
+      }
     }
-    const isAdmin = user.roles.includes('admin');
-    const query = isAdmin ? {} : {
-      $or: [
-        { scope: 'platform' },
-        { scope: 'vendor', vendorId: user.id }
-      ]
-    };
-    const coupons = await Coupon.find(query);
+
+    const coupons = await Coupon.find(query).populate('vendorId', 'name businessName email');
     return res.status(200).json({ success: true, coupons });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const validateCoupon = async (req: Request, res: Response) => {
+  try {
+    const { code, subtotal = 0, sellerId } = req.body;
+    if (!code) {
+      return res.status(400).json({ success: false, message: "Coupon code is required" });
+    }
+
+    const normalizedCode = String(code).trim().toUpperCase();
+    const coupon = await Coupon.findOne({ code: normalizedCode });
+
+    if (!coupon) {
+      return res.status(404).json({ success: false, message: "Invalid coupon code" });
+    }
+
+    if (coupon.status !== 'Active') {
+      return res.status(400).json({ success: false, message: "This coupon is no longer active" });
+    }
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    if (coupon.expiryDate && coupon.expiryDate < todayStr) {
+      return res.status(400).json({ success: false, message: "This coupon has expired" });
+    }
+
+    const minSub = coupon.minSubtotal || coupon.minOrderAmount || 0;
+    if (subtotal < minSub) {
+      return res.status(400).json({
+        success: false,
+        message: `Minimum order requirement of ₹${minSub} is not met for this coupon.`
+      });
+    }
+
+    if (coupon.scope === 'vendor' && coupon.vendorId && sellerId) {
+      if (coupon.vendorId.toString() !== sellerId.toString()) {
+        return res.status(400).json({
+          success: false,
+          message: "This coupon is not valid for products from this store."
+        });
+      }
+    }
+
+    let discount = 0;
+    const isPercentage = ['percentage', 'Percentage'].includes(coupon.discountType);
+    if (isPercentage) {
+      discount = Math.round((subtotal * coupon.discountValue) / 100);
+      if (coupon.maxDiscountAmount && coupon.maxDiscountAmount < 999999) {
+        discount = Math.min(discount, coupon.maxDiscountAmount);
+      }
+    } else {
+      discount = coupon.discountValue;
+    }
+
+    discount = Math.min(discount, subtotal);
+
+    return res.status(200).json({
+      success: true,
+      message: `Coupon ${coupon.code} applied successfully!`,
+      coupon,
+      discount,
+      discountAmount: discount
+    });
   } catch (error: any) {
     return res.status(500).json({ success: false, message: error.message });
   }
@@ -169,7 +243,7 @@ export const deleteCoupon = async (req: Request, res: Response) => {
     if (!user) {
       return res.status(401).json({ success: false, message: "Unauthorized" });
     }
-    const isAdmin = user.roles.includes('admin');
+    const isAdmin = user.roles?.includes('admin');
 
     const coupon = await Coupon.findById(req.params.id);
     if (!coupon) {
@@ -178,7 +252,7 @@ export const deleteCoupon = async (req: Request, res: Response) => {
 
     const isOwner = coupon.scope === 'vendor' && String(coupon.vendorId) === String(user.id);
     if (!isAdmin && !isOwner) {
-      return res.status(404).json({ success: false, message: "Resource not found" });
+      return res.status(403).json({ success: false, message: "Forbidden" });
     }
 
     await coupon.deleteOne();

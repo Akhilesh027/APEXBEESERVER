@@ -18,8 +18,9 @@ router.post("/campaigns", miscController_1.createCampaign);
 router.put("/campaigns/:id", miscController_1.updateCampaign);
 router.delete("/campaigns/:id", miscController_1.deleteCampaign);
 // Coupons
-router.get("/coupons", auth_1.protect, miscController_1.getCoupons);
+router.get("/coupons", miscController_1.getCoupons);
 router.post("/coupons", auth_1.protect, miscController_1.createCoupon);
+router.post("/coupons/validate", miscController_1.validateCoupon);
 router.put("/coupons/:id", auth_1.protect, miscController_1.updateCoupon);
 router.delete("/coupons/:id", auth_1.protect, miscController_1.deleteCoupon);
 // Support Tickets

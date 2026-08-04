@@ -63,7 +63,7 @@ const SearchDocumentSchema = new mongoose_1.Schema({
     categoryId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Category' },
     subcategoryId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Subcategory' },
     location: {
-        type: { type: String, enum: ['Point'], default: 'Point' },
+        type: { type: String, enum: ['Point'] },
         coordinates: { type: [Number] },
     },
     serviceRadiusKm: { type: Number },

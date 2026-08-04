@@ -26,6 +26,7 @@ router.put('/profile/:userId/document', auth_1.protect, vendorController_1.updat
 router.post('/profile/:userId/request-document', auth_1.protect, vendorController_1.requestVendorDocument);
 router.get('/dashboard-stats/:userId', auth_1.protect, vendorController_1.getVendorDashboardStats);
 router.get('/dashboard/analytics/:userId', auth_1.protect, vendorController_1.getVendorDashboardAnalytics);
+router.get('/market-demand/:userId', auth_1.protect, vendorController_1.getVendorMarketDemand);
 router.get('/reports/export/:userId', auth_1.protect, vendorController_1.exportVendorReport);
 router.get('/reports/heatmap/:userId', auth_1.protect, vendorController_1.getVendorReportsHeatmap);
 router.get('/reports/comparison/:userId', auth_1.protect, vendorController_1.getVendorReportsComparison);

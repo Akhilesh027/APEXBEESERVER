@@ -131,15 +131,18 @@ const populateProduct = (query: any) => {
     .populate('childCategoryId', 'name slug level brands attributes');
 };
 
-const calculatePricing = (body: any) => {
-  const sellingPrice = normalizeNumber(body.sellingPrice);
-  const mrp = normalizeNumber(body.mrp, sellingPrice);
+const roundMoney = (val: number) => Math.round((val + Number.EPSILON) * 100) / 100;
 
+const buildAdminPricing = (body: any) => {
+  const mrp = normalizeNumber(body.mrp);
+  const sellingPrice = normalizeNumber(body.sellingPrice);
   const platformFeePercent = normalizeNumber(body.platformFeePercent);
-  const platformFeeAmount =
+
+  const platformFeeAmount = roundMoney(
     body.platformFeeAmount !== undefined
       ? normalizeNumber(body.platformFeeAmount)
-      : (sellingPrice * platformFeePercent) / 100;
+      : (sellingPrice * platformFeePercent) / 100
+  );
 
   const shippingCharge = normalizeNumber(body.shippingCharge);
   const packingCharge = normalizeNumber(body.packingCharge);
@@ -147,10 +150,11 @@ const calculatePricing = (body: any) => {
   const commissionShares = parseJson(body.commissionShares, []).map(
     (item: any) => {
       const percent = normalizeNumber(item.percent);
-      const amount =
+      const amount = roundMoney(
         item.amount !== undefined
           ? normalizeNumber(item.amount)
-          : (platformFeeAmount * percent) / 100;
+          : (platformFeeAmount * percent) / 100
+      );
 
       return {
         type: item.type,
@@ -162,23 +166,26 @@ const calculatePricing = (body: any) => {
     }
   );
 
-  const totalCommissionAmount = commissionShares.reduce(
-    (sum: number, item: any) => sum + normalizeNumber(item.amount),
-    0
+  const totalCommissionAmount = roundMoney(
+    commissionShares.reduce(
+      (sum: number, item: any) => sum + normalizeNumber(item.amount),
+      0
+    )
   );
 
-  const finalSellerAmount =
-    sellingPrice - platformFeeAmount;
+  const finalSellerAmount = roundMoney(sellingPrice - platformFeeAmount);
 
-  const customerSellingAmount =
+  const customerSellingAmount = roundMoney(
     body.customerSellingAmount !== undefined
       ? normalizeNumber(body.customerSellingAmount)
-      : sellingPrice + shippingCharge + packingCharge;
+      : sellingPrice + shippingCharge + packingCharge
+  );
 
-  const platformNetProfit =
+  const platformNetProfit = roundMoney(
     body.platformNetProfit !== undefined
       ? normalizeNumber(body.platformNetProfit)
-      : platformFeeAmount - totalCommissionAmount;
+      : platformFeeAmount - totalCommissionAmount
+  );
 
   return {
     mrp,
@@ -244,6 +251,44 @@ export const createProduct = async (req: Request, res: Response) => {
         message: 'Seller not found. Login required.',
       });
       return;
+    }
+
+    if (!isAdmin) {
+      const vendor = await Vendor.findOne({ $or: [{ userId: sellerId }, { _id: sellerId }] });
+      if (vendor) {
+        try {
+          const { EntitlementService } = await import('../modules/subscription/services/EntitlementService');
+          const isRestaurant = vendor.storeType === 'restaurant' || vendor.primaryCategory === 'Food & Dining';
+          const featKey = isRestaurant ? 'MAX_MENU_ITEMS' : 'MAX_PRODUCTS';
+          const entitlement = await EntitlementService.getFeatureEntitlement(vendor._id.toString(), featKey);
+
+          if (entitlement && !entitlement.enabled) {
+            res.status(403).json({
+              success: false,
+              message: 'Product creation feature is disabled for your active subscription plan. Please upgrade your plan.'
+            });
+            return;
+          }
+
+          if (entitlement && entitlement.limit !== null && entitlement.limit !== undefined) {
+            const currentCount = await Product.countDocuments({
+              $or: [{ sellerId: sellerId }, { sellerId: vendor._id }]
+            });
+
+            if (currentCount >= entitlement.limit) {
+              res.status(403).json({
+                success: false,
+                message: `Product limit reached (${entitlement.limit} items) for your active subscription plan. Please upgrade to Premium for more items.`,
+                limit: entitlement.limit,
+                currentCount
+              });
+              return;
+            }
+          }
+        } catch (eErr: any) {
+          console.warn('[Product Subscription Check Warning]:', eErr.message);
+        }
+      }
     }
 
     if (!finalCategoryId && sellerId) {
@@ -339,6 +384,8 @@ export const createProduct = async (req: Request, res: Response) => {
         submittedAt: new Date(),
         isStoreProduct: req.body.isStoreProduct === 'true' || req.body.isStoreProduct === true,
         isSubscriptionAvailable: req.body.isSubscriptionAvailable === 'true' || req.body.isSubscriptionAvailable === true,
+        deliveryScope: req.body.deliveryScope || (req.body.isPanIndia === 'true' || req.body.isPanIndia === true ? 'pan_india' : 'local'),
+        isPanIndia: req.body.deliveryScope === 'pan_india' || req.body.isPanIndia === 'true' || req.body.isPanIndia === true,
       });
 
       const StoreProductModel = mongoose.model('StoreProduct');
@@ -404,26 +451,88 @@ export const getAllProducts = async (req: Request, res: Response) => {
   try {
     const { category, categoryId, status, isActive, excludeId, limit, page, sellerId, sellerType } = req.query;
 
-    // Parse user location details from query parameters
     const lat = req.query.lat ? parseFloat(req.query.lat as string) : null;
     const lng = req.query.lng ? parseFloat(req.query.lng as string) : null;
     const pincode = req.query.pincode ? String(req.query.pincode).trim() : '';
+    const state = req.query.state ? String(req.query.state).trim() : '';
+    const district = req.query.district ? String(req.query.district).trim() : '';
+    const mandal = req.query.mandal ? String(req.query.mandal).trim() : '';
 
     const filter: any = {};
     const pageNum = Math.max(1, Number(page) || 1);
     const limitNum = Math.min(100, Math.max(1, Number(limit) || 20));
 
+    // Enforce Hyperlocal vs Pan-India Product Visibility based on Customer Location (when sellerId is not specified)
+    if (!sellerId && (state || district || mandal || pincode || (lat && lng))) {
+      const vendorLocationOr: any[] = [];
+
+      if (pincode) {
+        vendorLocationOr.push({ pincode });
+      }
+      if (mandal) {
+        vendorLocationOr.push({ mandal: { $regex: new RegExp(`^${mandal.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}$`, 'i') } });
+      }
+      if (district) {
+        vendorLocationOr.push({ district: { $regex: new RegExp(`^${district.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}$`, 'i') } });
+      }
+      if (state) {
+        vendorLocationOr.push({ state: { $regex: new RegExp(`^${state.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}$`, 'i') } });
+      }
+      vendorLocationOr.push({ isGlobalDelivery: true });
+      vendorLocationOr.push({ deliveryMode: 'national_courier' });
+
+      const matchingVendors = await Vendor.find({
+        status: { $in: ['active', 'Approved', 'approved'] },
+        marketplaceStatus: { $in: ['Approved', 'Approved & Verified', 'active'] },
+        isMarketplaceListed: true,
+        $or: vendorLocationOr
+      }).select('_id userId');
+
+      const allowedSellerIds = matchingVendors.flatMap(v => [v._id, v.userId]).filter(Boolean);
+
+      filter.$or = [
+        ...(allowedSellerIds.length > 0 ? [{ sellerId: { $in: allowedSellerIds } }] : []),
+        { deliveryScope: { $in: ['pan_india', 'both'] } },
+        { isPanIndia: true }
+      ];
+    }
+
     if (sellerId) {
-      filter.sellerId = sellerId;
+      const vendor = await Vendor.findOne({ $or: [{ userId: sellerId }, { _id: sellerId }] });
+      if (vendor) {
+        filter.$or = [
+          { sellerId: sellerId },
+          { sellerId: vendor._id },
+          { sellerId: vendor.userId },
+          { createdBy: sellerId },
+          { createdBy: vendor.userId }
+        ];
+      } else {
+        filter.sellerId = sellerId;
+      }
     }
     if (sellerType) {
       filter.sellerType = sellerType;
     }
-    if (status) {
+    // Strict Live Product Enforcement for Customer User Panel
+    const liveStatuses = ['Live', 'Active', 'Approved', 'approved', 'active', 'published'];
+    if (status && status !== 'all' && status !== 'draft' && status !== 'pending' && status !== 'rejected') {
+      filter.status = { $in: liveStatuses };
+    } else if (!status && !sellerId) {
+      filter.status = { $in: liveStatuses };
+    } else if (status) {
       filter.status = status;
     }
+
     if (isActive !== undefined) {
       filter.isActive = isActive === 'true';
+    } else if (!sellerId) {
+      filter.isActive = true;
+    }
+
+    if (!sellerId) {
+      filter.isArchived = { $ne: true };
+      filter.moderationStatus = { $ne: 'rejected' };
     }
     if (category || categoryId) {
       const catParam = String(categoryId || category).trim();
@@ -505,27 +614,55 @@ export const getAllProducts = async (req: Request, res: Response) => {
       const sellerIdStr = (p.sellerId?._id || p.sellerId || '').toString();
       const vendor = vendorMap.get(sellerIdStr);
 
-      let distance = 1.2; // default
-      let duration = 10; // default mins
-      let shippingCharge = 0; // default shipping charge
+      let distanceKm: number | null = null;
+      let duration = 15;
+      let shippingCharge = 0;
+      let deliveryTimeLabel = '⚡ Fast [15 MINS]';
+      let isCourierShipping = false;
 
-      if (lat && lng && vendor && vendor.location && vendor.location.coordinates) {
-        const vLng = vendor.location.coordinates[0];
-        const vLat = vendor.location.coordinates[1];
-        if (typeof vLng === 'number' && typeof vLat === 'number') {
-          distance = calculateDistance(lat, lng, vLat, vLng);
-          duration = Math.max(10, Math.round(10 + distance * 2.5));
-          shippingCharge = distance > 3 ? Math.round(distance * 8) : 0;
-        }
-      } else if (pincode && vendor && vendor.pincode) {
-        if (vendor.pincode === pincode) {
-          distance = 1.5;
-          duration = 12;
+      const isPanIndiaItem = productObj.isPanIndia || productObj.deliveryScope === 'pan_india' || productObj.deliveryScope === 'both';
+      const vendorLat = vendor?.location?.coordinates?.[1];
+      const vendorLng = vendor?.location?.coordinates?.[0];
+
+      if (lat && lng && typeof vendorLat === 'number' && typeof vendorLng === 'number') {
+        distanceKm = calculateDistance(lat, lng, vendorLat, vendorLng);
+      } else if (pincode && vendor?.pincode) {
+        if (pincode === vendor.pincode) {
+          distanceKm = 1.5;
+        } else if (district && vendor?.district && district.toLowerCase() !== vendor.district.toLowerCase()) {
+          distanceKm = 280; // Inter-district (e.g. Hyderabad vs Adilabad)
         } else {
-          distance = 4.8;
-          duration = 25;
-          shippingCharge = 15;
+          distanceKm = 8.5;
         }
+      } else if (district && vendor?.district) {
+        if (district.toLowerCase() === vendor.district.toLowerCase()) {
+          distanceKm = 3.5;
+        } else {
+          distanceKm = 280; // Inter-district
+        }
+      }
+
+      if (distanceKm !== null && distanceKm > 20) {
+        isCourierShipping = true;
+        deliveryTimeLabel = '🌐 Courier [2-4 Days]';
+        duration = 2880; // 2 days in minutes
+        shippingCharge = distanceKm > 100 ? 50 : 30;
+      } else if (distanceKm !== null) {
+        isCourierShipping = false;
+        duration = Math.max(10, Math.round(10 + distanceKm * 2));
+        deliveryTimeLabel = `⚡ Fast [${duration} MINS]`;
+        shippingCharge = distanceKm > 3 ? Math.round(distanceKm * 6) : 0;
+      } else if (isPanIndiaItem) {
+        isCourierShipping = true;
+        deliveryTimeLabel = '🌐 Pan-India Courier';
+        duration = 2880;
+        shippingCharge = 40;
+      } else {
+        isCourierShipping = false;
+        duration = 15;
+        deliveryTimeLabel = '⚡ Fast [15 MINS]';
+        shippingCharge = 0;
+        distanceKm = 1.5;
       }
 
       if (!productObj.adminPricing) {
@@ -533,13 +670,17 @@ export const getAllProducts = async (req: Request, res: Response) => {
       }
 
       productObj.adminPricing.shippingCharge = shippingCharge;
-      productObj.calculatedDistanceKm = parseFloat(distance.toFixed(1));
+      productObj.shippingCharge = shippingCharge;
+      productObj.calculatedDistanceKm = distanceKm !== null ? parseFloat(distanceKm.toFixed(1)) : null;
       productObj.estimatedDeliveryMinutes = duration;
+      productObj.deliveryTimeLabel = deliveryTimeLabel;
+      productObj.isCourierShipping = isCourierShipping;
       productObj.deliveryMode = vendor?.deliveryMode || 'self_delivery';
+      productObj.vendorLocationName = vendor?.district || vendor?.city || vendor?.state || '';
 
       // Store name & store rating override
       productObj.brand = vendor?.businessName || productObj.brand || 'ApexBee Seller';
-      productObj.vendorRating = 4.8; // default store rating
+      productObj.vendorRating = 4.8;
 
       return productObj;
     });
@@ -574,7 +715,7 @@ export const getMyProducts = async (req: Request, res: Response) => {
       return;
     }
 
-    const products = await populateProduct(Product.find({ sellerId })).sort({
+    const products = await populateProduct(Product.find({ sellerId, isArchived: { $ne: true } })).sort({
       createdAt: -1,
     });
 
@@ -615,8 +756,10 @@ export const getProductById = async (req: Request, res: Response) => {
     const isOwner = authUser && String(product.sellerId._id || product.sellerId) === String(authUser.id);
     const isAdmin = authUser && authUser.roles?.includes('admin');
 
-    if (product.status !== 'Live' && !isOwner && !isAdmin) {
-      res.status(404).json({ success: false, message: 'Resource not found' });
+    const liveStatuses = ['Live', 'Active', 'Approved', 'approved', 'active', 'published'];
+    const isLive = liveStatuses.includes(product.status) && product.isActive !== false && product.isArchived !== true && product.moderationStatus !== 'rejected';
+    if (!isLive && !isOwner && !isAdmin) {
+      res.status(404).json({ success: false, message: 'Product is currently not live or unavailable' });
       return;
     }
 
@@ -665,12 +808,25 @@ export const updateProduct = async (req: Request, res: Response) => {
     if (!isAdmin && !validateProductFields(req.body, res)) {
       return;
     }
-
-    if (product.status === 'Live' && !isAdmin) {
-      res.status(400).json({
-        message: 'Live product cannot be edited directly',
-      });
-      return;
+    // Capture pre-edit snapshot for vendor edits so admin can compare changes
+    if (!isAdmin) {
+      product.preEditSnapshot = {
+        name: product.name,
+        description: product.description,
+        baseMrp: product.baseMrp,
+        baseSellingPrice: product.baseSellingPrice,
+        stock: product.stock,
+        sku: product.sku,
+        thumbnail: product.thumbnail,
+        images: [...(product.images || [])],
+        attributes: product.attributes ? JSON.parse(JSON.stringify(product.attributes)) : {},
+        minimumOrderQuantity: product.minimumOrderQuantity || 1,
+        isStoreProduct: product.isStoreProduct,
+        isSubscriptionAvailable: product.isSubscriptionAvailable,
+        deliveryScope: product.deliveryScope,
+        brand: product.brand,
+        snapshotAt: new Date(),
+      };
     }
 
     const uploaded = await getUploadedFiles(req);
@@ -745,6 +901,24 @@ export const updateProduct = async (req: Request, res: Response) => {
       product.variants = normalizeVariants(parseJson(req.body.variants, [])) as any;
     }
 
+    // Auto-extract MOQ from attributes or body
+    const findMoqFromAttrs = (attrs: any) => {
+      if (!attrs || typeof attrs !== 'object') return 0;
+      for (const [k, v] of Object.entries(attrs)) {
+        if (k.toLowerCase().includes('moq') || k.toLowerCase().includes('minimum order')) {
+          const n = Number(v);
+          if (!isNaN(n) && n > 0) return n;
+        }
+      }
+      return 0;
+    };
+
+    const attrMoq = findMoqFromAttrs(product.attributes) || (Array.isArray(product.variants) ? findMoqFromAttrs(product.variants[0]?.attributes) : 0);
+    const reqMoq = Number(req.body.minimumOrderQuantity || req.body.moq) || 0;
+    const finalMoq = Math.max(1, reqMoq || attrMoq || Number(product.minimumOrderQuantity) || 1);
+    product.minimumOrderQuantity = finalMoq;
+    product.moq = finalMoq;
+
     if (req.body.isStoreProduct !== undefined) {
       product.isStoreProduct = req.body.isStoreProduct === 'true' || req.body.isStoreProduct === true;
     }
@@ -752,20 +926,37 @@ export const updateProduct = async (req: Request, res: Response) => {
       product.isSubscriptionAvailable = req.body.isSubscriptionAvailable === 'true' || req.body.isSubscriptionAvailable === true;
     }
 
-    product.status = 'Pending Review';
-    product.adminPricingApproved = false;
-    product.sellerPricingAccepted = false;
-    product.isActive = false;
-    product.approvedByAdminAt = undefined;
-    product.sellerAcceptedAt = undefined;
-    product.liveAt = undefined;
+    if (req.body.deliveryScope) {
+      product.deliveryScope = req.body.deliveryScope;
+    }
+    if (req.body.isLocalDelivery !== undefined) {
+      product.isLocalDelivery = req.body.isLocalDelivery === 'true' || req.body.isLocalDelivery === true;
+    }
+    if (req.body.isPanIndia !== undefined) {
+      product.isPanIndia = req.body.isPanIndia === 'true' || req.body.isPanIndia === true;
+    }
+
+    if (!isAdmin) {
+      product.status = 'Vendor Edited';
+      product.isVendorEdit = true;
+      product.vendorEditedAt = new Date();
+      product.adminPricingApproved = false;
+      product.sellerPricingAccepted = false;
+      product.isActive = false;
+      product.approvedByAdminAt = undefined;
+      product.sellerAcceptedAt = undefined;
+      product.liveAt = undefined;
+    }
 
     await product.save();
 
     const populatedProduct = await populateProduct(Product.findById(product._id));
 
     res.json({
-      message: 'Product updated successfully and sent for review',
+      success: true,
+      message: isAdmin
+        ? 'Product updated successfully.'
+        : 'Product updated successfully and submitted to Admin for review & approval.',
       product: populatedProduct,
     });
   } catch (error: any) {
@@ -791,24 +982,32 @@ export const deleteProduct = async (req: Request, res: Response) => {
     }
 
     const authUser = (req as any).user;
-    const isOwner = authUser && String(product.sellerId) === String(authUser.id);
+    const isOwner = authUser && (String(product.sellerId) === String(authUser.id) || String(product.createdBy) === String(authUser.id));
     const isAdmin = authUser && authUser.roles?.includes('admin');
 
     if (!isOwner && !isAdmin) {
-      res.status(404).json({ success: false, message: 'Resource not found' });
+      res.status(403).json({ success: false, message: 'Not authorized to delete this product' });
       return;
     }
 
-    if (product.status === 'Live' && !isAdmin) {
-      res.status(400).json({
-        message: 'Live product cannot be deleted directly',
-      });
-      return;
+    // Soft-delete / Archive live products to protect order history integrity and prevent broken references
+    product.isArchived = true;
+    product.isActive = false;
+    product.status = 'Archived';
+    await product.save();
+
+    // Soft-deactivate associated StoreProduct & Inventory
+    try {
+      const StoreProductModel = mongoose.model('StoreProduct');
+      const InventoryModel = mongoose.model('Inventory');
+
+      await StoreProductModel.updateMany({ productId: product._id }, { $set: { isAvailableForDelivery: false, isAvailableForPickup: false } });
+      await InventoryModel.updateMany({ productId: product._id }, { $set: { availableQuantity: 0 } });
+    } catch (e) {
+      // Ignore model lookup errors if not loaded
     }
 
-    await product.deleteOne();
-
-    res.json({ message: 'Product deleted successfully' });
+    res.json({ message: 'Product archived and removed from storefront successfully' });
   } catch (error: any) {
     res.status(500).json({
       message: 'Failed to delete product',
@@ -826,7 +1025,7 @@ export const configureAdminPricing = async (req: Request, res: Response) => {
       return;
     }
 
-    const adminPricing = calculatePricing(req.body);
+    const adminPricing = buildAdminPricing(req.body);
 
     product.adminPricing = {
       ...adminPricing,
@@ -856,6 +1055,9 @@ export const configureAdminPricing = async (req: Request, res: Response) => {
     }
 
     product.status = 'Awaiting Seller Approval';
+    product.isVendorEdit = false;
+    product.preEditSnapshot = undefined;
+    product.vendorEditedAt = undefined;
     product.adminPricingApproved = true;
     product.sellerPricingAccepted = false;
     product.approvedByAdminAt = new Date();
@@ -997,6 +1199,9 @@ export const rejectProduct = async (req: Request, res: Response) => {
     }
 
     product.status = 'Rejected';
+    product.isVendorEdit = false;
+    product.preEditSnapshot = undefined;
+    product.vendorEditedAt = undefined;
     product.isActive = false;
     product.adminPricingApproved = false;
     product.sellerPricingAccepted = false;
@@ -1013,6 +1218,49 @@ export const rejectProduct = async (req: Request, res: Response) => {
   } catch (error: any) {
     res.status(500).json({
       message: 'Failed to reject product',
+      error: error.message,
+    });
+  }
+};
+
+export const quickApproveVendorEdit = async (req: Request, res: Response) => {
+  try {
+    const product = await Product.findById(req.params.id);
+
+    if (!product) {
+      res.status(404).json({ message: 'Product not found' });
+      return;
+    }
+
+    if (!product.isVendorEdit && product.status !== 'Vendor Edited') {
+      res.status(400).json({ message: 'Product is not a vendor edit' });
+      return;
+    }
+
+    product.status = 'Live';
+    product.isVendorEdit = false;
+    product.preEditSnapshot = undefined;
+    product.vendorEditedAt = undefined;
+    product.isActive = true;
+    product.adminPricingApproved = true;
+    product.sellerPricingAccepted = true;
+    product.approvedByAdminAt = new Date();
+    product.sellerAcceptedAt = new Date();
+    product.liveAt = new Date();
+    product.moderationStatus = 'approved' as any;
+
+    await product.save();
+
+    const populatedProduct = await populateProduct(Product.findById(product._id));
+
+    res.json({
+      success: true,
+      message: 'Vendor edit approved. Product is now live.',
+      product: populatedProduct,
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      message: 'Failed to approve vendor edit',
       error: error.message,
     });
   }
@@ -1054,25 +1302,29 @@ export const getProductsByVendor = async (req: Request, res: Response): Promise<
   try {
     const { vendorId } = req.params;
 
-    // Support querying by vendor.userId if the vendorId passed is vendor._id
-    let querySellerId = vendorId;
-    try {
-      const vendor = await Vendor.findById(vendorId);
-      if (vendor && vendor.userId) {
-        querySellerId = vendor.userId.toString();
-      }
-    } catch (err) {
-      // Ignore if not a valid ObjectId
+    // Collect all possible ObjectIds for vendor (_id, userId)
+    const vendorObjectIds: any[] = [];
+    if (mongoose.Types.ObjectId.isValid(vendorId)) {
+      vendorObjectIds.push(new mongoose.Types.ObjectId(vendorId));
     }
 
-    // Only return Live + active storefront products for customer-facing storefront view
+    const vendor = await Vendor.findOne({ $or: [{ _id: vendorId }, { userId: vendorId }] });
+    if (vendor) {
+      if (vendor._id && !vendorObjectIds.some(id => id.toString() === vendor._id.toString())) {
+        vendorObjectIds.push(vendor._id);
+      }
+      if (vendor.userId && !vendorObjectIds.some(id => id.toString() === vendor.userId.toString())) {
+        vendorObjectIds.push(vendor.userId);
+      }
+    }
+
+    // Query all active and live/approved products belonging to this vendor
     const products = await Product.find({
       $or: [
-        { sellerId: querySellerId },
-        { sellerId: vendorId }
+        { sellerId: { $in: vendorObjectIds } },
+        { createdBy: { $in: vendorObjectIds } }
       ],
-      isStoreProduct: true,
-      status: 'Live',
+      status: { $in: ['Live', 'Active', 'Approved', 'approved'] },
       isActive: true
     })
       .populate('categoryId', 'name')
@@ -1085,13 +1337,13 @@ export const getProductsByVendor = async (req: Request, res: Response): Promise<
         vendorId: pObj.sellerId,
         itemName: pObj.name,
         images: pObj.images && pObj.images.length > 0 ? pObj.images : [pObj.thumbnail].filter(Boolean),
-        afterDiscount: pObj.baseSellingPrice,
-        userPrice: pObj.baseMrp,
+        afterDiscount: pObj.baseSellingPrice || pObj.baseMrp || 0,
+        userPrice: pObj.baseMrp || pObj.baseSellingPrice || 0,
         category: pObj.categoryId ? {
           _id: pObj.categoryId._id || pObj.categoryId,
           name: pObj.categoryId.name || 'Category'
         } : undefined,
-        subcategory: pObj.subCategoryId?.name || '',
+        subcategory: pObj.subCategoryId?.name || pObj.subcategory || '',
         status: pObj.status,
         isSubscriptionAvailable: !!pObj.isSubscriptionAvailable,
         brand: pObj.brand || 'Fresh & Local',
@@ -1107,7 +1359,7 @@ export const getProductsByVendor = async (req: Request, res: Response): Promise<
     console.error('Error fetching products by vendor:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error fetching products by vendor',
+      message: 'Failed to fetch vendor products',
       error: error.message
     });
   }
@@ -1222,37 +1474,44 @@ export const archiveProduct = async (req: Request, res: Response) => {
 
 export const getAiProductSuggestions = async (req: Request, res: Response) => {
   try {
-    const { name, categoryId } = req.body;
-    if (!name) {
-      res.status(400).json({ message: 'Product name is required for AI suggestions' });
-      return;
-    }
+    const { name, categoryId, categoryName: inputCategoryName, subCategoryName } = req.body;
 
-    let categoryName = 'Premium Product';
-    if (categoryId && mongoose.Types.ObjectId.isValid(categoryId)) {
+    let categoryName = inputCategoryName || 'Premium Quality Product';
+    if (!inputCategoryName && categoryId && mongoose.Types.ObjectId.isValid(categoryId)) {
       const cat = await Category.findById(categoryId);
       if (cat) categoryName = cat.name;
     }
 
-    const desc = `Premium quality ${name} sourced directly from verified local suppliers/farmers. Cleaned, graded, and packed under strict hygiene conditions. Ideal for regular household requirements.`;
-    const teluguDesc = `తాజా మరియు మేలైన ${name}, అధిక నాణ్యత ప్రమాణాలతో ప్యాక్ చేయబడినది. local fresh sourced directly.`;
+    const rawName = name && name.trim().length > 0 ? name.trim() : (subCategoryName || categoryName || 'Fresh Item');
+    const formattedTitle = rawName.split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+    
+    const suggestedTitle = formattedTitle.includes('Fresh') || formattedTitle.includes('Premium') 
+      ? formattedTitle 
+      : `${formattedTitle} - Fresh & Premium Grade`;
+
+    const desc = `Experience the finest quality ${formattedTitle}. Sourced directly from verified local suppliers and farmers, processed under strict hygiene conditions to preserve natural taste, texture, and freshness. Cleaned, graded, and securely packaged. Ideal for everyday household consumption and commercial catering needs.`;
+    const teluguDesc = `అత్యుత్తమ నాణ్యత కలిగిన ${formattedTitle}, నేరుగా స్థానిక రైతులు మరియు సరఫరాదారుల నుండి సేకరించబడినది. ఎలాంటి రసాయనాలు లేకుండా పరిశుభ్రంగా ప్యాక్ చేయబడింది.`;
+    
     const features = [
-      `100% Organic & Naturally Handpicked`,
+      `100% Authentic & Naturally Sourced`,
       `Quality tested under strict platform criteria`,
-      `Sustainable local sourcing support`
+      `Hygienically sealed to lock in natural freshness`,
+      `Direct local sourcing supporting regional sellers`
     ];
+
     const keywords = [
-      name.toLowerCase(),
-      `fresh ${name.toLowerCase()}`,
-      `buy ${name.toLowerCase()} online`,
-      `organic ${categoryName.toLowerCase()}`,
-      'apexbee local',
-      'nellore premium foods'
+      formattedTitle.toLowerCase(),
+      `fresh ${formattedTitle.toLowerCase()}`,
+      `buy ${formattedTitle.toLowerCase()} online`,
+      `best ${formattedTitle.toLowerCase()} price`,
+      `${categoryName.toLowerCase()} online delivery`,
+      'apexbee local'
     ].join(', ');
 
     res.json({
       success: true,
       data: {
+        title: suggestedTitle,
         description: desc,
         teluguDescription: `${teluguDesc}\n\nEnglish: ${desc}`,
         features,
@@ -1592,3 +1851,68 @@ export const seedProductsForAllCategories = async (req: Request, res: Response) 
     res.status(500).json({ success: false, message: 'Failed to seed category products', error: error.message });
   }
 };
+
+export const removeSeededProducts = async (req: Request, res: Response) => {
+  try {
+    const { deleteAll, all } = req.query;
+
+    let filter: any = {
+      $or: [
+        { sku: /^SEED-/i },
+        { sku: /^DEMO-SEED-/i },
+        { slug: /^seed-/i },
+        { brand: 'ApexBee Prime' },
+        { name: /^Premium /i }
+      ]
+    };
+
+    if (deleteAll === 'true' || all === 'true') {
+      filter = {};
+    }
+
+    const seededProducts = await Product.find(filter).select('_id');
+    const productIds = seededProducts.map((p) => p._id);
+
+    if (productIds.length === 0) {
+      return res.status(200).json({
+        success: true,
+        message: 'No seeded products found to remove.',
+        removedCount: 0
+      });
+    }
+
+    const prodRes = await Product.deleteMany({ _id: { $in: productIds } });
+
+    const StoreProductModel = mongoose.models.StoreProduct;
+    if (StoreProductModel) {
+      await StoreProductModel.deleteMany({ productId: { $in: productIds } });
+    }
+
+    const InventoryModel = mongoose.models.Inventory;
+    if (InventoryModel) {
+      await InventoryModel.deleteMany({ productId: { $in: productIds } });
+    }
+
+    const ProductVariantModel = mongoose.models.ProductVariant;
+    if (ProductVariantModel) {
+      await ProductVariantModel.deleteMany({ productId: { $in: productIds } });
+    }
+
+    const SearchDocumentModel = mongoose.models.SearchDocument;
+    if (SearchDocumentModel) {
+      await SearchDocumentModel.deleteMany({ entityId: { $in: productIds } });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Successfully removed ${prodRes.deletedCount} seeded products and associated records.`,
+      removedCount: prodRes.deletedCount
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to remove seeded products',
+      error: error.message
+    });
+  }
+};

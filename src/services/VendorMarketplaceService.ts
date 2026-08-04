@@ -84,12 +84,9 @@ export class VendorMarketplaceService {
             spherical: true,
             maxDistance: radiusMeters,
             query: { 
-              status: "active", 
-              marketplaceStatus: { $nin: ["Suspended", "Hidden", "Rejected"] },
-              $or: [
-                { isMarketplaceListed: true },
-                { isMarketplaceListed: { $exists: false } }  // migration safety
-              ]
+              status: { $in: ["active", "Approved", "approved"] }, 
+              marketplaceStatus: { $in: ["Approved", "Approved & Verified", "active"] },
+              isMarketplaceListed: true
             }
           }
         },
@@ -138,12 +135,9 @@ export class VendorMarketplaceService {
     else if (options.pincode) {
       searchMode = 'pincode';
       const query: any = {
-        status: "active",
-        marketplaceStatus: { $nin: ["Suspended", "Hidden", "Rejected"] },
-        $or: [
-          { isMarketplaceListed: true },
-          { isMarketplaceListed: { $exists: false } }
-        ],
+        status: { $in: ["active", "Approved", "approved"] },
+        marketplaceStatus: { $in: ["Approved", "Approved & Verified", "active"] },
+        isMarketplaceListed: true,
         pincode: options.pincode.trim()
       };
       if (options.category && options.category !== "ALL") {
@@ -158,12 +152,9 @@ export class VendorMarketplaceService {
       searchMode = 'city';
       const cityRegex = new RegExp(options.city.trim(), 'i');
       const query: any = {
-        status: "active",
-        marketplaceStatus: { $nin: ["Suspended", "Hidden", "Rejected"] },
-        $or: [
-          { isMarketplaceListed: true },
-          { isMarketplaceListed: { $exists: false } }
-        ],
+        status: { $in: ["active", "Approved", "approved"] },
+        marketplaceStatus: { $in: ["Approved", "Approved & Verified", "active"] },
+        isMarketplaceListed: true,
         $and: [{
           $or: [
             { district: cityRegex },
@@ -184,12 +175,9 @@ export class VendorMarketplaceService {
     if (rawVendors.length === 0) {
       searchMode = 'city';
       const query: any = {
-        status: "active",
-        marketplaceStatus: { $nin: ["Suspended", "Hidden", "Rejected"] },
-        $or: [
-          { isMarketplaceListed: true },
-          { isMarketplaceListed: { $exists: false } }
-        ]
+        status: { $in: ["active", "Approved", "approved"] },
+        marketplaceStatus: { $in: ["Approved", "Approved & Verified", "active"] },
+        isMarketplaceListed: true
       };
       if (options.category && options.category !== "ALL") {
         query.categories = options.category;

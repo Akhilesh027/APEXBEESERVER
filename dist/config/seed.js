@@ -21,13 +21,16 @@ const Banner_1 = require("../models/Banner");
 const Restaurant_1 = require("../models/Restaurant");
 const ServiceProvider_1 = require("../models/ServiceProvider");
 const seedCategories = async () => {
-    const parentCount = await Category_1.default.countDocuments({ parentId: null, image: { $exists: true } });
-    if (parentCount === 15) {
-        console.log("[Seeder] Categories already seeded with images.");
+    const catCount = await Category_1.default.countDocuments({});
+    if (catCount > 0) {
+        console.log("[Seeder] Categories already exist. Skipping automatic category re-seeding.");
         return;
     }
-    console.log("[Seeder] Re-seeding new category hierarchy with images...");
-    await Category_1.default.deleteMany({});
+    if (process.env.AUTO_SEED_CATEGORIES !== 'true') {
+        console.log("[Seeder] Automatic category re-seeding is disabled.");
+        return;
+    }
+    console.log("[Seeder] Re-seeding category hierarchy...");
     try {
         const Subcategory = mongoose_1.default.model('Subcategory');
         await Subcategory.deleteMany({});

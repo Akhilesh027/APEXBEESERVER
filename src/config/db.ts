@@ -7,7 +7,13 @@ import { env } from './env';
 
 const migrateServiceProviders = async () => {
   try {
-    const providers = await ServiceProvider.find({ providerCode: { $exists: false } });
+    const providers = await ServiceProvider.find({
+      $or: [
+        { providerCode: { $exists: false } },
+        { providerCode: null },
+        { providerCode: '' }
+      ]
+    });
     let updatedCount = 0;
     for (const sp of providers) {
       if (!sp.providerCode) {
@@ -79,25 +85,31 @@ const migrateServiceProviderKycs = async () => {
 
 const seedAdmin = async () => {
   try {
-    const adminEmail = 'admin@apexmarket.in';
-    const existingAdmin = await User.findOne({ email: adminEmail });
-    if (!existingAdmin) {
-      const salt = await bcrypt.genSalt(10);
-      const passwordHash = await bcrypt.hash('admin123', salt);
-      const adminUser = new User({
-        name: 'Super Admin',
-        email: adminEmail,
-        passwordHash,
-        phone: '9999999999',
-        mobile: '9999999999',
-        roles: ['admin', 'customer'],
-        status: 'active',
-        isVerified: true
+    const adminAccounts = [
+      { email: 'admin@apexmarket.in', name: 'Super Admin', phone: '9999999999' },
+      { email: 'admin@apexbee.com', name: 'ApexBee Admin', phone: '9999999998' }
+    ];
+
+    for (const acc of adminAccounts) {
+      const existingAdmin = await User.findOne({
+        $or: [{ email: acc.email }, { phone: acc.phone }]
       });
-      await adminUser.save();
-      console.log('Super Admin user seeded successfully! (admin@apexmarket.in / admin123)');
-    } else {
-      console.log('Super Admin user exists or already seeded.');
+      if (!existingAdmin) {
+        const salt = await bcrypt.genSalt(10);
+        const passwordHash = await bcrypt.hash('admin123', salt);
+        const adminUser = new User({
+          name: acc.name,
+          email: acc.email,
+          passwordHash,
+          phone: acc.phone,
+          mobile: acc.phone,
+          roles: ['admin', 'customer'],
+          status: 'active',
+          isVerified: true
+        });
+        await adminUser.save();
+        console.log(`[Seed] ${acc.name} user created! (${acc.email} / admin123)`);
+      }
     }
   } catch (error) {
     console.error('Error seeding admin user:', error);

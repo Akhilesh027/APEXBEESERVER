@@ -83,7 +83,6 @@ const CategorySchema = new mongoose_1.Schema({
     sortOrder: { type: Number, default: 0 },
 }, { timestamps: true });
 CategorySchema.index({ name: 1 });
-CategorySchema.index({ slug: 1 });
 CategorySchema.index({ isActive: 1 });
 CategorySchema.index({ isSeasonal: 1 });
 exports.Category = mongoose_1.default.model('Category', CategorySchema);

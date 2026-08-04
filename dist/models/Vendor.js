@@ -161,6 +161,27 @@ const VendorSchema = new mongoose_1.Schema({
         default: "platform_delivery"
     },
     deliveryRadiusKm: { type: Number, default: 5 },
+    storeType: {
+        type: String,
+        default: "grocery"
+    },
+    allowedCategories: [{ type: mongoose_1.Schema.Types.ObjectId, ref: 'Category' }],
+    storeConfig: {
+        storeType: { type: String, default: "grocery" },
+        fssaiLicenseNo: { type: String, default: "" },
+        avgCostForTwo: { type: Number, default: 300 },
+        vegOnly: { type: Boolean, default: false },
+        tableBookingEnabled: { type: Boolean, default: false },
+        subscriptionEnabled: { type: Boolean, default: false },
+        visitingCharge: { type: Number, default: 0 },
+        serviceWarrantyDays: { type: Number, default: 0 },
+        sanctifiedBadge: { type: Boolean, default: false }
+    },
+    primaryCategory: { type: String, default: "" },
+    category: { type: String, default: "" },
+    subCategory: { type: String, default: "" },
+    approvedSubcategories: { type: [String], default: [] },
+    subCategories: { type: [String], default: [] },
     categories: { type: [String], default: [] },
     estimatedDeliveryMinutes: { type: Number, default: 30 },
     minOrder: { type: Number, default: 100 },
@@ -211,4 +232,7 @@ VendorSchema.pre("save", function (next) {
     next();
 });
 VendorSchema.index({ location: "2dsphere" });
+VendorSchema.index({ userId: 1 });
+VendorSchema.index({ status: 1 });
+VendorSchema.index({ businessName: 1 });
 exports.Vendor = mongoose_1.default.model("Vendor", VendorSchema);

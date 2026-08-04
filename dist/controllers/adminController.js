@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getMetrics = exports.setFeatureFlag = exports.getFeatureFlag = exports.cleanupExpiredReservations = exports.requestServiceProviderDocument = exports.updateServiceProviderDocumentStatus = exports.createDeliveryPartner = exports.getDeliveryPartners = exports.getReconciliationStats = exports.getWallets = exports.processEntrepreneurCommissionRelease = exports.processManufacturerDrawdown = exports.processWholesalerDrawdown = exports.processVendorDrawdown = exports.updateEntrepreneurStatus = exports.updateManufacturerStatus = exports.updateWholesalerStatus = exports.updateUserStatus = exports.createTerritory = exports.getTerritories = exports.getFranchises = exports.updateServiceProviderStatus = exports.getServiceProviders = exports.getEntrepreneurs = exports.getManufacturers = exports.getWholesalers = exports.getUsers = exports.updateServiceProviderKycStatus = exports.getServiceProviderKycs = exports.updateVendorStatus = exports.updateVendorDocumentStatus = exports.getVendors = exports.getDashboardStats = exports.reviewApplication = exports.rejectApplication = exports.verifyKycApplication = exports.approveApplication = exports.getApplicationById = exports.getApplications = void 0;
+exports.updateVendorCategoryGovernance = exports.getMetrics = exports.setFeatureFlag = exports.getFeatureFlag = exports.cleanupExpiredReservations = exports.requestServiceProviderDocument = exports.updateServiceProviderDocumentStatus = exports.createDeliveryPartner = exports.getDeliveryPartners = exports.getReconciliationStats = exports.getWallets = exports.processEntrepreneurCommissionRelease = exports.processManufacturerDrawdown = exports.processWholesalerDrawdown = exports.processVendorDrawdown = exports.updateEntrepreneurStatus = exports.updateManufacturerStatus = exports.updateWholesalerStatus = exports.updateUserStatus = exports.createTerritory = exports.getTerritories = exports.getFranchises = exports.updateServiceProviderStatus = exports.getServiceProviders = exports.getEntrepreneurs = exports.getManufacturers = exports.getWholesalers = exports.getUsers = exports.updateServiceProviderKycStatus = exports.getServiceProviderKycs = exports.updateVendorStatus = exports.updateVendorDocumentStatus = exports.getVendorProducts = exports.getVendors = exports.getDashboardStats = exports.reviewApplication = exports.rejectApplication = exports.verifyKycApplication = exports.approveApplication = exports.getApplicationById = exports.getApplications = void 0;
 exports.assignTerritoryAndMapFranchises = assignTerritoryAndMapFranchises;
 const mongoose_1 = __importDefault(require("mongoose"));
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
@@ -28,6 +28,8 @@ const createNotificationCompat = async (payload, options) => {
     }
 };
 const Vendor_1 = require("../models/Vendor");
+const VendorCategoryAccess_1 = __importDefault(require("../models/VendorCategoryAccess"));
+const Category_1 = __importDefault(require("../models/Category"));
 const Referral_1 = require("../models/Referral");
 const Manufacturer_1 = require("../models/Manufacturer");
 const Wholesaler_1 = require("../models/Wholesaler");
@@ -406,30 +408,29 @@ async function assignTerritoryAndMapFranchises(businessType, businessProfile) {
 const getApplications = async (req, res) => {
     try {
         const apps = await BusinessApplication_1.BusinessApplication.find().sort({ createdAt: -1 });
-        const enrichedApps = await Promise.all(apps.map(async (app) => {
+        const activeFranchises = await Franchise_1.Franchise.find({ status: "active" })
+            .select("_id businessName ownerName franchiseCode franchiseLevel state district mandal")
+            .lean();
+        const franchiseMap = new Map();
+        activeFranchises.forEach((f) => {
+            if (f.franchiseLevel === "state" && f.state) {
+                franchiseMap.set(`state:${f.state.trim().toLowerCase()}`, f);
+            }
+            if (f.franchiseLevel === "district" && f.state && f.district) {
+                franchiseMap.set(`district:${f.state.trim().toLowerCase()}:${f.district.trim().toLowerCase()}`, f);
+            }
+            if (f.franchiseLevel === "mandal" && f.state && f.district && f.mandal) {
+                franchiseMap.set(`mandal:${f.state.trim().toLowerCase()}:${f.district.trim().toLowerCase()}:${f.mandal.trim().toLowerCase()}`, f);
+            }
+        });
+        const enrichedApps = apps.map((app) => {
             const appObj = app.toObject();
-            const stateFranchise = await Franchise_1.Franchise.findOne({
-                franchiseLevel: "state",
-                state: app.state,
-                status: "active",
-            });
-            const districtFranchise = app.district
-                ? await Franchise_1.Franchise.findOne({
-                    franchiseLevel: "district",
-                    state: app.state,
-                    district: app.district,
-                    status: "active",
-                })
-                : null;
-            const mandalFranchise = app.mandal
-                ? await Franchise_1.Franchise.findOne({
-                    franchiseLevel: "mandal",
-                    state: app.state,
-                    district: app.district,
-                    mandal: app.mandal,
-                    status: "active",
-                })
-                : null;
+            const stKey = app.state ? `state:${app.state.trim().toLowerCase()}` : "";
+            const distKey = app.state && app.district ? `district:${app.state.trim().toLowerCase()}:${app.district.trim().toLowerCase()}` : "";
+            const mandalKey = app.state && app.district && app.mandal ? `mandal:${app.state.trim().toLowerCase()}:${app.district.trim().toLowerCase()}:${app.mandal.trim().toLowerCase()}` : "";
+            const stateFranchise = stKey ? franchiseMap.get(stKey) : null;
+            const districtFranchise = distKey ? franchiseMap.get(distKey) : null;
+            const mandalFranchise = mandalKey ? franchiseMap.get(mandalKey) : null;
             appObj.dependencies = {
                 stateFranchise: stateFranchise
                     ? {
@@ -457,7 +458,7 @@ const getApplications = async (req, res) => {
                     : null,
             };
             return appObj;
-        }));
+        });
         res.status(200).json({
             success: true,
             applications: enrichedApps,
@@ -546,35 +547,38 @@ exports.getApplicationById = getApplicationById;
 const approveApplication = async (req, res) => {
     try {
         const { id } = req.params;
-        const { adminRemarks } = req.body;
+        const { adminRemarks, primaryCategory, category, subCategory, approvedSubcategories } = req.body;
         const app = await BusinessApplication_1.BusinessApplication.findById(id);
         if (!app) {
             res.status(404).json({ message: "Application not found" });
             return;
         }
-        if (app.status === "approved") {
-            res.status(400).json({ message: "Application is already approved" });
-            return;
-        }
         if (adminRemarks) {
             app.adminRemarks = adminRemarks;
         }
-        app.status = "approved";
+        const assignedCat = primaryCategory || category || app.primaryCategory || app.category || "Food & Restaurant";
+        app.primaryCategory = assignedCat;
+        app.category = assignedCat;
+        if (subCategory || req.body.subCategory) {
+            app.subCategory = subCategory || req.body.subCategory;
+        }
+        if (Array.isArray(approvedSubcategories)) {
+            app.approvedSubcategories = approvedSubcategories;
+        }
+        app.status = "pre_approved";
         await app.save();
         const user = await User_1.User.findById(app.userId);
-        if (!user) {
-            res.status(404).json({ message: "Associated user not found" });
-            return;
+        if (user) {
+            await createNotificationCompat({
+                userId: user._id,
+                title: "Application Pre-Approved! 📄",
+                message: `Your business application for ${app.applicationType} (${app.businessName}) has been pre-approved under ${assignedCat}. Please upload your KYC documents for final verification.`,
+                type: "info",
+            });
         }
-        await createNotificationCompat({
-            userId: user._id,
-            title: "Application Approved! 🎉",
-            message: `Your business application for ${app.applicationType} (${app.businessName}) has been approved. Please upload/complete KYC for final verification.`,
-            type: "success",
-        });
         res.status(200).json({
             success: true,
-            message: "Application approved successfully.",
+            message: "Application pre-approved successfully. Awaiting KYC document submission.",
             application: app,
         });
     }
@@ -596,9 +600,9 @@ const verifyKycApplication = async (req, res) => {
             res.status(404).json({ message: "Application not found" });
             return;
         }
-        if (!["approved", "under_review"].includes(app.status)) {
+        if (!["approved", "pre_approved", "under_review", "kyc_submitted"].includes(app.status)) {
             res.status(400).json({
-                message: "Application must be approved or under review before KYC verification",
+                message: "Application must be pre-approved or under review before KYC verification",
             });
             return;
         }
@@ -715,9 +719,23 @@ const verifyKycApplication = async (req, res) => {
             const validLocation = app.location && app.location.coordinates && app.location.coordinates.length === 2
                 ? app.location
                 : undefined;
+            const vendorSubCategories = Array.isArray(app.approvedSubcategories) && app.approvedSubcategories.length > 0
+                ? app.approvedSubcategories
+                : app.subCategory
+                    ? String(app.subCategory).split(',').map((s) => s.trim()).filter(Boolean)
+                    : [];
             const updateObj = {
                 $set: {
                     ...profileFields,
+                    category: app.primaryCategory || app.category || 'Food & Restaurant',
+                    primaryCategory: app.primaryCategory || app.category || 'Food & Restaurant',
+                    subCategory: vendorSubCategories[0] || app.subCategory || '',
+                    approvedSubcategories: vendorSubCategories,
+                    subCategories: vendorSubCategories,
+                    kycStatus: 'Verified',
+                    status: 'active',
+                    marketplaceStatus: 'Approved',
+                    isMarketplaceListed: true,
                     gstNumber: app.gstNumber,
                     panNumber: app.panNumber,
                     documents: existingVendor?.documents?.length
@@ -737,6 +755,40 @@ const verifyKycApplication = async (req, res) => {
             const savedVendor = await Vendor_1.Vendor.findOneAndUpdate({ userId: user._id }, updateObj, { upsert: true, new: true });
             if (savedVendor) {
                 await assignTerritoryAndMapFranchises("vendor", savedVendor);
+                // Auto-initialize VendorCategoryAccess in pending status (no auto-approval of pooja_store)
+                const vendorCat = (savedVendor.primaryCategory || savedVendor.category || '').toLowerCase();
+                if (vendorCat.includes('devotional') || vendorCat.includes('puja')) {
+                    const devotionalParent = await Category_1.default.findOne({ level: 1, $or: [{ slug: 'devotional' }, { name: /devotional/i }] });
+                    if (devotionalParent) {
+                        const existingAccess = await VendorCategoryAccess_1.default.findOne({
+                            vendorId: savedVendor._id,
+                            parentCategoryId: devotionalParent._id
+                        });
+                        if (!existingAccess) {
+                            const reqCaps = app.requestedCapabilities && Array.isArray(app.requestedCapabilities) && app.requestedCapabilities.length > 0
+                                ? app.requestedCapabilities
+                                : [];
+                            await VendorCategoryAccess_1.default.create({
+                                vendorId: savedVendor._id,
+                                storeId: savedVendor._id,
+                                parentCategoryId: devotionalParent._id,
+                                requestedCapabilities: reqCaps,
+                                approvedCapabilities: [],
+                                approvedSubcategoryIds: [],
+                                approvedChildCategoryIds: [],
+                                status: 'pending',
+                                restrictions: {
+                                    canCreateProducts: false,
+                                    canCreateServices: false,
+                                    canJoinFestivalCombos: false,
+                                    canAcceptBulkOrders: false,
+                                    canSellWholesale: false,
+                                    canOfferSubscriptions: false,
+                                }
+                            });
+                        }
+                    }
+                }
             }
         }
         else if (targetRole === "manufacturer") {
@@ -1113,7 +1165,7 @@ const reviewApplication = async (req, res) => {
 exports.reviewApplication = reviewApplication;
 const getDashboardStats = async (req, res) => {
     try {
-        const [totalUsers, totalSellers, pendingKycCount, pendingAppsCount, totalVendors, totalWholesalers, totalManufacturers, totalEntrepreneurs, totalServiceProviders, stateFranchises, totalFranchises, uniqueStates, uniqueDistricts, uniqueMandals, totalOrders, ordersRevenueAgg, walletsAgg, pendingProducts, pendingPayments, walletWithdrawals, revenueChartData, categorySalesData, orderStatusStats, franchiseGrowthData] = await Promise.all([
+        const [totalUsers, totalSellers, pendingKycCount, pendingAppsCount, totalVendors, totalWholesalers, totalManufacturers, totalEntrepreneurs, totalServiceProviders, stateFranchises, totalFranchises, uniqueStates, uniqueDistricts, uniqueMandals, totalOrders, ordersRevenueAgg, walletsAgg, pendingProducts, pendingPayments, walletWithdrawals, revenueChartData, categorySalesData, orderStatusStats, franchiseGrowthData, commissionSettlementAgg] = await Promise.all([
             User_1.User.countDocuments(),
             User_1.User.countDocuments({
                 roles: { $in: ["vendor", "manufacturer", "wholesaler"] },
@@ -1246,6 +1298,10 @@ const getDashboardStats = async (req, res) => {
                         count: "$count"
                     }
                 }
+            ]),
+            CommissionSettlement_1.CommissionSettlement.aggregate([
+                { $match: { status: { $ne: "cancelled" } } },
+                { $group: { _id: null, totalPlatformFee: { $sum: "$totalPlatformFee" } } }
             ])
         ]);
         const totalRevenue = ordersRevenueAgg[0]?.total || 0;
@@ -1255,7 +1311,8 @@ const getDashboardStats = async (req, res) => {
         const pendingWithdrawals = walletWithdrawals[0]?.count || 0;
         // Build platform KPIs
         const platformGMV = totalRevenue || 0;
-        const platformNetRevenue = Number((platformGMV * 0.1).toFixed(2));
+        const settlementFeeFromDocs = commissionSettlementAgg[0]?.totalPlatformFee || 0;
+        const platformNetRevenue = settlementFeeFromDocs > 0 ? settlementFeeFromDocs : Number((platformGMV * 0.1).toFixed(2));
         const settlementLiability = totalAvailable || 0;
         const riskAlerts = (await Order_1.Order.countDocuments({ orderStatus: "Payment Rejected" })) +
             (await BusinessApplication_1.BusinessApplication.countDocuments({ status: "rejected" }));
@@ -1308,6 +1365,7 @@ const getDashboardStats = async (req, res) => {
                 activeDistricts: uniqueDistricts.length,
                 activeMandals: uniqueMandals.length,
                 totalRevenue,
+                totalPlatformFee: platformNetRevenue,
                 totalOrders,
                 pendingProducts,
                 pendingPayments,
@@ -1339,7 +1397,24 @@ const getDashboardStats = async (req, res) => {
 exports.getDashboardStats = getDashboardStats;
 const getVendors = async (req, res) => {
     try {
-        const vendors = await Vendor_1.Vendor.find().sort({ createdAt: -1 });
+        const rawVendors = await Vendor_1.Vendor.find().sort({ createdAt: -1 });
+        const userIds = rawVendors.map(v => v.userId).filter(Boolean);
+        const applications = await BusinessApplication_1.BusinessApplication.find({ userId: { $in: userIds } });
+        const appMap = new Map();
+        applications.forEach(a => appMap.set(String(a.userId), a));
+        const vendors = rawVendors.map(v => {
+            const vObj = v.toObject();
+            const app = appMap.get(String(v.userId));
+            if (app) {
+                vObj.primaryCategory = vObj.primaryCategory || app.primaryCategory || app.category || vObj.category;
+                vObj.category = vObj.primaryCategory || vObj.category;
+                vObj.subCategory = vObj.subCategory || app.subCategory;
+                vObj.approvedSubcategories = (Array.isArray(vObj.approvedSubcategories) && vObj.approvedSubcategories.length > 0)
+                    ? vObj.approvedSubcategories
+                    : (app.approvedSubcategories || (app.subCategory ? [app.subCategory] : []));
+            }
+            return vObj;
+        });
         res.status(200).json({
             success: true,
             vendors,
@@ -1354,6 +1429,31 @@ const getVendors = async (req, res) => {
     }
 };
 exports.getVendors = getVendors;
+const getVendorProducts = async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const products = await Product_1.default.find({
+            $or: [
+                { vendorId: userId },
+                { userId: userId },
+                { sellerId: userId }
+            ]
+        }).sort({ createdAt: -1 });
+        res.status(200).json({
+            success: true,
+            products,
+        });
+    }
+    catch (error) {
+        console.error("Get vendor products error:", error);
+        res.status(500).json({
+            success: false,
+            message: "Server error retrieving vendor products",
+            error: error.message,
+        });
+    }
+};
+exports.getVendorProducts = getVendorProducts;
 const updateVendorDocumentStatus = async (req, res) => {
     try {
         const { userId, docId } = req.params;
@@ -2467,3 +2567,44 @@ const getMetrics = async (req, res) => {
     }
 };
 exports.getMetrics = getMetrics;
+const updateVendorCategoryGovernance = async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { primaryCategory, subCategory, approvedSubcategories } = req.body;
+        const app = await BusinessApplication_1.BusinessApplication.findOne({ userId });
+        if (app) {
+            if (primaryCategory)
+                app.primaryCategory = primaryCategory;
+            if (subCategory)
+                app.subCategory = subCategory;
+            if (Array.isArray(approvedSubcategories))
+                app.approvedSubcategories = approvedSubcategories;
+            await app.save();
+        }
+        const vendor = await Vendor_1.Vendor.findOne({ userId });
+        if (vendor) {
+            if (primaryCategory) {
+                vendor.primaryCategory = primaryCategory;
+                vendor.category = primaryCategory;
+            }
+            if (subCategory) {
+                vendor.subCategory = subCategory;
+            }
+            if (Array.isArray(approvedSubcategories)) {
+                vendor.approvedSubcategories = approvedSubcategories;
+                vendor.subCategories = approvedSubcategories;
+            }
+            await vendor.save();
+        }
+        res.status(200).json({
+            success: true,
+            message: 'Vendor category governance updated successfully',
+            data: { primaryCategory, subCategory, approvedSubcategories }
+        });
+    }
+    catch (error) {
+        console.error('Update vendor category governance error:', error);
+        res.status(500).json({ success: false, message: 'Failed to update vendor category governance', error: error.message });
+    }
+};
+exports.updateVendorCategoryGovernance = updateVendorCategoryGovernance;

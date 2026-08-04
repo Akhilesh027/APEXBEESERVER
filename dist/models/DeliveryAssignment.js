@@ -38,6 +38,8 @@ const mongoose_1 = __importStar(require("mongoose"));
 const DeliveryAssignmentSchema = new mongoose_1.Schema({
     orderId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Order', required: true },
     deliveryPartnerId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true },
+    vendorId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User' },
+    customerId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User' },
     partnerSnapshot: {
         name: { type: String, required: true },
         phoneMasked: { type: String, required: true },

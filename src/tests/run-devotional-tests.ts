@@ -186,6 +186,72 @@ async function runDevotionalTests() {
       assert.strictEqual(result.isDryRun, true);
     });
 
+    // TEST 7: Devotional Product Masters Seeding
+    await runSingleTest('7. Seed Devotional Product Masters & Catalogue Variants', async () => {
+      const { seedDevotionalProducts } = await import('../seeds/seedDevotionalProducts');
+      const res = await seedDevotionalProducts();
+      assert.strictEqual(res.success, true);
+      assert.ok(res.totalDefinitions >= 40);
+      assert.strictEqual(res.duplicateSeedKeys, 0);
+      assert.strictEqual(res.orphanProducts, 0);
+      assert.strictEqual(res.accidentalStoreProducts, 0);
+
+      const systemCount = await Product.countDocuments({ catalogueSource: 'system', isCatalogueMaster: true });
+      assert.ok(systemCount >= 40);
+    });
+
+    // TEST 8: Devotional Product Seeding Idempotency Check (Second Run)
+    await runSingleTest('8. Verify Devotional Product Seeding Idempotency (Second Run)', async () => {
+      const { seedDevotionalProducts } = await import('../seeds/seedDevotionalProducts');
+      const countBefore = await Product.countDocuments({ catalogueSource: 'system', isCatalogueMaster: true });
+
+      const res = await seedDevotionalProducts();
+      assert.strictEqual(res.success, true);
+      assert.strictEqual(res.insertedProducts, 0); // 0 new inserts on rerun!
+      assert.strictEqual(res.duplicateSeedKeys, 0);
+
+      const countAfter = await Product.countDocuments({ catalogueSource: 'system', isCatalogueMaster: true });
+      assert.strictEqual(countBefore, countAfter);
+    });
+
+    // TEST 9: Preserving Existing Data / Vendor Price & Stock Integrity
+    await runSingleTest('9. Verify Preservation of Vendor-Controlled Prices and Stock', async () => {
+      const { seedDevotionalProducts } = await import('../seeds/seedDevotionalProducts');
+
+      // Create a vendor store product with custom pricing
+      const devParent = await Category.findOne({ slug: 'devotional', level: 1 });
+      assert.ok(devParent);
+
+      const testVendorProd = new Product({
+        name: 'Vendor Custom Agarbatti Pack',
+        slug: `vendor-custom-agarbatti-${Date.now()}`,
+        description: 'Vendor specific custom listing',
+        categoryId: devParent._id,
+        subcategoryId: devParent._id,
+        sku: `SKU-VENDOR-${Date.now()}`,
+        baseMrp: 199,
+        baseSellingPrice: 149,
+        stock: 50,
+        catalogueSource: 'vendor',
+        isCatalogueMaster: false,
+        isStoreProduct: true,
+      });
+      await testVendorProd.save();
+
+      // Run product seed again
+      await seedDevotionalProducts();
+
+      // Verify vendor product pricing and stock remain intact
+      const fetchedVendorProd = await Product.findById(testVendorProd._id);
+      assert.ok(fetchedVendorProd);
+      assert.strictEqual(fetchedVendorProd.baseMrp, 199);
+      assert.strictEqual(fetchedVendorProd.baseSellingPrice, 149);
+      assert.strictEqual(fetchedVendorProd.stock, 50);
+
+      // Cleanup
+      await Product.deleteOne({ _id: testVendorProd._id });
+    });
+
     console.log('\n======================================================');
     console.log('DEVOTIONAL VERTICAL TEST SUITE EXECUTION SUMMARY');
     console.log('======================================================');

@@ -90,6 +90,7 @@ export const getHomeDashboard = async (req: Request, res: Response) => {
       nearbyStores = await Vendor.find({
         status: 'active',
         marketplaceStatus: 'Approved',
+        isMarketplaceListed: true,
         location: {
           $near: {
             $geometry: { type: 'Point', coordinates: [lng, lat] },
@@ -101,83 +102,137 @@ export const getHomeDashboard = async (req: Request, res: Response) => {
       nearbyStores = await Vendor.find({
         status: 'active',
         marketplaceStatus: 'Approved',
+        isMarketplaceListed: true,
         pincode
       }).limit(5);
     } else {
       nearbyStores = await Vendor.find({
         status: 'active',
-        marketplaceStatus: 'Approved'
+        marketplaceStatus: 'Approved',
+        isMarketplaceListed: true
       }).limit(5);
     }
 
-    // 4. Fetch featured products & deals
-    // Populate with product details, variant details and store/vendor details
-    const storeProducts = await StoreProduct.find({ isActive: true })
-      .populate('productId')
-      .populate('variantId')
-      .populate('storeId')
-      .limit(12);
+    // 4. Fetch featured products & deals directly from Product collection
+    const liveProducts = await Product.find({
+      status: { $in: ['Live', 'Active', 'Approved', 'approved'] },
+      isActive: true,
+      isArchived: { $ne: true }
+    })
+      .sort({ createdAt: -1 })
+      .limit(30)
+      .populate('categoryId', 'name')
+      .populate('subCategoryId', 'name');
 
-    const products = storeProducts.map((sp: any) => {
-      if (!sp.productId) return null;
-      
-      const vendor = sp.storeId;
-      let distance = 1.2; // default
-      let duration = 10; // default mins
-      let shippingCharge = 0; // default shipping charge
+    const sellerIds = liveProducts.map((p: any) => p.sellerId || p.createdBy).filter(Boolean);
+    const vendors = await Vendor.find({ $or: [{ userId: { $in: sellerIds } }, { _id: { $in: sellerIds } }] });
+    const vendorMap = new Map();
+    vendors.forEach((v: any) => {
+      if (v.userId) vendorMap.set(v.userId.toString(), v);
+      if (v._id) vendorMap.set(v._id.toString(), v);
+    });
 
-      if (lat && lng && vendor && vendor.location && vendor.location.coordinates) {
-        const vLng = vendor.location.coordinates[0];
-        const vLat = vendor.location.coordinates[1];
-        if (typeof vLng === 'number' && typeof vLat === 'number') {
-          distance = calculateDistance(lat, lng, vLat, vLng);
-          duration = Math.max(10, Math.round(10 + distance * 2.5));
-          shippingCharge = distance > 3 ? Math.round(distance * 8) : 0;
-        }
-      } else if (pincode && vendor && vendor.pincode) {
-        if (vendor.pincode === pincode) {
-          distance = 1.5;
-          duration = 12;
+    const products = liveProducts.map((p: any) => {
+      const pObj = p.toObject ? p.toObject() : p;
+      const sellerIdStr = (p.sellerId || p.createdBy || '').toString();
+      const vendor = vendorMap.get(sellerIdStr);
+
+      let distanceKm: number | null = null;
+      let duration = 15;
+      let shippingCharge = 0;
+      let deliveryTimeLabel = '⚡ Fast [15 MINS]';
+      let isCourierShipping = false;
+
+      const isPanIndiaItem = pObj.isPanIndia || pObj.deliveryScope === 'pan_india' || pObj.deliveryScope === 'both';
+      const vendorLat = vendor?.location?.coordinates?.[1];
+      const vendorLng = vendor?.location?.coordinates?.[0];
+
+      if (lat && lng && typeof vendorLat === 'number' && typeof vendorLng === 'number') {
+        distanceKm = calculateDistance(lat, lng, vendorLat, vendorLng);
+      } else if (pincode && vendor?.pincode) {
+        if (pincode === vendor.pincode) {
+          distanceKm = 1.5;
         } else {
-          distance = 4.8;
-          duration = 25;
-          shippingCharge = 15;
+          distanceKm = 280; // Inter-district (e.g. Hyderabad vs Adilabad)
         }
       }
 
+      if (distanceKm !== null && distanceKm > 20) {
+        isCourierShipping = true;
+        deliveryTimeLabel = '🌐 Courier [2-4 Days]';
+        duration = 2880;
+        shippingCharge = distanceKm > 100 ? 50 : 30;
+      } else if (distanceKm !== null) {
+        isCourierShipping = false;
+        duration = Math.max(10, Math.round(10 + distanceKm * 2));
+        deliveryTimeLabel = `⚡ Fast [${duration} MINS]`;
+        shippingCharge = distanceKm > 3 ? Math.round(distanceKm * 6) : 0;
+      } else if (isPanIndiaItem) {
+        isCourierShipping = true;
+        deliveryTimeLabel = '🌐 Pan-India Courier';
+        duration = 2880;
+        shippingCharge = 40;
+      } else {
+        isCourierShipping = false;
+        duration = 15;
+        deliveryTimeLabel = '⚡ Fast [15 MINS]';
+        shippingCharge = 0;
+        distanceKm = 1.5;
+      }
+
+      const mrp = pObj.baseMrp || pObj.baseSellingPrice || 0;
+      const selling = pObj.baseSellingPrice || pObj.baseMrp || 0;
+      const discountPercent = pObj.discountPercent || (mrp > selling ? Math.round(((mrp - selling) / mrp) * 100) : 0);
+
       return {
-        _id: sp.productId._id,
-        storeProductId: sp._id,
-        name: sp.productId.name,
-        slug: sp.productId.slug,
-        description: sp.productId.description,
-        brand: vendor?.businessName || sp.productId.brand || 'ApexBee Seller',
-        storeRating: (vendor?.rating?.totalReviews > 0 && vendor?.rating?.average) ? Number(vendor.rating.average).toFixed(1) : undefined,
-        sku: sp.variantId?.sku || sp.productId.sku,
-        thumbnail: sp.productId.thumbnail || '',
-        images: sp.productId.images || [],
-        baseMrp: sp.mrp,
-        baseSellingPrice: sp.sellingPrice,
-        discountPercent: sp.mrp > sp.sellingPrice ? Math.round(((sp.mrp - sp.sellingPrice) / sp.mrp) * 100) : 0,
-        stock: 100, // default placeholder
-        isActive: sp.isActive,
-        status: 'Live',
-        categoryId: sp.productId.categoryId,
-        subCategoryId: sp.productId.subCategoryId,
-        rating: sp.productId.rating || sp.productId.averageRating || 0,
-        reviews: sp.productId.numReviews || sp.productId.reviewsCount || 0,
-        soldCount: sp.productId.soldCount || 0,
+        _id: pObj._id,
+        name: pObj.name,
+        slug: pObj.slug,
+        description: pObj.description,
+        brand: vendor?.businessName || pObj.brand || 'ApexBee Seller',
+        storeRating: (vendor?.rating?.totalReviews > 0 && vendor?.rating?.average) ? Number(vendor.rating.average).toFixed(1) : '4.8',
+        sku: pObj.sku,
+        thumbnail: pObj.thumbnail || pObj.images?.[0] || '',
+        images: pObj.images && pObj.images.length > 0 ? pObj.images : [pObj.thumbnail].filter(Boolean),
+        baseMrp: mrp,
+        baseSellingPrice: selling,
+        discountPercent,
+        stock: pObj.stock || 100,
+        isActive: pObj.isActive,
+        status: pObj.status || 'Live',
+        categoryId: pObj.categoryId,
+        subCategoryId: pObj.subCategoryId,
+        rating: pObj.rating || 4.8,
+        reviews: pObj.numReviews || 12,
+        soldCount: pObj.soldCount || 5,
         adminPricing: {
-          shippingCharge: shippingCharge
+          shippingCharge
         },
-        calculatedDistanceKm: parseFloat(distance.toFixed(1)),
+        shippingCharge,
+        calculatedDistanceKm: distanceKm !== null ? parseFloat(distanceKm.toFixed(1)) : null,
         estimatedDeliveryMinutes: duration,
-        deliveryMode: vendor?.deliveryMode || 'self_delivery'
+        deliveryTimeLabel,
+        isCourierShipping,
+        deliveryScope: pObj.deliveryScope || 'local',
+        isLocalDelivery: pObj.isLocalDelivery !== false,
+        isPanIndia: !!pObj.isPanIndia || pObj.deliveryScope === 'pan_india' || pObj.deliveryScope === 'both',
+        deliveryMode: vendor?.deliveryMode || 'self_delivery',
+        vendorLocationName: vendor?.district || vendor?.city || vendor?.state || '',
+        vendorPincode: vendor?.pincode || ''
       };
-    }).filter(Boolean);
+    });
+
+    // Enforce Local vs Pan-India Location Scoping
+    const deliverableProducts = products.filter((p: any) => {
+      const isPan = p.isPanIndia || p.deliveryScope === 'pan_india' || p.deliveryScope === 'both';
+      if (isPan) return true;
+      if (p.calculatedDistanceKm !== null && p.calculatedDistanceKm <= 20) return true;
+      if (!lat && !lng && !pincode) return true; // If customer has no location configured
+      return false; // Exclude local products from distant sellers
+    });
 
     // Filter deals products (any product with discountPercent > 10%)
-    const deals = products.filter((p: any) => p.discountPercent > 10);
+    const deals = deliverableProducts.filter((p: any) => p.discountPercent > 10);
 
     // 5. Fetch Delivery Slots
     const deliverySlots = await DeliverySlot.find({ isActive: true }).sort({ sortOrder: 1 });
@@ -212,8 +267,8 @@ export const getHomeDashboard = async (req: Request, res: Response) => {
       categories,
       banners: formattedBanners,
       nearbyStores,
-      featuredProducts: products,
-      deals: deals.length > 0 ? deals : products, // fallback if no deals
+      featuredProducts: deliverableProducts,
+      deals: deals.length > 0 ? deals : deliverableProducts,
       deliverySlots,
       userContext
     });
@@ -425,23 +480,27 @@ export const getPersonalizationDetails = async (req: Request, res: Response) => 
           });
         }
         
+        const liveStatuses = ['Live', 'Active', 'Approved', 'approved', 'active', 'published'];
         if (prodIds.size > 0) {
           continueShopping = await Product.find({
             _id: { $in: Array.from(prodIds) },
-            status: 'Live',
-            isActive: true
+            status: { $in: liveStatuses },
+            isActive: true,
+            isArchived: { $ne: true }
           }).limit(4);
         }
       }
       
       // Fallback
       if (continueShopping.length < 4) {
+        const liveStatuses = ['Live', 'Active', 'Approved', 'approved', 'active', 'published'];
         const needed = 4 - continueShopping.length;
         const skipIds = continueShopping.map(p => p._id);
         const fallbacks = await Product.find({
           _id: { $nin: skipIds },
-          status: 'Live',
-          isActive: true
+          status: { $in: liveStatuses },
+          isActive: true,
+          isArchived: { $ne: true }
         }).limit(needed);
         continueShopping = [...continueShopping, ...fallbacks];
       }
@@ -479,6 +538,9 @@ export const getPersonalizationDetails = async (req: Request, res: Response) => 
     let restaurants: any[] = [];
     try {
       const realVendors = await Vendor.find({
+        status: 'active',
+        marketplaceStatus: 'Approved',
+        isMarketplaceListed: true,
         $or: [
           { category: { $regex: /food|restaurant|dining/i } },
           { primaryCategory: { $regex: /food|restaurant|dining/i } },

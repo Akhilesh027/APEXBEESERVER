@@ -37,6 +37,9 @@ export interface IProduct extends Document {
   attributes?: any;
   isStoreProduct?: boolean;
   isSubscriptionAvailable?: boolean;
+  deliveryScope?: 'local' | 'pan_india' | 'both';
+  isLocalDelivery?: boolean;
+  isPanIndia?: boolean;
   adminPricingApproved?: boolean;
   sellerPricingAccepted?: boolean;
   approvedByAdminAt?: Date;
@@ -47,6 +50,28 @@ export interface IProduct extends Document {
   rejectionReason?: string;
   badges: string[];
   isArchived?: boolean;
+  catalogueSource?: 'system' | 'vendor' | 'migration';
+  seedKey?: string;
+  isCatalogueMaster?: boolean;
+  seedVersion?: number;
+  schemaVersion?: number;
+  productMode?: string;
+  itemType?: string;
+  keywords?: string[];
+  tags?: string[];
+  supportedUnits?: string[];
+  inventoryRules?: Record<string, any>;
+  deliveryRules?: Record<string, any>;
+  complianceRules?: Record<string, any>;
+  customizationRules?: Record<string, any>;
+  mediaRules?: Record<string, any>;
+  wholesaleRules?: Record<string, any>;
+  serviceRules?: Record<string, any>;
+  minimumOrderQuantity?: number;
+  moq?: number;
+  isVendorEdit?: boolean;
+  vendorEditedAt?: Date;
+  preEditSnapshot?: Record<string, any>;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -92,6 +117,9 @@ const ProductSchema = new Schema<IProduct>(
     attributes: { type: Schema.Types.Mixed },
     isStoreProduct: { type: Boolean, default: false },
     isSubscriptionAvailable: { type: Boolean, default: false },
+    deliveryScope: { type: String, enum: ['local', 'pan_india', 'both'], default: 'local' },
+    isLocalDelivery: { type: Boolean, default: true },
+    isPanIndia: { type: Boolean, default: false },
     adminPricingApproved: { type: Boolean, default: false },
     sellerPricingAccepted: { type: Boolean, default: false },
     approvedByAdminAt: { type: Date },
@@ -102,6 +130,29 @@ const ProductSchema = new Schema<IProduct>(
     rejectionReason: { type: String },
     badges: [{ type: String }],
     isArchived: { type: Boolean, default: false },
+
+    // Catalogue Master Seed Metadata
+    catalogueSource: { type: String, enum: ['system', 'vendor', 'migration'], default: 'vendor' },
+    seedKey: { type: String, sparse: true },
+    isCatalogueMaster: { type: Boolean, default: false },
+    seedVersion: { type: Number, default: 1 },
+    schemaVersion: { type: Number, default: 1 },
+    productMode: { type: String, default: 'standard' },
+    keywords: [{ type: String }],
+    tags: [{ type: String }],
+    supportedUnits: [{ type: String }],
+    inventoryRules: { type: Schema.Types.Mixed, default: {} },
+    deliveryRules: { type: Schema.Types.Mixed, default: {} },
+    complianceRules: { type: Schema.Types.Mixed, default: {} },
+    customizationRules: { type: Schema.Types.Mixed, default: {} },
+    mediaRules: { type: Schema.Types.Mixed, default: {} },
+    wholesaleRules: { type: Schema.Types.Mixed, default: {} },
+    serviceRules: { type: Schema.Types.Mixed, default: {} },
+    minimumOrderQuantity: { type: Number, default: 1 },
+    moq: { type: Number, default: 1 },
+    isVendorEdit: { type: Boolean, default: false },
+    vendorEditedAt: { type: Date },
+    preEditSnapshot: { type: Schema.Types.Mixed },
   },
   { timestamps: true }
 );
@@ -112,6 +163,8 @@ ProductSchema.index({ categoryId: 1 });
 ProductSchema.index({ subcategoryId: 1 });
 ProductSchema.index({ moderationStatus: 1 });
 ProductSchema.index({ isActive: 1 });
+ProductSchema.index({ seedKey: 1 }, { unique: true, sparse: true });
+ProductSchema.index({ catalogueSource: 1 });
 
 export const Product = mongoose.model<IProduct>('Product', ProductSchema);
 export default Product;
