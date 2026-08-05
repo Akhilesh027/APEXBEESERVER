@@ -28,6 +28,36 @@ export const getMyCategoryAccess = async (req: AuthRequest, res: Response): Prom
   }
 };
 
+export const findParentCategoryByTerm = async (term: string) => {
+  if (!term) return null;
+  const cleanTerm = term.toLowerCase().trim();
+
+  let cat = await Category.findOne({
+    level: 1,
+    $or: [
+      { slug: cleanTerm },
+      { slug: { $regex: new RegExp(cleanTerm.replace(/[^a-z0-9]/g, '.*'), 'i') } },
+      { name: { $regex: new RegExp(cleanTerm.replace(/[^a-z0-9]/g, '.*'), 'i') } },
+    ],
+  });
+
+  if (!cat) {
+    if (cleanTerm.includes('shop') || cleanTerm.includes('retail')) {
+      cat = await Category.findOne({ level: 1, $or: [{ slug: 'shopping' }, { name: /shopping/i }] });
+    } else if (cleanTerm.includes('food') || cleanTerm.includes('restaur')) {
+      cat = await Category.findOne({ level: 1, $or: [{ slug: 'restaurant' }, { name: /restaurant/i }] });
+    } else if (cleanTerm.includes('daily') || cleanTerm.includes('grocer')) {
+      cat = await Category.findOne({ level: 1, $or: [{ slug: 'daily-needs' }, { name: /daily/i }] });
+    } else if (cleanTerm.includes('devot') || cleanTerm.includes('pooja') || cleanTerm.includes('puja')) {
+      cat = await Category.findOne({ level: 1, $or: [{ slug: 'devotional' }, { name: /devotional/i }] });
+    } else if (cleanTerm.includes('servic')) {
+      cat = await Category.findOne({ level: 1, $or: [{ slug: 'services' }, { name: /services/i }] });
+    }
+  }
+
+  return cat;
+};
+
 // GET /api/vendor/allowed-categories
 export const getVendorAllowedCategories = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -42,31 +72,75 @@ export const getVendorAllowedCategories = async (req: AuthRequest, res: Response
       return;
     }
 
-    const accessRecords = await VendorCategoryAccess.find({
+    const primaryCatTerm = vendor.primaryCategory || vendor.category || vendor.storeType || '';
+    const primaryParent = await findParentCategoryByTerm(primaryCatTerm);
+
+    if (primaryParent && (vendor.status === 'active' || !vendor.status)) {
+      // Ensure active VendorCategoryAccess record exists for vendor's assigned primary category
+      await VendorCategoryAccess.findOneAndUpdate(
+        { vendorId: vendor._id, parentCategoryId: primaryParent._id },
+        {
+          $set: {
+            vendorId: vendor._id,
+            storeId: vendor._id,
+            parentCategoryId: primaryParent._id,
+            status: 'approved',
+            approvedCapabilities: ['general_store', 'retail_store', 'shopping_store', 'pooja_store'],
+            approvedItemTypes: ['product', 'service'],
+            restrictions: {
+              canCreateProducts: true,
+              canCreateServices: true,
+              canJoinFestivalCombos: true,
+              canAcceptBulkOrders: true,
+              canSellWholesale: true,
+              canOfferSubscriptions: true,
+            },
+            approvedAt: new Date(),
+          },
+        },
+        { upsert: true, new: true }
+      );
+    }
+
+    let accessRecords = await VendorCategoryAccess.find({
       vendorId: vendor._id,
       status: { $in: ['approved', 'partially_approved'] },
     });
 
-    if (accessRecords.length === 0) {
-      // Fallback: If admin hasn't configured access yet, load parent categories matching vendor's primary vertical
-      const primaryCat = vendor.primaryCategory || vendor.storeType || 'devotional';
-      const parent = await Category.findOne({ slug: primaryCat, level: 1 });
-      if (parent) {
-        const subcategories = await Category.find({ parentId: parent._id, level: 2, isActive: true });
-        const subIds = subcategories.map(s => s._id);
-        const childCategories = await Category.find({ parentId: { $in: subIds }, level: 3, isActive: true });
+    if (primaryParent) {
+      const primaryAccess = accessRecords.filter(a => a.parentCategoryId.toString() === primaryParent._id.toString());
+      if (primaryAccess.length > 0) {
+        accessRecords = primaryAccess;
+      }
+    }
 
-        res.status(200).json({
-          success: true,
-          data: {
-            parentCategory: parent,
-            subcategories: subcategories.map(sub => ({
-              ...sub.toObject(),
-              childCategories: childCategories.filter(c => c.parentId?.toString() === sub._id.toString()),
-            })),
+    if (accessRecords.length === 0) {
+      let parent = primaryParent || await Category.findOne({ level: 1 });
+      if (parent && (vendor.status === 'active' || !vendor.status)) {
+        const autoAccess = await VendorCategoryAccess.findOneAndUpdate(
+          { vendorId: vendor._id, parentCategoryId: parent._id },
+          {
+            $set: {
+              vendorId: vendor._id,
+              storeId: vendor._id,
+              parentCategoryId: parent._id,
+              status: 'approved',
+              approvedCapabilities: ['general_store', 'retail_store', 'shopping_store', 'pooja_store'],
+              approvedItemTypes: ['product', 'service'],
+              restrictions: {
+                canCreateProducts: true,
+                canCreateServices: true,
+                canJoinFestivalCombos: true,
+                canAcceptBulkOrders: true,
+                canSellWholesale: true,
+                canOfferSubscriptions: true,
+              },
+              approvedAt: new Date(),
+            },
           },
-        });
-        return;
+          { upsert: true, new: true }
+        );
+        accessRecords = [autoAccess];
       }
     }
 
@@ -85,6 +159,7 @@ export const getVendorAllowedCategories = async (req: AuthRequest, res: Response
     res.status(200).json({
       success: true,
       data: {
+        parentCategory: parents[0] || primaryParent,
         parentCategories: parents,
         subcategories: subcategories.map(sub => ({
           ...sub.toObject(),

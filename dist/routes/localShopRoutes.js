@@ -15,17 +15,140 @@ const SubscriptionSettlementService_1 = require("../services/SubscriptionSettlem
 const SubscriptionStatement_1 = require("../models/SubscriptionStatement");
 const WalletEngine_1 = require("../services/WalletEngine");
 const router = (0, express_1.Router)();
+// 0. GET /subscriptions/admin/all - Admin subscription master registry
+router.get('/subscriptions/admin/all', auth_1.protect, async (req, res) => {
+    try {
+        const authUser = req.user;
+        const isAdmin = authUser?.roles?.includes('admin');
+        if (!isAdmin) {
+            res.status(403).json({ success: false, message: 'Access denied: Admin role required' });
+            return;
+        }
+        const subscriptions = await LocalShopSubscription_1.default.find({})
+            .sort({ createdAt: -1 });
+        res.status(200).json({
+            success: true,
+            subscriptions
+        });
+    }
+    catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+// 0.1 PATCH /subscriptions/:id/status - Update subscription status or assigned delivery agent
+router.patch('/subscriptions/:id/status', auth_1.protect, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { status } = req.body;
+        const authUser = req.user;
+        const authUserIdStr = String(authUser?.id || authUser?._id || '');
+        if (!mongoose_1.default.Types.ObjectId.isValid(id)) {
+            res.status(400).json({ success: false, message: 'Invalid subscription ID' });
+            return;
+        }
+        const sub = await LocalShopSubscription_1.default.findById(id);
+        if (!sub) {
+            res.status(404).json({ success: false, message: 'Subscription not found' });
+            return;
+        }
+        const isAdmin = authUser?.roles?.includes('admin');
+        const isOwner = String(sub.userId) === authUserIdStr;
+        const isVendor = String(sub.vendorId) === authUserIdStr || authUser?.roles?.includes('vendor') || authUser?.roles?.includes('wholesaler');
+        if (!isAdmin && !isOwner && !isVendor) {
+            res.status(403).json({ success: false, message: 'Not authorized to update this subscription' });
+            return;
+        }
+        if (status) {
+            sub.status = status;
+        }
+        if (req.body.autoRenew !== undefined) {
+            sub.autoRenew = Boolean(req.body.autoRenew);
+        }
+        const agentId = req.body.deliveryAgentId || req.body.assignedAgentId || req.body.agentId;
+        const agentType = req.body.deliveryAgentType || req.body.assignedAgentType || req.body.agentType;
+        const agentName = req.body.deliveryAgentName || req.body.agentName;
+        if (agentId !== undefined)
+            sub.deliveryAgentId = agentId;
+        if (agentType !== undefined)
+            sub.deliveryAgentType = agentType;
+        if (agentName !== undefined)
+            sub.deliveryAgentName = agentName;
+        await sub.save();
+        res.status(200).json({
+            success: true,
+            message: 'Subscription updated successfully',
+            subscription: sub
+        });
+    }
+    catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+// 0.2 PATCH /subscriptions/:id - Pause / Resume / Update subscription & delivery agent
+router.patch('/subscriptions/:id', auth_1.protect, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const authUser = req.user;
+        const authUserIdStr = String(authUser?.id || authUser?._id || '');
+        if (!mongoose_1.default.Types.ObjectId.isValid(id)) {
+            res.status(400).json({ success: false, message: 'Invalid subscription ID' });
+            return;
+        }
+        const sub = await LocalShopSubscription_1.default.findById(id);
+        if (!sub) {
+            res.status(404).json({ success: false, message: 'Subscription not found' });
+            return;
+        }
+        const isAdmin = authUser?.roles?.includes('admin');
+        const isOwner = String(sub.userId) === authUserIdStr;
+        const isVendor = String(sub.vendorId) === authUserIdStr || authUser?.roles?.includes('vendor') || authUser?.roles?.includes('wholesaler');
+        if (!isAdmin && !isOwner && !isVendor) {
+            res.status(403).json({ success: false, message: 'Not authorized to update this subscription' });
+            return;
+        }
+        if (req.body.status) {
+            sub.status = req.body.status;
+        }
+        if (req.body.autoRenew !== undefined) {
+            sub.autoRenew = Boolean(req.body.autoRenew);
+        }
+        const agentId = req.body.deliveryAgentId || req.body.assignedAgentId || req.body.agentId;
+        const agentType = req.body.deliveryAgentType || req.body.assignedAgentType || req.body.agentType;
+        const agentName = req.body.deliveryAgentName || req.body.agentName;
+        if (agentId !== undefined)
+            sub.deliveryAgentId = agentId;
+        if (agentType !== undefined)
+            sub.deliveryAgentType = agentType;
+        if (agentName !== undefined)
+            sub.deliveryAgentName = agentName;
+        await sub.save();
+        res.status(200).json({
+            success: true,
+            message: 'Subscription updated successfully',
+            subscription: sub
+        });
+    }
+    catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
 // 1. GET /subscriptions/:userId
 router.get('/subscriptions/:userId', auth_1.protect, async (req, res) => {
     try {
         const { userId } = req.params;
         const authUser = req.user;
-        const isAdmin = authUser?.roles.includes('admin');
-        if (!isAdmin && String(userId) !== String(authUser?.id)) {
-            res.status(404).json({ success: false, message: 'Resource not found' });
+        const isAdmin = authUser?.roles?.includes('admin');
+        const authUserIdStr = String(authUser?.id || authUser?._id || '');
+        if (!isAdmin && String(userId) !== authUserIdStr) {
+            res.status(403).json({ success: false, message: 'Not authorized to view these subscriptions' });
             return;
         }
-        const subscriptions = await LocalShopSubscription_1.default.find({ userId });
+        const subscriptions = await LocalShopSubscription_1.default.find({
+            $or: [
+                { userId: userId },
+                ...(mongoose_1.default.Types.ObjectId.isValid(userId) ? [{ userId: new mongoose_1.default.Types.ObjectId(userId) }] : [])
+            ]
+        }).sort({ createdAt: -1 });
         res.status(200).json({
             success: true,
             subscriptions
@@ -40,14 +163,16 @@ router.get('/subscriptions/vendor/:vendorId', auth_1.protect, async (req, res) =
     try {
         const { vendorId } = req.params;
         const authUser = req.user;
-        const isAdmin = authUser?.roles.includes('admin');
+        const isAdmin = authUser?.roles?.includes('admin');
+        const authUserIdStr = String(authUser?.id || authUser?._id || '');
         let targetUserId = vendorId;
-        const vendorDoc = await Vendor_1.Vendor.findOne({ userId: vendorId }) || await Vendor_1.Vendor.findById(vendorId);
+        const vendorDoc = await Vendor_1.Vendor.findOne({ $or: [{ userId: vendorId }, { _id: mongoose_1.default.Types.ObjectId.isValid(vendorId) ? new mongoose_1.default.Types.ObjectId(vendorId) : vendorId }] })
+            || await Vendor_1.Vendor.findOne({ userId: authUserIdStr });
         if (vendorDoc) {
             targetUserId = vendorDoc.userId.toString();
         }
-        if (!isAdmin && String(targetUserId) !== String(authUser?.id)) {
-            res.status(404).json({ success: false, message: 'Resource not found' });
+        if (!isAdmin && String(targetUserId) !== authUserIdStr && String(vendorId) !== authUserIdStr) {
+            res.status(403).json({ success: false, message: 'Not authorized to view vendor subscriptions' });
             return;
         }
         let queryVendorId = vendorId;
@@ -57,9 +182,11 @@ router.get('/subscriptions/vendor/:vendorId', auth_1.protect, async (req, res) =
         const subscriptions = await LocalShopSubscription_1.default.find({
             $or: [
                 { vendorId: queryVendorId },
-                { vendorId: vendorId }
+                { vendorId: vendorId },
+                { vendorId: authUserIdStr },
+                ...(vendorDoc ? [{ vendorId: vendorDoc.userId.toString() }] : [])
             ]
-        });
+        }).sort({ createdAt: -1 });
         const enrichedSubscriptions = await Promise.all(subscriptions.map(async (sub) => {
             const subObj = sub.toObject();
             try {

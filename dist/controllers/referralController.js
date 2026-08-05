@@ -265,9 +265,11 @@ const processReferralReleases = async (req, res) => {
         const adminId = req.user?.id || req.user?._id;
         const stats = await SettlementEngine_1.SettlementEngine.releaseEligibleSettlements(undefined, orderId, adminId);
         if (stats.releasedTxs + stats.releasedSettlements === 0) {
-            return res.status(400).json({
-                success: false,
-                message: "No pending commissions found for this order."
+            return res.status(200).json({
+                success: true,
+                message: orderId ? "No pending or eligible commissions found for this order." : "No pending or eligible commissions found for release.",
+                processedCount: 0,
+                processedSettlementsCount: 0
             });
         }
         return res.status(200).json({

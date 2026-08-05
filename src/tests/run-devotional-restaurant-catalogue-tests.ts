@@ -127,7 +127,7 @@ export const runDevotionalRestaurantCatalogueTests = async () => {
       available_from: '07:00 AM',
       available_until: '11:00 AM',
     };
-    const validRes = validatePayloadAgainstSchema(validPayload, schema);
+    const validRes = validatePayloadAgainstSchema(validPayload, schema!);
     assert(validRes.isValid, 'Valid Tiffin payload passed validation');
 
     // Invalid Payload (missing required & invalid option)
@@ -135,7 +135,7 @@ export const runDevotionalRestaurantCatalogueTests = async () => {
       breakfast_type: 'Pizza', // Invalid option for breakfast_type
       food_type: 'veg',
     };
-    const invalidRes = validatePayloadAgainstSchema(invalidPayload, schema);
+    const invalidRes = validatePayloadAgainstSchema(invalidPayload, schema!);
     assert(!invalidRes.isValid, 'Invalid Tiffin payload correctly failed validation (422 sample)');
     assert(invalidRes.errors.length > 0, `Validation produced error messages: ${invalidRes.errors[0]}`);
   }

@@ -158,6 +158,7 @@ app.use('/api/home', homeRoutes);
 app.use('/api/v1/community', communityRoutes);
 app.use('/api', academyRoutes);
 app.use('/api', biRoutes);
+app.use('/api', subscriptionRoutes);
 
 app.get('/api/v1/seed-50-vendor-products', async (req, res) => {
   try {
@@ -392,17 +393,8 @@ const startServer = async () => {
 
 
 
-    // Enable subscriptions for Toor Dal, Milk, and Water products
-    try {
-      const ProductModel = mongoose.model('Product');
-      const updatedRes = await ProductModel.updateMany(
-        { name: { $regex: /Toor Dal|Milk|Water/i } },
-        { $set: { isSubscriptionAvailable: true } }
-      );
-      console.log(`[Startup Migration] Subscription model enabled for ${updatedRes.modifiedCount} products matching Toor Dal / Milk / Water.`);
-    } catch (migErr) {
-      console.error('[Startup Migration] Failed to enable subscription model:', migErr);
-    }
+    // Startup migration removed — run migrations manually via Admin API if needed.
+
 
     if (['staging', 'production'].includes(env.NODE_ENV)) {
       console.log('[REDIS] Verifying mandatory connection for staging/production...');
@@ -417,33 +409,16 @@ const startServer = async () => {
       console.log('[REDIS] Connection verified successfully.');
     }
 
+    // ─── STARTUP SEED: Admin login + Banners ─────────────────────────────────
+    // All other data (categories, vendors, products, notifications,
+    // subscription plans) must be added manually via Admin Panel or API.
     if (process.env.NODE_APP_INSTANCE === undefined || process.env.NODE_APP_INSTANCE === '0') {
       try { await seedReferralDefaults(); } catch (e: any) { console.error('seedReferralDefaults non-fatal error:', e.message); }
-      try { await seedNotificationTemplates(); } catch (e: any) { console.error('seedNotificationTemplates non-fatal error:', e.message); }
       try { await seedBannerDefaults(); } catch (e: any) { console.error('seedBannerDefaults non-fatal error:', e.message); }
-      try {
-        const { seedDevotionalAndRestaurant } = await import('./seeds/seedDevotionalAndRestaurant');
-        await seedDevotionalAndRestaurant();
-      } catch (e: any) { console.error('seedDevotionalAndRestaurant non-fatal error:', e.message); }
-
-      try {
-        const { removeSeededProducts } = await import('./scripts/removeSeededProducts');
-        await removeSeededProducts();
-      } catch (e: any) { console.error('removeSeededProducts non-fatal error:', e.message); }
-
-      try {
-        const { seedThreeTierSubscriptionSystem } = await import('./seeds/seedThreeTierSubscriptionSystem');
-        await seedThreeTierSubscriptionSystem();
-      } catch (e: any) { console.error('seedThreeTierSubscriptionSystem startup seed error:', e.message); }
-
-      try {
-        const { seedSubscriptionData } = await import('./seeds/seedSubscriptionData');
-        await seedSubscriptionData();
-      } catch (e: any) { console.error('seedSubscriptionData startup seed error:', e.message); }
-
     } else {
-      console.log(`[Server] Skipping referral defaults, database, and notification template seeding on clustered instance ${process.env.NODE_APP_INSTANCE}`);
+      console.log(`[Server] Skipping startup seed on clustered instance ${process.env.NODE_APP_INSTANCE}`);
     }
+
     initNotificationListeners(); // Registry listeners for events
 
     let reservationExpiryTimer: NodeJS.Timeout | null = null;

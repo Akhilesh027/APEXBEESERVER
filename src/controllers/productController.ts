@@ -258,35 +258,81 @@ export const createProduct = async (req: Request, res: Response) => {
       if (vendor) {
         try {
           const { EntitlementService } = await import('../modules/subscription/services/EntitlementService');
-          const isRestaurant = vendor.storeType === 'restaurant' || vendor.primaryCategory === 'Food & Dining';
-          const featKey = isRestaurant ? 'MAX_MENU_ITEMS' : 'MAX_PRODUCTS';
-          const entitlement = await EntitlementService.getFeatureEntitlement(vendor._id.toString(), featKey);
+          const { VendorSubscription } = await import('../modules/subscription/models/VendorSubscription');
 
-          if (entitlement && !entitlement.enabled) {
-            res.status(403).json({
-              success: false,
-              message: 'Product creation feature is disabled for your active subscription plan. Please upgrade your plan.'
-            });
-            return;
-          }
+          // Check vendor's current subscription status first
+          const vendorSub = await VendorSubscription.findOne({ vendorId: vendor._id });
+          const now = new Date();
 
-          if (entitlement && entitlement.limit !== null && entitlement.limit !== undefined) {
+          // TRIAL vendors (within trial period) always get product creation access
+          const regDate = vendor.createdAt ? new Date(vendor.createdAt as any) : now;
+          const trialEnd = vendorSub?.trialEnd || new Date(regDate.getTime() + 30 * 24 * 60 * 60 * 1000);
+          const isOnTrial = !vendorSub || vendorSub.status === 'TRIAL' || (now <= trialEnd);
+          const isActivePaid = vendorSub && (vendorSub.status === 'ACTIVE' || vendorSub.status === 'GRACE_PERIOD');
+          const isActiveVendor = vendor.status === 'active' || !vendor.status;
+
+          // Allow during trial or if vendor is active with no explicit subscription (default free access)
+          if (isOnTrial || !vendorSub) {
+            // Trial/new vendors: allow up to 500 products free
             const currentCount = await Product.countDocuments({
               $or: [{ sellerId: sellerId }, { sellerId: vendor._id }]
             });
-
-            if (currentCount >= entitlement.limit) {
+            if (currentCount >= 500) {
               res.status(403).json({
                 success: false,
-                message: `Product limit reached (${entitlement.limit} items) for your active subscription plan. Please upgrade to Premium for more items.`,
-                limit: entitlement.limit,
+                message: `Trial product limit reached (500 items). Please upgrade to a paid plan to add more products.`,
+                limit: 500,
+                currentCount
+              });
+              return;
+            }
+          } else if (isActivePaid) {
+            // Paid active subscription: check entitlement limits
+            const isRestaurant = vendor.storeType === 'restaurant' || (vendor as any).primaryCategory?.toLowerCase().includes('food');
+            const featKey = isRestaurant ? 'MAX_MENU_ITEMS' : 'MAX_PRODUCTS';
+            const entitlement = await EntitlementService.getFeatureEntitlement(vendor._id.toString(), featKey);
+
+            if (entitlement && !entitlement.enabled && entitlement.source !== 'DEFAULT') {
+              res.status(403).json({
+                success: false,
+                message: 'Product creation feature is disabled for your active subscription plan. Please upgrade your plan.'
+              });
+              return;
+            }
+
+            if (entitlement && entitlement.limit !== null && entitlement.limit !== undefined) {
+              const currentCount = await Product.countDocuments({
+                $or: [{ sellerId: sellerId }, { sellerId: vendor._id }]
+              });
+              if (currentCount >= entitlement.limit) {
+                res.status(403).json({
+                  success: false,
+                  message: `Product limit reached (${entitlement.limit} items) for your subscription plan. Please upgrade to Premium for more items.`,
+                  limit: entitlement.limit,
+                  currentCount
+                });
+                return;
+              }
+            }
+          } else if (isActiveVendor) {
+            // Expired subscription but vendor account is still active: allow with a soft limit
+            const currentCount = await Product.countDocuments({
+              $or: [{ sellerId: sellerId }, { sellerId: vendor._id }]
+            });
+            if (currentCount >= 100) {
+              res.status(403).json({
+                success: false,
+                message: `Your subscription has expired. You can continue with your existing ${currentCount} products, but adding more requires an active plan. Please renew your subscription.`,
+                limit: 100,
                 currentCount
               });
               return;
             }
           }
+          // If none of the above, let vendor create product
         } catch (eErr: any) {
           console.warn('[Product Subscription Check Warning]:', eErr.message);
+          // On any error in subscription check, allow the product creation to proceed
         }
       }
     }
@@ -388,36 +434,36 @@ export const createProduct = async (req: Request, res: Response) => {
         isPanIndia: req.body.deliveryScope === 'pan_india' || req.body.isPanIndia === 'true' || req.body.isPanIndia === true,
       });
 
-      const StoreProductModel = mongoose.model('StoreProduct');
-      const InventoryModel = mongoose.model('Inventory');
+      if (mongoose.Types.ObjectId.isValid(storeId)) {
+        try {
+          const StoreProductModel = mongoose.model('StoreProduct');
+          const InventoryModel = mongoose.model('Inventory');
 
-      await StoreProductModel.create({
-        storeId,
-        productId: product._id,
-        mrp: mrp || 0,
-        sellingPrice: calculatedSelling || mrp || 0,
-        minimumOrderQuantity: 1,
-        preparationTimeMinutes: 15,
-        isActive: true,
-      });
+          await StoreProductModel.create({
+            storeId: new mongoose.Types.ObjectId(storeId),
+            productId: product._id,
+            mrp: mrp || 0,
+            sellingPrice: calculatedSelling || mrp || 0,
+            minimumOrderQuantity: 1,
+            preparationTimeMinutes: 15,
+            isActive: true,
+          });
 
-      await InventoryModel.create({
-        storeId,
-        productId: product._id,
-        availableStock: normalizeNumber(stock, 50),
-        reservedStock: 0,
-        damagedStock: 0,
-        lowStockThreshold: 5,
-      });
-    } catch (createErr: any) {
-      if (product && product._id) {
-        await Product.findByIdAndDelete(product._id);
-        const StoreProductModel = mongoose.model('StoreProduct');
-        const InventoryModel = mongoose.model('Inventory');
-        await StoreProductModel.deleteMany({ productId: product._id });
-        await InventoryModel.deleteMany({ productId: product._id });
+          await InventoryModel.create({
+            storeId: new mongoose.Types.ObjectId(storeId),
+            productId: product._id,
+            availableStock: normalizeNumber(stock, 50),
+            reservedStock: 0,
+            damagedStock: 0,
+            lowStockThreshold: 5,
+          });
+        } catch (subErr: any) {
+          console.warn('[Auxiliary StoreProduct/Inventory Creation Warning]:', subErr.message);
+        }
       }
-      throw new Error(`Atomic product creation failed: ${createErr.message}`);
+    } catch (createErr: any) {
+      console.error('[Product Creation Error]:', createErr.message);
+      throw new Error(`Product creation failed: ${createErr.message}`);
     }
 
     const populatedProduct = await populateProduct(Product.findById(product._id));
@@ -460,7 +506,9 @@ export const getAllProducts = async (req: Request, res: Response) => {
 
     const filter: any = {};
     const pageNum = Math.max(1, Number(page) || 1);
-    const limitNum = Math.min(100, Math.max(1, Number(limit) || 20));
+    const limitNum = (status === 'all' || Number(limit) >= 100)
+      ? Math.min(10000, Math.max(1, Number(limit) || 1000))
+      : Math.min(100, Math.max(1, Number(limit) || 20));
 
     // Enforce Hyperlocal vs Pan-India Product Visibility based on Customer Location (when sellerId is not specified)
     if (!sellerId && (state || district || mandal || pincode || (lat && lng))) {
@@ -515,24 +563,29 @@ export const getAllProducts = async (req: Request, res: Response) => {
       filter.sellerType = sellerType;
     }
     // Strict Live Product Enforcement for Customer User Panel
+    // Status & Active filtering
     const liveStatuses = ['Live', 'Active', 'Approved', 'approved', 'active', 'published'];
-    if (status && status !== 'all' && status !== 'draft' && status !== 'pending' && status !== 'rejected') {
-      filter.status = { $in: liveStatuses };
-    } else if (!status && !sellerId) {
-      filter.status = { $in: liveStatuses };
-    } else if (status) {
-      filter.status = status;
-    }
+    if (status === 'all') {
+      // Admin query for all products: do not restrict by status or active state
+    } else {
+      if (status && status !== 'draft' && status !== 'pending' && status !== 'rejected') {
+        filter.status = { $in: liveStatuses };
+      } else if (!status && !sellerId) {
+        filter.status = { $in: liveStatuses };
+      } else if (status) {
+        filter.status = status;
+      }
 
-    if (isActive !== undefined) {
-      filter.isActive = isActive === 'true';
-    } else if (!sellerId) {
-      filter.isActive = true;
-    }
+      if (isActive !== undefined) {
+        filter.isActive = isActive === 'true';
+      } else if (!sellerId) {
+        filter.isActive = true;
+      }
 
-    if (!sellerId) {
-      filter.isArchived = { $ne: true };
-      filter.moderationStatus = { $ne: 'rejected' };
+      if (!sellerId) {
+        filter.isArchived = { $ne: true };
+        filter.moderationStatus = { $ne: 'rejected' };
+      }
     }
     if (category || categoryId) {
       const catParam = String(categoryId || category).trim();
@@ -1018,10 +1071,16 @@ export const deleteProduct = async (req: Request, res: Response) => {
 
 export const configureAdminPricing = async (req: Request, res: Response) => {
   try {
-    const product = await Product.findById(req.params.id);
+    const prodId = req.params.id;
+    if (!mongoose.Types.ObjectId.isValid(prodId)) {
+      res.status(400).json({ success: false, message: 'Invalid Product ID format' });
+      return;
+    }
+
+    const product = await Product.findById(prodId);
 
     if (!product) {
-      res.status(404).json({ message: 'Product not found' });
+      res.status(404).json({ success: false, message: 'Product not found' });
       return;
     }
 
@@ -1029,7 +1088,7 @@ export const configureAdminPricing = async (req: Request, res: Response) => {
 
     product.adminPricing = {
       ...adminPricing,
-      configuredBy: (req as any).user?._id || req.body.adminId,
+      configuredBy: (req as any).user?._id || (req as any).user?.id || req.body.adminId,
       configuredAt: new Date(),
     } as any;
 
@@ -1043,7 +1102,7 @@ export const configureAdminPricing = async (req: Request, res: Response) => {
       const shares = req.body.commissionShares;
       if (Array.isArray(shares)) {
         const getSharePercent = (type: string) => {
-          const sh = shares.find((s: any) => s.type === type && s.isActive !== false);
+          const sh = shares.find((s: any) => s && s.type === type && s.isActive !== false);
           return sh ? (Number(sh.percent) || 0) : 0;
         };
         product.referralCommission = {
@@ -1056,24 +1115,29 @@ export const configureAdminPricing = async (req: Request, res: Response) => {
 
     product.status = 'Awaiting Seller Approval';
     product.isVendorEdit = false;
-    product.preEditSnapshot = undefined;
     product.vendorEditedAt = undefined;
     product.adminPricingApproved = true;
     product.sellerPricingAccepted = false;
     product.approvedByAdminAt = new Date();
     product.isActive = false;
 
+    product.markModified('adminPricing');
+    product.markModified('referralCommission');
+
     await product.save();
 
     const populatedProduct = await populateProduct(Product.findById(product._id));
 
     res.json({
+      success: true,
       message: 'Admin pricing saved. Waiting for seller approval.',
       product: populatedProduct,
     });
   } catch (error: any) {
+    console.error('Failed to configure admin pricing error:', error);
     res.status(500).json({
-      message: 'Failed to configure admin pricing',
+      success: false,
+      message: error.message || 'Failed to configure admin pricing',
       error: error.message,
     });
   }
@@ -1484,14 +1548,14 @@ export const getAiProductSuggestions = async (req: Request, res: Response) => {
 
     const rawName = name && name.trim().length > 0 ? name.trim() : (subCategoryName || categoryName || 'Fresh Item');
     const formattedTitle = rawName.split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
-    
-    const suggestedTitle = formattedTitle.includes('Fresh') || formattedTitle.includes('Premium') 
-      ? formattedTitle 
+
+    const suggestedTitle = formattedTitle.includes('Fresh') || formattedTitle.includes('Premium')
+      ? formattedTitle
       : `${formattedTitle} - Fresh & Premium Grade`;
 
     const desc = `Experience the finest quality ${formattedTitle}. Sourced directly from verified local suppliers and farmers, processed under strict hygiene conditions to preserve natural taste, texture, and freshness. Cleaned, graded, and securely packaged. Ideal for everyday household consumption and commercial catering needs.`;
     const teluguDesc = `అత్యుత్తమ నాణ్యత కలిగిన ${formattedTitle}, నేరుగా స్థానిక రైతులు మరియు సరఫరాదారుల నుండి సేకరించబడినది. ఎలాంటి రసాయనాలు లేకుండా పరిశుభ్రంగా ప్యాక్ చేయబడింది.`;
-    
+
     const features = [
       `100% Authentic & Naturally Sourced`,
       `Quality tested under strict platform criteria`,
@@ -1915,4 +1979,4 @@ export const removeSeededProducts = async (req: Request, res: Response) => {
       error: error.message
     });
   }
-};
+};

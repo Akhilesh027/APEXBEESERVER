@@ -53,4 +53,7 @@ router.post('/admin/vendor-subscriptions/:id/resume', protect, restrictTo('admin
 
 router.get('/admin/subscription-audit-logs', protect, restrictTo('admin'), AdminSubscriptionController.getAuditLogs);
 
+// ⚠️ DANGER: Clears ALL subscription plans, fees, features, prices and vendor subscription data
+router.delete('/admin/subscription-data/clear-all', protect, restrictTo('admin'), AdminSubscriptionController.clearAllSubscriptionData);
+
 export default router;

@@ -457,6 +457,7 @@ export const seedDailyNeedsTaxonomy = async () => {
           parentId: parentCategory._id,
           isActive: true,
           supportedItemTypes: subDef.supportedItemTypes,
+          attributes: subDef.attributes as any,
           displayOrder: sIdx + 1,
           sortOrder: sIdx + 1,
         },
@@ -524,6 +525,17 @@ export const seedDailyNeedsTaxonomy = async () => {
       const childDef = subDef.childCategories[cIdx];
       const childSlug = childDef.slug || `${subDef.slug}-${makeSlug(childDef.name)}`;
 
+      // Merge base subcategory attributes with child-specific extra attributes
+      const combinedAttributes = [...subDef.attributes];
+      if (childDef.extraAttributes && childDef.extraAttributes.length > 0) {
+        childDef.extraAttributes.forEach(extra => {
+          const exists = combinedAttributes.some(a => a.key === extra.key);
+          if (!exists) {
+            combinedAttributes.push(extra);
+          }
+        });
+      }
+
       const childCategory = await Category.findOneAndUpdate(
         { slug: childSlug },
         {
@@ -535,6 +547,7 @@ export const seedDailyNeedsTaxonomy = async () => {
             parentId: subCategory._id,
             isActive: true,
             supportedItemTypes: subDef.supportedItemTypes,
+            attributes: combinedAttributes as any,
             displayOrder: cIdx + 1,
             sortOrder: cIdx + 1,
           },
@@ -542,17 +555,6 @@ export const seedDailyNeedsTaxonomy = async () => {
         { upsert: true, new: true }
       );
       childCount++;
-
-      // Merge base subcategory attributes with child-specific extra attributes
-      const combinedAttributes = [...subDef.attributes];
-      if (childDef.extraAttributes && childDef.extraAttributes.length > 0) {
-        childDef.extraAttributes.forEach(extra => {
-          const exists = combinedAttributes.some(a => a.key === extra.key);
-          if (!exists) {
-            combinedAttributes.push(extra);
-          }
-        });
-      }
 
       const effectiveProductMode = childDef.productMode || subDef.productMode;
       const effectiveInventoryMode = childDef.inventoryMode || subDef.inventoryMode;

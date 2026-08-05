@@ -20,14 +20,77 @@ import { PaymentWebhookService } from '../services/PaymentWebhookService';
 import { SubscriptionLifecycleService } from '../services/SubscriptionLifecycleService';
 
 export class VendorSubscriptionController {
-  private static getNormalizedCategoryCode(storeType?: string): string {
-    const st = (storeType || 'FOOD_AND_DINING').toUpperCase();
-    if (st.includes('GROCERY') || st.includes('DAILY')) return 'DAILY_NEEDS';
-    if (st.includes('SERVICE')) return 'SERVICES';
-    if (st.includes('COURSE') || st.includes('ACADEMY')) return 'ACADEMY';
-    if (st.includes('DEVO')) return 'DEVOTIONAL';
-    if (st.includes('FOOD') || st.includes('RESTAURANT')) return 'FOOD_AND_DINING';
+  private static getNormalizedCategoryCode(input?: string): string {
+    const st = (input || '').toUpperCase().trim();
+    if (!st) return 'GENERAL';
+    if (st.includes('GROCERY') || st.includes('DAILY') || st.includes('DAIRY') || st.includes('MEAT') || st.includes('FRESH')) return 'DAILY_NEEDS';
+    if (st.includes('SERVICE') || st.includes('SALON') || st.includes('REPAIR') || st.includes('CLEAN')) return 'SERVICES';
+    if (st.includes('COURSE') || st.includes('ACADEMY') || st.includes('COACHING') || st.includes('SKILL') || st.includes('LEARN')) return 'ACADEMY';
+    if (st.includes('DEVO') || st.includes('POOJA') || st.includes('PUJA') || st.includes('TEMPLE') || st.includes('SPIRITUAL')) return 'DEVOTIONAL';
+    if (st.includes('FOOD') || st.includes('RESTAURANT') || st.includes('CAFE') || st.includes('DINE') || st.includes('BAKERY')) return 'FOOD_AND_DINING';
+    if (st.includes('SHOP') || st.includes('RETAIL') || st.includes('FASHION') || st.includes('CLOTH') || st.includes('APPAREL') || st.includes('ELECTRONICS') || st.includes('GADGET')) return 'SHOPPING';
     return st;
+  }
+
+  /** Build friendly category display name from normalized code */
+  private static getCategoryDisplayName(code: string): string {
+    const map: Record<string, string> = {
+      FOOD_AND_DINING: 'Restaurant',
+      DAILY_NEEDS: 'Grocery',
+      DEVOTIONAL: 'Devotional',
+      SERVICES: 'Service Provider',
+      ACADEMY: 'Academy',
+      SHOPPING: 'Shopping / Retail',
+    };
+    return map[code] || 'Store';
+  }
+
+  /** Build default fallback plan profiles when DB has no plans for this category */
+  private static buildDefaultPlansForCategory(categoryCode: string, catDisplayName: string) {
+    const isFood = categoryCode === 'FOOD_AND_DINING';
+    const isDaily = categoryCode === 'DAILY_NEEDS';
+    const isService = categoryCode === 'SERVICES';
+    const isAcademy = categoryCode === 'ACADEMY';
+    const isDevot = categoryCode === 'DEVOTIONAL';
+    const itemUnit = isFood ? 'Menu Items' : isAcademy ? 'Courses' : isService ? 'Services' : 'Products';
+    return [
+      {
+        _id: `default_starter_${categoryCode}`,
+        tierCode: 'APEXBEE_STARTER',
+        displayName: `${catDisplayName} Starter`,
+        monthlyPrice: 0,
+        yearlyPrice: 0,
+        description: `Free plan for ${catDisplayName} vendors. List up to ${isAcademy ? '3' : '100'} ${itemUnit}.`,
+        features: [
+          `${isAcademy ? '3' : '100'} ${itemUnit}`, '1 Outlet', 'Standard Payouts (T+3)', 'Email Support'
+        ],
+      },
+      {
+        _id: `default_business_${categoryCode}`,
+        tierCode: 'APEXBEE_BUSINESS',
+        displayName: `${catDisplayName} Business`,
+        monthlyPrice: isDevot ? 499 : isService ? 699 : 999,
+        yearlyPrice: isDevot ? 4990 : isService ? 6990 : 9990,
+        description: `Grow your ${catDisplayName} business. Includes advanced features and expanded limits.`,
+        features: [
+          `${isAcademy ? '50' : isDaily ? '2,000' : '500'} ${itemUnit}`,
+          `${isService ? '10 Service Areas' : '3 Outlets'}`,
+          'Priority Support', 'Advanced Analytics', 'Customer CRM',
+        ],
+      },
+      {
+        _id: `default_premium_${categoryCode}`,
+        tierCode: 'APEXBEE_PREMIUM',
+        displayName: `${catDisplayName} Premium`,
+        monthlyPrice: isDevot ? 999 : isService ? 1499 : isAcademy ? 2499 : 1999,
+        yearlyPrice: isDevot ? 9990 : isService ? 14990 : isAcademy ? 24990 : 19990,
+        description: `Unlimited scale for ${catDisplayName} vendors. All features, no limits.`,
+        features: [
+          `Unlimited ${itemUnit}`, isService ? 'Unlimited Service Areas' : '10 Outlets',
+          'Automated Payouts (T+1)', 'Dedicated Account Manager', 'Full API Access',
+        ],
+      },
+    ];
   }
 
   private static async getVendorFromUser(userId: string) {
@@ -65,8 +128,11 @@ export class VendorSubscriptionController {
 
       const now = new Date();
       const regDate = vendor.createdAt ? new Date(vendor.createdAt) : now;
-      const trialEndFromReg = new Date(regDate.getTime() + 15 * 24 * 60 * 60 * 1000);
-      const storeCategory = VendorSubscriptionController.getNormalizedCategoryCode(vendor.storeType);
+      const trialEndFromReg = new Date(regDate.getTime() + 30 * 24 * 60 * 60 * 1000);
+      // Use primaryCategory first, then storeType — prevents Shopping/Daily Needs vendors getting wrong plans
+      const categoryInput = (vendor as any).primaryCategory || vendor.storeType || (vendor as any).category || '';
+      const storeCategory = VendorSubscriptionController.getNormalizedCategoryCode(categoryInput);
+      const catPrefix = VendorSubscriptionController.getCategoryDisplayName(storeCategory);
 
       // Locate Category Starter Plan Profile
       const starterProfile = await SubscriptionPlanProfile.findOne({
@@ -144,14 +210,8 @@ export class VendorSubscriptionController {
       let planName = (planProfileObj as any)?.displayName || (planProfileObj as any)?.name;
       let planCode = (planProfileObj as any)?.tierCode || (planProfileObj as any)?.code || (sub.status === 'TRIAL' ? 'STARTER' : 'BUSINESS');
 
-      const catPrefix = storeCategory.includes('FOOD') || storeCategory.includes('RESTAURANT') ? 'Restaurant'
-        : storeCategory.includes('DAILY') || storeCategory.includes('GROCERY') ? 'Grocery'
-        : storeCategory.includes('DEVOTIONAL') ? 'Devotional'
-        : storeCategory.includes('SERVICE') ? 'Service'
-        : storeCategory.includes('ACADEMY') ? 'Academy' : 'ApexBee';
-
       if (!planName) {
-        planName = sub.status === 'TRIAL' ? `${catPrefix} Starter (15-Day Trial)` : `${catPrefix} Business Plan`;
+        planName = sub.status === 'TRIAL' ? `${catPrefix} Starter (Trial)` : `${catPrefix} Business Plan`;
       }
 
       // Clean Tier Code Mapping
@@ -270,13 +330,22 @@ export class VendorSubscriptionController {
         res.status(404).json({ success: false, message: 'Vendor profile does not exist' });
         return;
       }
-      
-      const categoryCode = VendorSubscriptionController.getNormalizedCategoryCode(vendor.storeType);
+
+      // Use primaryCategory first, then storeType as fallback — this ensures Shopping vendors don't get Academy plans
+      const categoryInput = (vendor as any).primaryCategory || vendor.storeType || vendor.category || '';
+      const categoryCode = VendorSubscriptionController.getNormalizedCategoryCode(categoryInput);
+      const catDisplayName = VendorSubscriptionController.getCategoryDisplayName(categoryCode);
+
+      // Try to find DB profiles for this exact category
       const profiles = await SubscriptionPlanProfile.find({
-        $or: [{ categoryCode }, { category: categoryCode }],
+        $or: [
+          { categoryCode },
+          { category: categoryCode },
+          { categoryCode: { $regex: new RegExp(categoryCode.replace(/_/g, '.*'), 'i') } },
+        ],
         status: 'ACTIVE'
       }).sort({ sortOrder: 1 });
-      
+
       if (profiles.length > 0) {
         const profileIds = profiles.map(p => p._id);
         const prices = await SubscriptionProfilePrice.find({ profileId: { $in: profileIds }, isActive: true });
@@ -284,7 +353,7 @@ export class VendorSubscriptionController {
 
         res.json({
           success: true,
-          category: { code: categoryCode, name: vendor.storeType || 'Restaurant' },
+          category: { code: categoryCode, name: catDisplayName },
           profiles,
           prices,
           features
@@ -292,16 +361,43 @@ export class VendorSubscriptionController {
         return;
       }
 
-      // Fallback to standard product catalog
-      const plans = await SubscriptionProduct.find({ productType: 'PLAN', status: 'ACTIVE', isPublic: true }).sort({ sortOrder: 1 });
-      const planIds = plans.map(p => p._id);
-      const stdPrices = await SubscriptionPrice.find({ productId: { $in: planIds }, isActive: true });
-      res.json({ success: true, plans, prices: stdPrices });
+      // Try generic SubscriptionProduct catalog filtered by category
+      const plans = await SubscriptionProduct.find({
+        productType: 'PLAN',
+        status: 'ACTIVE',
+        isPublic: true,
+        $or: [
+          { categoryCode },
+          { category: categoryCode },
+          { applicableFor: { $in: [categoryCode] } },
+        ]
+      }).sort({ sortOrder: 1 });
+
+      if (plans.length > 0) {
+        const planIds = plans.map(p => p._id);
+        const stdPrices = await SubscriptionPrice.find({ productId: { $in: planIds }, isActive: true });
+        res.json({
+          success: true,
+          category: { code: categoryCode, name: catDisplayName },
+          plans,
+          prices: stdPrices
+        });
+        return;
+      }
+
+      // No DB plans exist for this category — return dynamic default plans so vendor always sees correct category plans
+      const defaultPlans = VendorSubscriptionController.buildDefaultPlansForCategory(categoryCode, catDisplayName);
+      res.json({
+        success: true,
+        category: { code: categoryCode, name: catDisplayName },
+        profiles: defaultPlans,
+        prices: [],
+        isDefault: true,
+        message: `Showing default ${catDisplayName} plans. Admin can configure custom pricing in the Subscription Management panel.`
+      });
     } catch (error: any) {
       console.error('[getAvailablePlans Error]:', error);
-      const profiles = await SubscriptionPlanProfile.find({ status: 'ACTIVE' }).sort({ sortOrder: 1 });
-      const prices = await SubscriptionProfilePrice.find({ isActive: true });
-      res.json({ success: true, profiles, prices, plans: [] });
+      res.json({ success: true, profiles: [], prices: [], plans: [], error: error.message });
     }
   }
 

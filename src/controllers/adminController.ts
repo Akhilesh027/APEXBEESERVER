@@ -865,39 +865,49 @@ export const verifyKycApplication = async (
       if (savedVendor) {
         await assignTerritoryAndMapFranchises("vendor", savedVendor);
 
-        // Auto-initialize VendorCategoryAccess in pending status (no auto-approval of pooja_store)
-        const vendorCat = (savedVendor.primaryCategory || (savedVendor as any).category || '').toLowerCase();
-        if (vendorCat.includes('devotional') || vendorCat.includes('puja')) {
-          const devotionalParent = await Category.findOne({ level: 1, $or: [{ slug: 'devotional' }, { name: /devotional/i }] });
-          if (devotionalParent) {
-            const existingAccess = await VendorCategoryAccess.findOne({
-              vendorId: savedVendor._id,
-              parentCategoryId: devotionalParent._id
-            });
-            if (!existingAccess) {
-              const reqCaps = (app as any).requestedCapabilities && Array.isArray((app as any).requestedCapabilities) && (app as any).requestedCapabilities.length > 0
-                ? (app as any).requestedCapabilities
-                : [];
-              await VendorCategoryAccess.create({
+        // Auto-initialize and approve VendorCategoryAccess for vendor's primary category vertical
+        const vendorCatStr = (savedVendor.primaryCategory || (savedVendor as any).category || savedVendor.storeType || '').toLowerCase();
+        let matchedParent = null;
+        if (vendorCatStr) {
+          matchedParent = await Category.findOne({
+            level: 1,
+            $or: [
+              { slug: { $regex: new RegExp(vendorCatStr, 'i') } },
+              { name: { $regex: new RegExp(vendorCatStr, 'i') } },
+            ],
+          });
+        }
+        if (!matchedParent) {
+          matchedParent = await Category.findOne({ level: 1 });
+        }
+        if (matchedParent) {
+          const reqCaps = (app as any).requestedCapabilities && Array.isArray((app as any).requestedCapabilities) && (app as any).requestedCapabilities.length > 0
+            ? (app as any).requestedCapabilities
+            : ['pooja_store', 'general_store', 'retail_store'];
+          await VendorCategoryAccess.findOneAndUpdate(
+            { vendorId: savedVendor._id, parentCategoryId: matchedParent._id },
+            {
+              $set: {
                 vendorId: savedVendor._id,
                 storeId: savedVendor._id,
-                parentCategoryId: devotionalParent._id,
+                parentCategoryId: matchedParent._id,
                 requestedCapabilities: reqCaps,
-                approvedCapabilities: [],
-                approvedSubcategoryIds: [],
-                approvedChildCategoryIds: [],
-                status: 'pending',
+                approvedCapabilities: reqCaps,
+                status: 'approved',
+                approvedItemTypes: ['product', 'service'],
                 restrictions: {
-                  canCreateProducts: false,
-                  canCreateServices: false,
-                  canJoinFestivalCombos: false,
-                  canAcceptBulkOrders: false,
-                  canSellWholesale: false,
-                  canOfferSubscriptions: false,
-                }
-              });
-            }
-          }
+                  canCreateProducts: true,
+                  canCreateServices: true,
+                  canJoinFestivalCombos: true,
+                  canAcceptBulkOrders: true,
+                  canSellWholesale: true,
+                  canOfferSubscriptions: true,
+                },
+                approvedAt: new Date(),
+              },
+            },
+            { upsert: true, new: true }
+          );
         }
       }
     } else if (targetRole === "manufacturer") {
@@ -2955,6 +2965,40 @@ export const updateVendorCategoryGovernance = async (req: Request, res: Response
       if (primaryCategory) {
         vendor.primaryCategory = primaryCategory;
         vendor.category = primaryCategory;
+
+        // Auto-upsert approved VendorCategoryAccess for newly assigned primary category
+        const parentCat = await Category.findOne({
+          level: 1,
+          $or: [
+            { slug: { $regex: new RegExp(primaryCategory, 'i') } },
+            { name: { $regex: new RegExp(primaryCategory, 'i') } },
+          ],
+        });
+        if (parentCat) {
+          await VendorCategoryAccess.findOneAndUpdate(
+            { vendorId: vendor._id, parentCategoryId: parentCat._id },
+            {
+              $set: {
+                vendorId: vendor._id,
+                storeId: vendor._id,
+                parentCategoryId: parentCat._id,
+                status: 'approved',
+                approvedCapabilities: ['general_store', 'retail_store', 'shopping_store', 'pooja_store'],
+                approvedItemTypes: ['product', 'service'],
+                restrictions: {
+                  canCreateProducts: true,
+                  canCreateServices: true,
+                  canJoinFestivalCombos: true,
+                  canAcceptBulkOrders: true,
+                  canSellWholesale: true,
+                  canOfferSubscriptions: true,
+                },
+                approvedAt: new Date(),
+              },
+            },
+            { upsert: true, new: true }
+          );
+        }
       }
       if (subCategory) {
         vendor.subCategory = subCategory;

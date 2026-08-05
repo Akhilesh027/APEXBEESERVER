@@ -9,6 +9,9 @@ import {
   deleteCategory,
   getCategorySubcategories,
   getMergedCategoryAttributes,
+  getCategoryProductSchema,
+  upsertCategoryProductSchema,
+  getAttributePresets,
   seedVendorController,
   seedFullMvpController,
   seedCatalogueCoreController,
@@ -68,9 +71,12 @@ router.post('/', categoryUpload, createCategory);
 router.get('/', getCategories);
 router.get('/tree', getCategoryTree);
 router.get('/dropdown', getCategoryDropdown);
+router.get('/attribute-presets', getAttributePresets);
 router.get('/:id', getCategoryById);
 router.get('/:id/subcategories', getCategorySubcategories);
 router.get('/:id/merged-attributes', getMergedCategoryAttributes);
+router.get('/:id/product-schema', getCategoryProductSchema);
+router.put('/:id/product-schema', upsertCategoryProductSchema);
 
 router.post('/:id/apply-preset', applyAttributePreset);
 

@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import streamifier from 'streamifier';
 import mongoose from 'mongoose';
 import Category from '../models/Category';
+import CategoryProductSchema from '../models/CategoryProductSchema';
 import Subcategory from '../models/Subcategory';
 import CategoryExperienceConfig from '../models/CategoryExperienceConfig';
 import cloudinary from '../config/cloudinary';
@@ -263,14 +264,24 @@ export const getCategoryDropdown = async (_req: Request, res: Response) => {
       .sort({ sortOrder: 1, name: 1 })
       .lean();
 
+    const schemas = await CategoryProductSchema.find().select('categoryId attributes').lean();
+    const schemaMap = new Map<string, any[]>();
+    schemas.forEach((s: any) => {
+      if (s.categoryId) schemaMap.set(s.categoryId.toString(), s.attributes || []);
+    });
+
     const configs = await CategoryExperienceConfig.find().lean();
     const configMap = new Map<string, any>();
     configs.forEach(c => configMap.set(c.categoryId.toString(), c));
 
     const categoriesWithConfig = categories.map(cat => {
       const config = configMap.get(cat._id.toString());
+      const schemaAttrs = schemaMap.get(cat._id.toString());
+      const mergedAttrs = (cat.attributes && cat.attributes.length > 0) ? cat.attributes : (schemaAttrs || []);
+
       return {
         ...cat,
+        attributes: mergedAttrs,
         experienceType: config ? config.experienceType : 'catalogue',
         experienceRoute: config ? config.experienceRoute : undefined,
         comingSoon: config ? config.comingSoon : undefined,
@@ -697,8 +708,11 @@ export const getMergedCategoryAttributes = async (req: Request, res: Response) =
 
     const attributeMap = new Map<string, any>();
     for (const item of categoryChain) {
-      if (Array.isArray(item.attributes)) {
-        for (const attr of item.attributes) {
+      const schema = await CategoryProductSchema.findOne({ categoryId: item._id }).lean();
+      const itemAttrs = (item.attributes && item.attributes.length > 0) ? item.attributes : (schema?.attributes || []);
+
+      if (Array.isArray(itemAttrs)) {
+        for (const attr of itemAttrs) {
           const key = attr.name ? attr.name.toLowerCase().trim() : ((attr as any).key || '');
           if (key) {
             attributeMap.set(key, { ...attr, inheritedFrom: item.name, inheritedLevel: item.level });
@@ -716,5 +730,133 @@ export const getMergedCategoryAttributes = async (req: Request, res: Response) =
     });
   } catch (error: any) {
     res.status(500).json({ message: 'Failed to fetch merged attributes', error: error.message });
+  }
+};
+
+/**
+ * GET /api/categories/:id/product-schema
+ * Fetch the CategoryProductSchema for a given category (or its parent chain).
+ */
+export const getCategoryProductSchema = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    let schema = await CategoryProductSchema.findOne({ categoryId: id });
+
+    // If no schema for this category, try to find one from the parent chain (inheritance)
+    if (!schema) {
+      const cat = await Category.findById(id);
+      if (cat && cat.parentId) {
+        schema = await CategoryProductSchema.findOne({ categoryId: cat.parentId });
+      }
+    }
+
+    if (!schema) {
+      return res.json({
+        success: true,
+        schema: null,
+        message: 'No product schema defined for this category. You can create one.'
+      });
+    }
+
+    res.json({ success: true, schema });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * PUT /api/categories/:id/product-schema
+ * Create or update the CategoryProductSchema for a category.
+ * Body: { attributes, commonFields, productMode, inventoryPolicy, deliveryPolicy, etc. }
+ */
+export const upsertCategoryProductSchema = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const cat = await Category.findById(id);
+    if (!cat) {
+      return res.status(404).json({ success: false, message: 'Category not found' });
+    }
+
+    const {
+      attributes,
+      commonFields,
+      variantAttributes,
+      productMode,
+      allowedVendorCapabilities,
+      allowedItemTypes,
+      inventoryPolicy,
+      customizationPolicy,
+      workflowPolicy,
+      deliveryPolicy,
+      compliancePolicy,
+      isPublished,
+    } = req.body;
+
+    const updateData: any = {};
+    if (attributes !== undefined) updateData.attributes = attributes;
+    if (commonFields !== undefined) updateData.commonFields = commonFields;
+    if (variantAttributes !== undefined) updateData.variantAttributes = variantAttributes;
+    if (productMode !== undefined) updateData.productMode = productMode;
+    if (allowedVendorCapabilities !== undefined) updateData.allowedVendorCapabilities = allowedVendorCapabilities;
+    if (allowedItemTypes !== undefined) updateData.allowedItemTypes = allowedItemTypes;
+    if (inventoryPolicy !== undefined) updateData.inventoryPolicy = inventoryPolicy;
+    if (customizationPolicy !== undefined) updateData.customizationPolicy = customizationPolicy;
+    if (workflowPolicy !== undefined) updateData.workflowPolicy = workflowPolicy;
+    if (deliveryPolicy !== undefined) updateData.deliveryPolicy = deliveryPolicy;
+    if (compliancePolicy !== undefined) updateData.compliancePolicy = compliancePolicy;
+    if (isPublished !== undefined) updateData.isPublished = isPublished;
+
+    // Determine if this is a child override
+    const isChildOverride = cat.level >= 3;
+    updateData.isChildOverride = isChildOverride;
+    if (cat.parentId) updateData.subcategoryId = cat.parentId;
+
+    const schema = await CategoryProductSchema.findOneAndUpdate(
+      { categoryId: id },
+      { $set: updateData, $setOnInsert: { categoryId: id, schemaVersion: 1 } },
+      { upsert: true, new: true, runValidators: true }
+    );
+
+    // Also sync the attributes back to the Category model so they appear in merged-attributes
+    if (attributes && Array.isArray(attributes)) {
+      cat.attributes = attributes.map((a: any) => ({
+        name: a.name,
+        type: a.type || 'text',
+        required: a.required || false,
+        isVariant: a.isVariant || false,
+        options: a.options || [],
+        unit: a.unit || '',
+        key: a.key || a.name.toLowerCase().replace(/[^a-z0-9]+/g, '_'),
+      }));
+      await cat.save();
+    }
+
+    res.json({
+      success: true,
+      message: `Product schema ${schema.isNew ? 'created' : 'updated'} for "${cat.name}"`,
+      schema,
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * GET /api/categories/attribute-presets
+ * Return all available attribute presets for quick-apply.
+ */
+export const getAttributePresets = async (_req: Request, res: Response) => {
+  try {
+    res.json({
+      success: true,
+      presets: Object.entries(ATTRIBUTE_PRESETS).map(([key, attrs]) => ({
+        key,
+        label: key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' '),
+        attributeCount: attrs.length,
+        attributes: attrs,
+      })),
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
   }
 };

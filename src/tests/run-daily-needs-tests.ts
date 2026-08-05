@@ -109,14 +109,14 @@ export const runDailyNeedsTests = async () => {
       storage_temperature: 'chilled',
       cut_type: 'Curry Cut',
     };
-    const validCheck = validatePayloadAgainstSchema(validPayload, schema);
+    const validCheck = validatePayloadAgainstSchema(validPayload, schema!);
     assert(validCheck.isValid, 'Valid Chicken Cuts payload passed schema validation');
 
     const invalidPayload = {
       meat_or_seafood_type: 'Pork', // invalid option
       fresh_or_frozen: 'Fresh (Chilled)',
     };
-    const invalidCheck = validatePayloadAgainstSchema(invalidPayload, schema);
+    const invalidCheck = validatePayloadAgainstSchema(invalidPayload, schema!);
     assert(!invalidCheck.isValid, 'Invalid Chicken Cuts payload correctly rejected');
   }
 

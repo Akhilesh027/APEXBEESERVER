@@ -98,8 +98,7 @@ const LocalShopSubscriptionSchema = new Schema<ILocalShopSubscription>(
       required: true
     },
     deliveryAgentId: {
-      type: Schema.Types.ObjectId,
-      ref: 'User',
+      type: Schema.Types.Mixed,
       default: null
     },
     deliveryAgentType: {

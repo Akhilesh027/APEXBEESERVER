@@ -412,6 +412,7 @@ const seedDailyNeedsTaxonomy = async () => {
                 parentId: parentCategory._id,
                 isActive: true,
                 supportedItemTypes: subDef.supportedItemTypes,
+                attributes: subDef.attributes,
                 displayOrder: sIdx + 1,
                 sortOrder: sIdx + 1,
             },
@@ -469,20 +470,6 @@ const seedDailyNeedsTaxonomy = async () => {
         for (let cIdx = 0; cIdx < subDef.childCategories.length; cIdx++) {
             const childDef = subDef.childCategories[cIdx];
             const childSlug = childDef.slug || `${subDef.slug}-${(0, exports.makeSlug)(childDef.name)}`;
-            const childCategory = await Category_1.default.findOneAndUpdate({ slug: childSlug }, {
-                $set: {
-                    name: childDef.name,
-                    slug: childSlug,
-                    description: `${childDef.name} under ${subDef.name}`,
-                    level: 3,
-                    parentId: subCategory._id,
-                    isActive: true,
-                    supportedItemTypes: subDef.supportedItemTypes,
-                    displayOrder: cIdx + 1,
-                    sortOrder: cIdx + 1,
-                },
-            }, { upsert: true, new: true });
-            childCount++;
             // Merge base subcategory attributes with child-specific extra attributes
             const combinedAttributes = [...subDef.attributes];
             if (childDef.extraAttributes && childDef.extraAttributes.length > 0) {
@@ -493,6 +480,21 @@ const seedDailyNeedsTaxonomy = async () => {
                     }
                 });
             }
+            const childCategory = await Category_1.default.findOneAndUpdate({ slug: childSlug }, {
+                $set: {
+                    name: childDef.name,
+                    slug: childSlug,
+                    description: `${childDef.name} under ${subDef.name}`,
+                    level: 3,
+                    parentId: subCategory._id,
+                    isActive: true,
+                    supportedItemTypes: subDef.supportedItemTypes,
+                    attributes: combinedAttributes,
+                    displayOrder: cIdx + 1,
+                    sortOrder: cIdx + 1,
+                },
+            }, { upsert: true, new: true });
+            childCount++;
             const effectiveProductMode = childDef.productMode || subDef.productMode;
             const effectiveInventoryMode = childDef.inventoryMode || subDef.inventoryMode;
             // Upsert Child Category Override Schema

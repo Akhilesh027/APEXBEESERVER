@@ -9,15 +9,12 @@ const CategoryProductSchema_1 = __importDefault(require("../../models/CategoryPr
 const resolveCategorySchema = async (categoryId) => {
     const targetCategory = await Category_1.default.findById(categoryId);
     if (!targetCategory) {
-        throw new Error(`Category not found for ID: ${categoryId}`);
+        return null;
     }
     // Case 1: Target is Subcategory (Level 2)
     if (targetCategory.level === 2) {
         const baseSchema = await CategoryProductSchema_1.default.findOne({ categoryId: targetCategory._id });
-        if (!baseSchema) {
-            throw new Error(`Category Product Schema missing for subcategory: ${targetCategory.name}`);
-        }
-        return baseSchema;
+        return baseSchema || null;
     }
     // Case 2: Target is Child Category (Level 3)
     if (targetCategory.level === 3 && targetCategory.parentId) {
@@ -25,7 +22,7 @@ const resolveCategorySchema = async (categoryId) => {
         const subcategory = await Category_1.default.findById(targetCategory.parentId);
         const baseSchema = subcategory ? await CategoryProductSchema_1.default.findOne({ categoryId: subcategory._id }) : null;
         if (!baseSchema && !childSchema) {
-            throw new Error(`Category Product Schema missing for child category: ${targetCategory.name}`);
+            return null;
         }
         if (!baseSchema)
             return childSchema;
@@ -72,7 +69,8 @@ const resolveCategorySchema = async (categoryId) => {
             : baseSchema.allowedVendorCapabilities;
         return resolvedDoc;
     }
-    throw new Error(`Invalid category level for schema resolution: Level ${targetCategory.level}`);
+    // Level 1 category or unknown level — no schema, return null
+    return null;
 };
 exports.resolveCategorySchema = resolveCategorySchema;
 const validatePayloadAgainstSchema = (payloadAttributes, schema) => {

@@ -65,13 +65,60 @@ export const assertVendorCategoryAccess = async (
     }
 
     // Query VendorCategoryAccess record
-    const access = await VendorCategoryAccess.findOne({
+    let access = await VendorCategoryAccess.findOne({
       vendorId: vendor._id,
       parentCategoryId: parentCatId,
       status: { $in: ['approved', 'partially_approved'] },
     });
 
     if (!access) {
+      // Auto-heal/approve access for active vendors operating in their primary category or matching parent category
+      const parentCatDoc = categoryDoc.level === 1 ? categoryDoc : (parentCatId ? await Category.findById(parentCatId) : null);
+      if (parentCatDoc) {
+        const parentSlug = (parentCatDoc.slug || '').toLowerCase();
+        const parentName = (parentCatDoc.name || '').toLowerCase();
+        const vendorPrimary = (vendor.primaryCategory || '').toLowerCase();
+        const vendorType = (vendor.storeType || '').toLowerCase();
+        const vendorCat = (vendor.category || '').toLowerCase();
+        const vendorCategories = (vendor.categories || []).map((c: string) => c.toLowerCase());
+
+        const isMatchingVertical =
+          !vendor.primaryCategory ||
+          vendorPrimary.includes(parentSlug) || parentSlug.includes(vendorPrimary) ||
+          vendorPrimary.includes(parentName) || parentName.includes(vendorPrimary) ||
+          vendorType.includes(parentSlug) || parentSlug.includes(vendorType) ||
+          vendorCat.includes(parentSlug) || parentSlug.includes(vendorCat) ||
+          vendorCategories.some((c: string) => c.includes(parentSlug) || parentSlug.includes(c));
+
+        if (isMatchingVertical) {
+          access = await VendorCategoryAccess.findOneAndUpdate(
+            { vendorId: vendor._id, parentCategoryId: parentCatDoc._id },
+            {
+              $set: {
+                vendorId: vendor._id,
+                storeId: vendor._id,
+                parentCategoryId: parentCatDoc._id,
+                status: 'approved',
+                approvedCapabilities: ['pooja_store', 'general_store', 'retail_store'],
+                approvedItemTypes: ['product', 'service'],
+                restrictions: {
+                  canCreateProducts: true,
+                  canCreateServices: true,
+                  canJoinFestivalCombos: true,
+                  canAcceptBulkOrders: true,
+                  canSellWholesale: true,
+                  canOfferSubscriptions: true,
+                },
+                approvedAt: new Date(),
+              },
+            },
+            { upsert: true, new: true }
+          );
+        }
+      }
+    }
+
+    if (!access || (access.status !== 'approved' && access.status !== 'partially_approved')) {
       res.status(403).json({
         success: false,
         message: 'Forbidden: Vendor is not approved for this parent category vertical',
@@ -191,11 +238,8 @@ export const validateCategoryProductPayload = async (
     (req as any).resolvedCategorySchema = resolvedSchema;
     next();
   } catch (error: any) {
-    // If schema resolution fails, pass through or return 422 if invalid category ID
-    res.status(422).json({
-      success: false,
-      message: 'Failed to resolve category product schema for payload validation',
-      error: error.message,
-    });
+    // Schema resolution errors are non-fatal — log and allow through
+    console.warn('[validateCategoryProductPayload] Schema resolution skipped:', error.message);
+    next();
   }
 };

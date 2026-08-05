@@ -12,32 +12,38 @@ const VendorCategoryAccess_1 = __importDefault(require("../models/VendorCategory
 dotenv_1.default.config();
 const backfillVendorCategoryAccess = async (isDryRun = false) => {
     console.log(`[BackfillVendorCategoryAccess] Running backfill (isDryRun: ${isDryRun})...`);
-    const devotionalParent = await Category_1.default.findOne({ slug: 'devotional', level: 1 });
-    if (!devotionalParent) {
-        throw new Error('Devotional parent category not found in DB! Run seedDevotionalTaxonomy first.');
+    const parentCategories = await Category_1.default.find({ level: 1 });
+    if (parentCategories.length === 0) {
+        console.warn('[BackfillVendorCategoryAccess] No Level 1 parent categories found in DB!');
+        return { inspected: 0, createdCount: 0, updatedCount: 0, skippedCount: 0, isDryRun };
     }
-    // Find all vendors with primaryCategory = devotional or storeType = devotional or categories containing devotional
-    const vendors = await Vendor_1.Vendor.find({
-        $or: [
-            { primaryCategory: 'devotional' },
-            { storeType: 'devotional' },
-            { categories: { $in: ['devotional', 'Devotional', 'Pooja', 'Puja'] } },
-        ],
-    });
-    console.log(`Found ${vendors.length} existing Devotional vendors to inspect.`);
+    const vendors = await Vendor_1.Vendor.find({});
+    console.log(`Found ${vendors.length} total vendors to inspect.`);
     let createdCount = 0;
+    let updatedCount = 0;
     let skippedCount = 0;
     for (const vendor of vendors) {
+        const vendorPrimaryStr = (vendor.primaryCategory || vendor.category || vendor.storeType || '').toLowerCase();
+        // Find matching parent category, or default to Devotional/Shopping/first available
+        let targetParent = parentCategories.find(p => p.slug.toLowerCase().includes(vendorPrimaryStr) ||
+            vendorPrimaryStr.includes(p.slug.toLowerCase()) ||
+            p.name.toLowerCase().includes(vendorPrimaryStr) ||
+            vendorPrimaryStr.includes(p.name.toLowerCase()));
+        if (!targetParent) {
+            targetParent = parentCategories.find(p => p.slug === 'devotional') || parentCategories[0];
+        }
+        if (!targetParent)
+            continue;
         const existing = await VendorCategoryAccess_1.default.findOne({
             vendorId: vendor._id,
-            parentCategoryId: devotionalParent._id,
+            parentCategoryId: targetParent._id,
         });
-        if (existing) {
+        if (existing && (existing.status === 'approved' || existing.status === 'partially_approved') && existing.restrictions?.canCreateProducts) {
             skippedCount++;
             continue;
         }
-        // Infer requested capabilities from businessName / storeTags
-        const capabilities = ['pooja_store'];
+        // Infer requested capabilities from businessName
+        const capabilities = ['pooja_store', 'general_store', 'retail_store'];
         const nameLower = (vendor.businessName || '').toLowerCase();
         if (nameLower.includes('flower') || nameLower.includes('garland'))
             capabilities.push('flower_shop');
@@ -47,40 +53,39 @@ const backfillVendorCategoryAccess = async (isDryRun = false) => {
             capabilities.push('fruit_shop');
         if (nameLower.includes('sweet') || nameLower.includes('prasadam'))
             capabilities.push('sweet_shop', 'prasadam_partner');
-        if (nameLower.includes('frame') || nameLower.includes('photo'))
-            capabilities.push('photo_frame_shop', 'digital_printing_shop');
-        if (nameLower.includes('brass') || nameLower.includes('copper'))
-            capabilities.push('brass_copper_shop');
-        if (nameLower.includes('book'))
-            capabilities.push('spiritual_book_shop');
         if (nameLower.includes('priest') || nameLower.includes('pandit') || nameLower.includes('purohit'))
             capabilities.push('priest_pandit');
         if (!isDryRun) {
-            await VendorCategoryAccess_1.default.create({
-                vendorId: vendor._id,
-                storeId: vendor._id,
-                parentCategoryId: devotionalParent._id,
-                requestedCapabilities: Array.from(new Set(capabilities)),
-                approvedCapabilities: ['pooja_store'], // Default safe approval
-                approvedSubcategoryIds: [],
-                approvedChildCategoryIds: [],
-                approvedItemTypes: ['product'],
-                status: 'pending', // Requires explicit admin review
-                restrictions: {
-                    canCreateProducts: true,
-                    canCreateServices: capabilities.includes('priest_pandit'),
-                    canJoinFestivalCombos: true,
-                    canAcceptBulkOrders: false,
-                    canSellWholesale: false,
-                    canOfferSubscriptions: false,
+            await VendorCategoryAccess_1.default.findOneAndUpdate({ vendorId: vendor._id, parentCategoryId: targetParent._id }, {
+                $set: {
+                    vendorId: vendor._id,
+                    storeId: vendor._id,
+                    parentCategoryId: targetParent._id,
+                    requestedCapabilities: Array.from(new Set(capabilities)),
+                    approvedCapabilities: Array.from(new Set(capabilities)),
+                    approvedItemTypes: ['product', 'service'],
+                    status: 'approved',
+                    restrictions: {
+                        canCreateProducts: true,
+                        canCreateServices: true,
+                        canJoinFestivalCombos: true,
+                        canAcceptBulkOrders: true,
+                        canSellWholesale: true,
+                        canOfferSubscriptions: true,
+                    },
+                    approvedAt: new Date(),
                 },
-                requestedAt: new Date(),
-            });
+            }, { upsert: true, new: true });
         }
-        createdCount++;
+        if (existing) {
+            updatedCount++;
+        }
+        else {
+            createdCount++;
+        }
     }
-    console.log(`[BackfillVendorCategoryAccess] Summary: ${vendors.length} inspected, ${createdCount} access records ${isDryRun ? 'would be created' : 'created'}, ${skippedCount} skipped.`);
-    return { inspected: vendors.length, createdCount, skippedCount, isDryRun };
+    console.log(`[BackfillVendorCategoryAccess] Summary: ${vendors.length} inspected, ${createdCount} created, ${updatedCount} updated, ${skippedCount} skipped.`);
+    return { inspected: vendors.length, createdCount, updatedCount, skippedCount, isDryRun };
 };
 exports.backfillVendorCategoryAccess = backfillVendorCategoryAccess;
 const runDirect = async () => {

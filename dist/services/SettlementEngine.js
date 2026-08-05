@@ -514,8 +514,8 @@ class SettlementEngine {
         const executeBlock = async (sess) => {
             const now = new Date();
             // Determine query filters based on forceOrderId
-            let txQuery = { status: "pending", releaseDate: { $lte: now } };
-            let settlementQuery = { status: "pending", releaseDate: { $lte: now } };
+            let txQuery = { status: { $in: ["placed", "pending"] }, releaseDate: { $lte: now } };
+            let settlementQuery = { status: { $in: ["placed", "pending"] }, releaseDate: { $lte: now } };
             if (forceOrderId) {
                 txQuery = { orderId: forceOrderId, status: { $in: ["placed", "pending"] } };
                 settlementQuery = { orderId: forceOrderId, status: { $in: ["placed", "pending"] } };
@@ -550,6 +550,10 @@ class SettlementEngine {
                     tx.releasedBy = adminId;
                 }
                 await tx.save({ session: sess });
+                // Mark customer as first order qualified if first_order_bonus is released
+                if (tx.transactionType === "first_order_bonus" && tx.referredUserId) {
+                    await User_1.User.findByIdAndUpdate(tx.referredUserId, { firstOrderQualified: true }).session(sess);
+                }
                 releasedTxs++;
             }
             // 2. Process Commission Settlements release

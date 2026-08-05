@@ -41,4 +41,6 @@ router.post('/admin/vendor-subscriptions/assign', auth_1.protect, (0, auth_1.res
 router.post('/admin/vendor-subscriptions/:id/pause', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminSubscriptionController_1.AdminSubscriptionController.pauseSubscription);
 router.post('/admin/vendor-subscriptions/:id/resume', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminSubscriptionController_1.AdminSubscriptionController.resumeSubscription);
 router.get('/admin/subscription-audit-logs', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminSubscriptionController_1.AdminSubscriptionController.getAuditLogs);
+// ⚠️ DANGER: Clears ALL subscription plans, fees, features, prices and vendor subscription data
+router.delete('/admin/subscription-data/clear-all', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminSubscriptionController_1.AdminSubscriptionController.clearAllSubscriptionData);
 exports.default = router;

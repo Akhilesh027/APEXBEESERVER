@@ -80,7 +80,7 @@ export class PricingService {
             const attrVal = String(v.attributes[key]).toLowerCase();
             const itemColor = String(item.color || 'default').toLowerCase();
             const itemSize = String(item.size || 'default').toLowerCase();
-            
+
             if (key.toLowerCase() === 'color' || key.toLowerCase() === 'colour') {
               return attrVal === itemColor || itemColor === 'default';
             }
@@ -128,7 +128,7 @@ export class PricingService {
     if (couponCode && couponCode.trim()) {
       const normalizedCode = couponCode.trim().toUpperCase();
       const coupon = await Coupon.findOne({ code: normalizedCode });
-      
+
       if (!coupon) {
         throw new Error(`Coupon not found: ${normalizedCode}`);
       }

@@ -47,18 +47,29 @@ export class EntitlementService {
     const sub = await VendorSubscription.findOne({ vendorId: vId });
     const now = new Date();
     const regDate = vendor.createdAt ? new Date(vendor.createdAt) : now;
-    const trialEnd = sub?.trialEnd || new Date(regDate.getTime() + 15 * 24 * 60 * 60 * 1000);
+    const trialEnd = sub?.trialEnd || new Date(regDate.getTime() + 30 * 24 * 60 * 60 * 1000);
 
     const isSubActive =
-      sub && (
-        sub.status === 'ACTIVE' ||
-        sub.status === 'GRACE_PERIOD' ||
-        (sub.status === 'TRIAL' && now <= trialEnd)
-      );
+      !sub || // Default active vendors without explicit sub document get base/trial access
+      sub.status === 'ACTIVE' ||
+      sub.status === 'GRACE_PERIOD' ||
+      (sub.status === 'TRIAL' && now <= trialEnd);
+
+    const isCoreProductFeature = uppercaseKey === 'MAX_PRODUCTS' || uppercaseKey === 'MAX_MENU_ITEMS' || uppercaseKey === 'PRODUCT_CREATION';
 
     // Fetch Master Feature Definition
     const masterFeature = await SubscriptionFeature.findOne({ key: uppercaseKey });
     if (!masterFeature || masterFeature.status !== 'ACTIVE') {
+      if (isCoreProductFeature && (vendor.status === 'active' || !vendor.status)) {
+        return {
+          featureKey: uppercaseKey,
+          enabled: true,
+          limit: null,
+          used: await this.getFeatureUsage(vendorId, uppercaseKey),
+          remaining: null,
+          source: 'DEFAULT'
+        };
+      }
       return {
         featureKey: uppercaseKey,
         enabled: false,
@@ -96,6 +107,18 @@ export class EntitlementService {
 
     // If subscription is not active, paid features return false / limit 0
     if (!isSubActive) {
+      if (isCoreProductFeature && (vendor.status === 'active' || !vendor.status)) {
+        return {
+          featureKey: uppercaseKey,
+          enabled: true,
+          limit: 500,
+          used: await this.getFeatureUsage(vendorId, uppercaseKey),
+          remaining: 500,
+          resetCycle: masterFeature.resetCycle,
+          enforcementMode: masterFeature.enforcementMode,
+          source: 'DEFAULT'
+        };
+      }
       return {
         featureKey: uppercaseKey,
         enabled: false,

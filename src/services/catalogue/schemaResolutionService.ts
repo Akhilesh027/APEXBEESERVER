@@ -3,19 +3,16 @@ import CategoryProductSchema, { ICategoryProductSchema, ISchemaAttributeDefiniti
 
 export const resolveCategorySchema = async (
   categoryId: string
-): Promise<ICategoryProductSchema> => {
+): Promise<ICategoryProductSchema | null> => {
   const targetCategory = await Category.findById(categoryId);
   if (!targetCategory) {
-    throw new Error(`Category not found for ID: ${categoryId}`);
+    return null;
   }
 
   // Case 1: Target is Subcategory (Level 2)
   if (targetCategory.level === 2) {
     const baseSchema = await CategoryProductSchema.findOne({ categoryId: targetCategory._id });
-    if (!baseSchema) {
-      throw new Error(`Category Product Schema missing for subcategory: ${targetCategory.name}`);
-    }
-    return baseSchema;
+    return baseSchema || null;
   }
 
   // Case 2: Target is Child Category (Level 3)
@@ -25,7 +22,7 @@ export const resolveCategorySchema = async (
     const baseSchema = subcategory ? await CategoryProductSchema.findOne({ categoryId: subcategory._id }) : null;
 
     if (!baseSchema && !childSchema) {
-      throw new Error(`Category Product Schema missing for child category: ${targetCategory.name}`);
+      return null;
     }
 
     if (!baseSchema) return childSchema!;
@@ -77,7 +74,8 @@ export const resolveCategorySchema = async (
     return resolvedDoc as any;
   }
 
-  throw new Error(`Invalid category level for schema resolution: Level ${targetCategory.level}`);
+  // Level 1 category or unknown level — no schema, return null
+  return null;
 };
 
 export const validatePayloadAgainstSchema = (
@@ -95,8 +93,8 @@ export const validatePayloadAgainstSchema = (
     if (normalizedPayload[attr.key] === undefined || normalizedPayload[attr.key] === null || normalizedPayload[attr.key] === '') {
       const matchKey = Object.keys(normalizedPayload).find(
         k => k.toLowerCase().trim() === attr.name.toLowerCase().trim() ||
-             k.toLowerCase().replace(/[^a-z0-9]+/g, '_') === attr.key.toLowerCase() ||
-             k.toLowerCase().replace(/[^a-z0-9]+/g, '') === attr.key.toLowerCase().replace(/[^a-z0-9]+/g, '')
+          k.toLowerCase().replace(/[^a-z0-9]+/g, '_') === attr.key.toLowerCase() ||
+          k.toLowerCase().replace(/[^a-z0-9]+/g, '') === attr.key.toLowerCase().replace(/[^a-z0-9]+/g, '')
       );
       if (matchKey && normalizedPayload[matchKey] !== undefined && normalizedPayload[matchKey] !== null && normalizedPayload[matchKey] !== '') {
         normalizedPayload[attr.key] = normalizedPayload[matchKey];

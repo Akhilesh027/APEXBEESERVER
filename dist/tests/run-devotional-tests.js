@@ -122,6 +122,7 @@ async function runDevotionalTests() {
             const childDoc = await Category_1.default.findOne({ slug: 'devotional-pooja-essentials-agarbatti' });
             assert_1.default.ok(childDoc);
             const resolved = await (0, schemaResolutionService_1.resolveCategorySchema)(childDoc._id.toString());
+            assert_1.default.ok(resolved, 'Schema should be resolved for this test category');
             // Missing required 'fragrance'
             const invalidPayload = { pack_count: 10 };
             const valFail = (0, schemaResolutionService_1.validatePayloadAgainstSchema)(invalidPayload, resolved);

@@ -5,9 +5,25 @@ const SubscriptionProduct_1 = require("../models/SubscriptionProduct");
 const SubscriptionPrice_1 = require("../models/SubscriptionPrice");
 const SubscriptionFeature_1 = require("../models/SubscriptionFeature");
 const SubscriptionProductFeature_1 = require("../models/SubscriptionProductFeature");
+const SubscriptionProfileFeature_1 = require("../models/SubscriptionProfileFeature");
+const SubscriptionPlanProfile_1 = require("../models/SubscriptionPlanProfile");
+const SubscriptionProfilePrice_1 = require("../models/SubscriptionProfilePrice");
 const SubscriptionDiscount_1 = require("../models/SubscriptionDiscount");
 const SubscriptionVendorPricing_1 = require("../models/SubscriptionVendorPricing");
+const SubscriptionVendorAgreement_1 = require("../models/SubscriptionVendorAgreement");
+const SubscriptionVendorTypeOverride_1 = require("../models/SubscriptionVendorTypeOverride");
+const SubscriptionCustomerTypePricing_1 = require("../models/SubscriptionCustomerTypePricing");
+const SubscriptionUsage_1 = require("../models/SubscriptionUsage");
+const SubscriptionOverride_1 = require("../models/SubscriptionOverride");
+const VendorSubscription_1 = require("../models/VendorSubscription");
+const VendorSubscriptionItem_1 = require("../models/VendorSubscriptionItem");
+const SubscriptionOrder_1 = require("../models/SubscriptionOrder");
+const SubscriptionInvoice_1 = require("../models/SubscriptionInvoice");
+const SubscriptionPayment_1 = require("../models/SubscriptionPayment");
+const SubscriptionQuote_1 = require("../models/SubscriptionQuote");
+const SubscriptionEvent_1 = require("../models/SubscriptionEvent");
 const SubscriptionAuditLog_1 = require("../models/SubscriptionAuditLog");
+const SubscriptionPlanTier_1 = require("../models/SubscriptionPlanTier");
 const AdminSubscriptionService_1 = require("../services/AdminSubscriptionService");
 const SubscriptionAnalyticsService_1 = require("../services/SubscriptionAnalyticsService");
 const SubscriptionLifecycleService_1 = require("../services/SubscriptionLifecycleService");
@@ -206,6 +222,54 @@ class AdminSubscriptionController {
         try {
             const logs = await SubscriptionAuditLog_1.SubscriptionAuditLog.find().populate('performedBy').populate('vendorId').sort({ createdAt: -1 }).limit(100);
             res.json({ success: true, logs });
+        }
+        catch (error) {
+            res.status(500).json({ success: false, message: error.message });
+        }
+    }
+    /**
+     * DELETE /api/admin/subscription-data/clear-all
+     * Clears all subscription plans, fees, features, prices, and vendor subscription data.
+     * Use this to reset the subscription system before entering new plan data.
+     */
+    static async clearAllSubscriptionData(req, res) {
+        try {
+            const models = [
+                { name: 'SubscriptionPlanTier', model: SubscriptionPlanTier_1.SubscriptionPlanTier },
+                { name: 'SubscriptionProduct', model: SubscriptionProduct_1.SubscriptionProduct },
+                { name: 'SubscriptionPrice', model: SubscriptionPrice_1.SubscriptionPrice },
+                { name: 'SubscriptionFeature', model: SubscriptionFeature_1.SubscriptionFeature },
+                { name: 'SubscriptionProductFeature', model: SubscriptionProductFeature_1.SubscriptionProductFeature },
+                { name: 'SubscriptionProfileFeature', model: SubscriptionProfileFeature_1.SubscriptionProfileFeature },
+                { name: 'SubscriptionPlanProfile', model: SubscriptionPlanProfile_1.SubscriptionPlanProfile },
+                { name: 'SubscriptionProfilePrice', model: SubscriptionProfilePrice_1.SubscriptionProfilePrice },
+                { name: 'SubscriptionVendorPricing', model: SubscriptionVendorPricing_1.SubscriptionVendorPricing },
+                { name: 'SubscriptionVendorAgreement', model: SubscriptionVendorAgreement_1.SubscriptionVendorAgreement },
+                { name: 'SubscriptionVendorTypeOverride', model: SubscriptionVendorTypeOverride_1.SubscriptionVendorTypeOverride },
+                { name: 'SubscriptionCustomerTypePricing', model: SubscriptionCustomerTypePricing_1.SubscriptionCustomerTypePricing },
+                { name: 'SubscriptionDiscount', model: SubscriptionDiscount_1.SubscriptionDiscount },
+                { name: 'SubscriptionUsage', model: SubscriptionUsage_1.SubscriptionUsage },
+                { name: 'SubscriptionOverride', model: SubscriptionOverride_1.SubscriptionOverride },
+                { name: 'VendorSubscription', model: VendorSubscription_1.VendorSubscription },
+                { name: 'VendorSubscriptionItem', model: VendorSubscriptionItem_1.VendorSubscriptionItem },
+                { name: 'SubscriptionOrder', model: SubscriptionOrder_1.SubscriptionOrder },
+                { name: 'SubscriptionInvoice', model: SubscriptionInvoice_1.SubscriptionInvoice },
+                { name: 'SubscriptionPayment', model: SubscriptionPayment_1.SubscriptionPayment },
+                { name: 'SubscriptionQuote', model: SubscriptionQuote_1.SubscriptionQuote },
+                { name: 'SubscriptionEvent', model: SubscriptionEvent_1.SubscriptionEvent },
+                { name: 'SubscriptionAuditLog', model: SubscriptionAuditLog_1.SubscriptionAuditLog },
+            ];
+            const results = {};
+            for (const item of models) {
+                const r = await item.model.deleteMany({});
+                results[item.name] = r.deletedCount || 0;
+            }
+            console.log('[AdminSubscription] All subscription data cleared by admin:', req.user?.id, results);
+            res.json({
+                success: true,
+                message: 'All subscription plans, fees, features, prices and vendor subscription data cleared successfully. You may now add fresh data.',
+                cleared: results,
+            });
         }
         catch (error) {
             res.status(500).json({ success: false, message: error.message });

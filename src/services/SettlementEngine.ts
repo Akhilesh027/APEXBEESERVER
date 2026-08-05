@@ -537,8 +537,8 @@ export class SettlementEngine {
       const now = new Date();
 
       // Determine query filters based on forceOrderId
-      let txQuery: any = { status: "pending", releaseDate: { $lte: now } };
-      let settlementQuery: any = { status: "pending", releaseDate: { $lte: now } };
+      let txQuery: any = { status: { $in: ["placed", "pending"] }, releaseDate: { $lte: now } };
+      let settlementQuery: any = { status: { $in: ["placed", "pending"] }, releaseDate: { $lte: now } };
 
       if (forceOrderId) {
         txQuery = { orderId: forceOrderId, status: { $in: ["placed", "pending"] } };
@@ -580,6 +580,12 @@ export class SettlementEngine {
           tx.releasedBy = adminId;
         }
         await tx.save({ session: sess });
+
+        // Mark customer as first order qualified if first_order_bonus is released
+        if (tx.transactionType === "first_order_bonus" && tx.referredUserId) {
+          await User.findByIdAndUpdate(tx.referredUserId, { firstOrderQualified: true }).session(sess);
+        }
+
         releasedTxs++;
       }
 

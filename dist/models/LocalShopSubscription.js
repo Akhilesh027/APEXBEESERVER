@@ -101,8 +101,7 @@ const LocalShopSubscriptionSchema = new mongoose_1.Schema({
         required: true
     },
     deliveryAgentId: {
-        type: mongoose_1.Schema.Types.ObjectId,
-        ref: 'User',
+        type: mongoose_1.Schema.Types.Mixed,
         default: null
     },
     deliveryAgentType: {

@@ -319,9 +319,11 @@ export class WalletEngine {
         { new: true, session: sess }
       );
 
-      // Fallback if no matching pending entry was found in legacy array
+      // Fallback if no matching pending entry was found in legacy array (e.g. transaction released directly from 'placed' state)
       if (!result) {
         const txId = params.releasedTransactionId || this.generateTxId();
+        const pendingDeduction = Math.min(walletBefore.pendingBalance || 0, amount);
+
         const newEntry: any = {
           transactionId: txId,
           type: 'credit',
@@ -341,7 +343,7 @@ export class WalletEngine {
           { userId },
           {
             $inc: {
-              pendingBalance: Number((-amount).toFixed(2)),
+              pendingBalance: Number((-pendingDeduction).toFixed(2)),
               availableBalance: Number(amount.toFixed(2)),
               totalCredits: Number(amount.toFixed(2)),
               version: 1,
@@ -356,10 +358,13 @@ export class WalletEngine {
 
       if (!result) throw new Error('Failed to release hold');
 
-      // Update User nested wallet holdBalance/balance fields
+      // Update User nested wallet holdBalance/balance fields safely
+      const userBefore = await User.findById(userId).session(sess);
+      const userHoldDeduction = Math.min(userBefore?.wallet?.holdBalance || 0, amount);
+
       await User.findByIdAndUpdate(userId, {
         $inc: {
-          "wallet.holdBalance": Number((-amount).toFixed(2)),
+          "wallet.holdBalance": Number((-userHoldDeduction).toFixed(2)),
           "wallet.balance": Number(amount.toFixed(2)),
           "wallet.totalEarned": Number(amount.toFixed(2))
         }

@@ -46,7 +46,7 @@ const scheduleAutoAssignmentTimeout = (assignmentId: string) => {
         if (order) {
           order.deliveryAgentId = undefined; // clear assignment to re-trigger
           await order.save();
-          
+
           await autoAssignDeliveryPartner(order, assignment.partnerId ? [assignment.partnerId.toString()] : []);
         }
       }
@@ -62,7 +62,7 @@ const scheduleAutoAssignmentTimeout = (assignmentId: string) => {
 
 const autoAssignDeliveryPartner = async (order: any, excludedPartnerIds: string[] = []) => {
   try {
-    const activePartners = await DeliveryPartner.find({ 
+    const activePartners = await DeliveryPartner.find({
       status: 'active',
       _id: { $nin: excludedPartnerIds.map(id => new mongoose.Types.ObjectId(id)) }
     });
@@ -78,7 +78,7 @@ const autoAssignDeliveryPartner = async (order: any, excludedPartnerIds: string[
       const activeOrders = await Order.countDocuments({ deliveryAgentId: partner.userId.toString(), orderStatus: { $in: ['Confirmed', 'Packed', 'Shipped'] } });
       const rating = partner.ratings?.averageRating || 5.0;
       const distance = Math.floor(Math.random() * 5) + 1; // mock distance 1 to 5 km
-      
+
       const score = (rating * 15) - (activeOrders * 10) - (distance * 2);
       if (score > highestScore) {
         highestScore = score;
@@ -89,7 +89,7 @@ const autoAssignDeliveryPartner = async (order: any, excludedPartnerIds: string[
     if (bestPartner) {
       order.deliveryAgentId = (bestPartner as any).userId.toString();
       order.deliveryType = 'Platform';
-      
+
       if (!order.deliveryVerification || !order.deliveryVerification.otp) {
         const otpCode = Math.floor(1000 + Math.random() * 9000).toString();
         order.deliveryVerification = {
@@ -551,7 +551,7 @@ export const getOrdersByUserId = async (req: Request, res: Response) => {
 export const getOrders = async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
-    
+
     // Explicitly define roles and precedence
     const roles = Array.isArray(user?.roles)
       ? user.roles
@@ -571,7 +571,7 @@ export const getOrders = async (req: Request, res: Response) => {
     } else if (req.query.status) {
       filters.orderStatus = req.query.status;
     }
-    
+
     if (req.query.paymentStatus) {
       filters.paymentStatus = req.query.paymentStatus;
     }
@@ -768,7 +768,7 @@ export const updateOrder = async (req: Request, res: Response) => {
 
     if (req.body.orderStatus) {
       const status = req.body.orderStatus;
-      
+
       // Update orderStatusObj
       const orderStatusObj = currentOrder.orderStatusObj || { currentStatus: status, timeline: [] };
       orderStatusObj.currentStatus = status;
@@ -821,7 +821,7 @@ export const updateOrder = async (req: Request, res: Response) => {
           const partner = await DeliveryPartner.findOne({ userId: req.body.deliveryAgentId }) || await DeliveryPartner.findById(req.body.deliveryAgentId);
           const agentName = partner ? partner.name : "A delivery agent";
           const agentPhone = partner ? partner.mobile : "";
-          
+
           notificationEmitter.emitNotification(
             'order.agent_assigned',
             {
@@ -854,7 +854,7 @@ export const updateOrder = async (req: Request, res: Response) => {
       if (req.body.orderStatus && req.body.orderStatus !== currentOrder.orderStatus) {
         try {
           let eventCode = 'order.status_updated';
-          
+
           if (order.orderStatus === 'Confirmed') {
             eventCode = 'order.confirmed';
           } else if (order.orderStatus === 'Packed') {
@@ -945,11 +945,11 @@ export const getOrderInvoicePDF = async (req: Request, res: Response) => {
     const yPos = doc.y;
     doc.text('Seller Details:', 50, yPos, { underline: true });
     doc.text(`Seller ID: ${order.sellerId}`, 50, yPos + 15);
-    
+
     doc.text('Customer Details:', 300, yPos, { underline: true });
     doc.text(`Name: ${order.customerName || 'N/A'}`, 300, yPos + 15);
     doc.text(`Address: ${order.deliveryAddress || 'N/A'}`, 300, yPos + 30);
-    
+
     doc.y = yPos + 70;
     doc.x = 50;
 
@@ -986,7 +986,7 @@ export const getOrderInvoicePDF = async (req: Request, res: Response) => {
 
     doc.text('Subtotal:', 380, doc.y, { width: 100, align: 'right' });
     doc.text(`₹${(Number(order.totalAmount) || 0).toFixed(2)}`, 490, doc.y, { width: 70, align: 'right' });
-    
+
     doc.moveDown(0.5);
     doc.font('Helvetica-Bold');
     doc.text('Net Payable:', 380, doc.y, { width: 100, align: 'right' });
@@ -1049,7 +1049,7 @@ export const getOrderPackingSlipPDF = async (req: Request, res: Response) => {
     order.items.forEach((item) => {
       const isPacked = order.packingChecklist?.includes(item.productId.toString()) || false;
       const checkboxSymbol = isPacked ? '[X]' : '[  ]';
-      
+
       const startY = doc.y;
       doc.text(checkboxSymbol, 50, startY, { width: 30 });
       doc.text(`${item.sku} - ${item.productName}`, 90, startY, { width: 300 });

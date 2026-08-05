@@ -221,33 +221,79 @@ const createProduct = async (req, res) => {
             if (vendor) {
                 try {
                     const { EntitlementService } = await Promise.resolve().then(() => __importStar(require('../modules/subscription/services/EntitlementService')));
-                    const isRestaurant = vendor.storeType === 'restaurant' || vendor.primaryCategory === 'Food & Dining';
-                    const featKey = isRestaurant ? 'MAX_MENU_ITEMS' : 'MAX_PRODUCTS';
-                    const entitlement = await EntitlementService.getFeatureEntitlement(vendor._id.toString(), featKey);
-                    if (entitlement && !entitlement.enabled) {
-                        res.status(403).json({
-                            success: false,
-                            message: 'Product creation feature is disabled for your active subscription plan. Please upgrade your plan.'
-                        });
-                        return;
-                    }
-                    if (entitlement && entitlement.limit !== null && entitlement.limit !== undefined) {
+                    const { VendorSubscription } = await Promise.resolve().then(() => __importStar(require('../modules/subscription/models/VendorSubscription')));
+                    // Check vendor's current subscription status first
+                    const vendorSub = await VendorSubscription.findOne({ vendorId: vendor._id });
+                    const now = new Date();
+                    // TRIAL vendors (within trial period) always get product creation access
+                    const regDate = vendor.createdAt ? new Date(vendor.createdAt) : now;
+                    const trialEnd = vendorSub?.trialEnd || new Date(regDate.getTime() + 30 * 24 * 60 * 60 * 1000);
+                    const isOnTrial = !vendorSub || vendorSub.status === 'TRIAL' || (now <= trialEnd);
+                    const isActivePaid = vendorSub && (vendorSub.status === 'ACTIVE' || vendorSub.status === 'GRACE_PERIOD');
+                    const isActiveVendor = vendor.status === 'active' || !vendor.status;
+                    // Allow during trial or if vendor is active with no explicit subscription (default free access)
+                    if (isOnTrial || !vendorSub) {
+                        // Trial/new vendors: allow up to 500 products free
                         const currentCount = await Product_1.default.countDocuments({
                             $or: [{ sellerId: sellerId }, { sellerId: vendor._id }]
                         });
-                        if (currentCount >= entitlement.limit) {
+                        if (currentCount >= 500) {
                             res.status(403).json({
                                 success: false,
-                                message: `Product limit reached (${entitlement.limit} items) for your active subscription plan. Please upgrade to Premium for more items.`,
-                                limit: entitlement.limit,
+                                message: `Trial product limit reached (500 items). Please upgrade to a paid plan to add more products.`,
+                                limit: 500,
                                 currentCount
                             });
                             return;
                         }
                     }
+                    else if (isActivePaid) {
+                        // Paid active subscription: check entitlement limits
+                        const isRestaurant = vendor.storeType === 'restaurant' || vendor.primaryCategory?.toLowerCase().includes('food');
+                        const featKey = isRestaurant ? 'MAX_MENU_ITEMS' : 'MAX_PRODUCTS';
+                        const entitlement = await EntitlementService.getFeatureEntitlement(vendor._id.toString(), featKey);
+                        if (entitlement && !entitlement.enabled && entitlement.source !== 'DEFAULT') {
+                            res.status(403).json({
+                                success: false,
+                                message: 'Product creation feature is disabled for your active subscription plan. Please upgrade your plan.'
+                            });
+                            return;
+                        }
+                        if (entitlement && entitlement.limit !== null && entitlement.limit !== undefined) {
+                            const currentCount = await Product_1.default.countDocuments({
+                                $or: [{ sellerId: sellerId }, { sellerId: vendor._id }]
+                            });
+                            if (currentCount >= entitlement.limit) {
+                                res.status(403).json({
+                                    success: false,
+                                    message: `Product limit reached (${entitlement.limit} items) for your subscription plan. Please upgrade to Premium for more items.`,
+                                    limit: entitlement.limit,
+                                    currentCount
+                                });
+                                return;
+                            }
+                        }
+                    }
+                    else if (isActiveVendor) {
+                        // Expired subscription but vendor account is still active: allow with a soft limit
+                        const currentCount = await Product_1.default.countDocuments({
+                            $or: [{ sellerId: sellerId }, { sellerId: vendor._id }]
+                        });
+                        if (currentCount >= 100) {
+                            res.status(403).json({
+                                success: false,
+                                message: `Your subscription has expired. You can continue with your existing ${currentCount} products, but adding more requires an active plan. Please renew your subscription.`,
+                                limit: 100,
+                                currentCount
+                            });
+                            return;
+                        }
+                    }
+                    // If none of the above, let vendor create product
                 }
                 catch (eErr) {
                     console.warn('[Product Subscription Check Warning]:', eErr.message);
+                    // On any error in subscription check, allow the product creation to proceed
                 }
             }
         }
@@ -329,35 +375,36 @@ const createProduct = async (req, res) => {
                 deliveryScope: req.body.deliveryScope || (req.body.isPanIndia === 'true' || req.body.isPanIndia === true ? 'pan_india' : 'local'),
                 isPanIndia: req.body.deliveryScope === 'pan_india' || req.body.isPanIndia === 'true' || req.body.isPanIndia === true,
             });
-            const StoreProductModel = mongoose_1.default.model('StoreProduct');
-            const InventoryModel = mongoose_1.default.model('Inventory');
-            await StoreProductModel.create({
-                storeId,
-                productId: product._id,
-                mrp: mrp || 0,
-                sellingPrice: calculatedSelling || mrp || 0,
-                minimumOrderQuantity: 1,
-                preparationTimeMinutes: 15,
-                isActive: true,
-            });
-            await InventoryModel.create({
-                storeId,
-                productId: product._id,
-                availableStock: normalizeNumber(stock, 50),
-                reservedStock: 0,
-                damagedStock: 0,
-                lowStockThreshold: 5,
-            });
+            if (mongoose_1.default.Types.ObjectId.isValid(storeId)) {
+                try {
+                    const StoreProductModel = mongoose_1.default.model('StoreProduct');
+                    const InventoryModel = mongoose_1.default.model('Inventory');
+                    await StoreProductModel.create({
+                        storeId: new mongoose_1.default.Types.ObjectId(storeId),
+                        productId: product._id,
+                        mrp: mrp || 0,
+                        sellingPrice: calculatedSelling || mrp || 0,
+                        minimumOrderQuantity: 1,
+                        preparationTimeMinutes: 15,
+                        isActive: true,
+                    });
+                    await InventoryModel.create({
+                        storeId: new mongoose_1.default.Types.ObjectId(storeId),
+                        productId: product._id,
+                        availableStock: normalizeNumber(stock, 50),
+                        reservedStock: 0,
+                        damagedStock: 0,
+                        lowStockThreshold: 5,
+                    });
+                }
+                catch (subErr) {
+                    console.warn('[Auxiliary StoreProduct/Inventory Creation Warning]:', subErr.message);
+                }
+            }
         }
         catch (createErr) {
-            if (product && product._id) {
-                await Product_1.default.findByIdAndDelete(product._id);
-                const StoreProductModel = mongoose_1.default.model('StoreProduct');
-                const InventoryModel = mongoose_1.default.model('Inventory');
-                await StoreProductModel.deleteMany({ productId: product._id });
-                await InventoryModel.deleteMany({ productId: product._id });
-            }
-            throw new Error(`Atomic product creation failed: ${createErr.message}`);
+            console.error('[Product Creation Error]:', createErr.message);
+            throw new Error(`Product creation failed: ${createErr.message}`);
         }
         const populatedProduct = await populateProduct(Product_1.default.findById(product._id));
         res.status(201).json({
@@ -395,7 +442,9 @@ const getAllProducts = async (req, res) => {
         const mandal = req.query.mandal ? String(req.query.mandal).trim() : '';
         const filter = {};
         const pageNum = Math.max(1, Number(page) || 1);
-        const limitNum = Math.min(100, Math.max(1, Number(limit) || 20));
+        const limitNum = (status === 'all' || Number(limit) >= 100)
+            ? Math.min(10000, Math.max(1, Number(limit) || 1000))
+            : Math.min(100, Math.max(1, Number(limit) || 20));
         // Enforce Hyperlocal vs Pan-India Product Visibility based on Customer Location (when sellerId is not specified)
         if (!sellerId && (state || district || mandal || pincode || (lat && lng))) {
             const vendorLocationOr = [];
@@ -445,25 +494,31 @@ const getAllProducts = async (req, res) => {
             filter.sellerType = sellerType;
         }
         // Strict Live Product Enforcement for Customer User Panel
+        // Status & Active filtering
         const liveStatuses = ['Live', 'Active', 'Approved', 'approved', 'active', 'published'];
-        if (status && status !== 'all' && status !== 'draft' && status !== 'pending' && status !== 'rejected') {
-            filter.status = { $in: liveStatuses };
+        if (status === 'all') {
+            // Admin query for all products: do not restrict by status or active state
         }
-        else if (!status && !sellerId) {
-            filter.status = { $in: liveStatuses };
-        }
-        else if (status) {
-            filter.status = status;
-        }
-        if (isActive !== undefined) {
-            filter.isActive = isActive === 'true';
-        }
-        else if (!sellerId) {
-            filter.isActive = true;
-        }
-        if (!sellerId) {
-            filter.isArchived = { $ne: true };
-            filter.moderationStatus = { $ne: 'rejected' };
+        else {
+            if (status && status !== 'draft' && status !== 'pending' && status !== 'rejected') {
+                filter.status = { $in: liveStatuses };
+            }
+            else if (!status && !sellerId) {
+                filter.status = { $in: liveStatuses };
+            }
+            else if (status) {
+                filter.status = status;
+            }
+            if (isActive !== undefined) {
+                filter.isActive = isActive === 'true';
+            }
+            else if (!sellerId) {
+                filter.isActive = true;
+            }
+            if (!sellerId) {
+                filter.isArchived = { $ne: true };
+                filter.moderationStatus = { $ne: 'rejected' };
+            }
         }
         if (category || categoryId) {
             const catParam = String(categoryId || category).trim();
@@ -900,15 +955,20 @@ const deleteProduct = async (req, res) => {
 exports.deleteProduct = deleteProduct;
 const configureAdminPricing = async (req, res) => {
     try {
-        const product = await Product_1.default.findById(req.params.id);
+        const prodId = req.params.id;
+        if (!mongoose_1.default.Types.ObjectId.isValid(prodId)) {
+            res.status(400).json({ success: false, message: 'Invalid Product ID format' });
+            return;
+        }
+        const product = await Product_1.default.findById(prodId);
         if (!product) {
-            res.status(404).json({ message: 'Product not found' });
+            res.status(404).json({ success: false, message: 'Product not found' });
             return;
         }
         const adminPricing = buildAdminPricing(req.body);
         product.adminPricing = {
             ...adminPricing,
-            configuredBy: req.user?._id || req.body.adminId,
+            configuredBy: req.user?._id || req.user?.id || req.body.adminId,
             configuredAt: new Date(),
         };
         if (req.body.referralCommission) {
@@ -922,7 +982,7 @@ const configureAdminPricing = async (req, res) => {
             const shares = req.body.commissionShares;
             if (Array.isArray(shares)) {
                 const getSharePercent = (type) => {
-                    const sh = shares.find((s) => s.type === type && s.isActive !== false);
+                    const sh = shares.find((s) => s && s.type === type && s.isActive !== false);
                     return sh ? (Number(sh.percent) || 0) : 0;
                 };
                 product.referralCommission = {
@@ -934,22 +994,26 @@ const configureAdminPricing = async (req, res) => {
         }
         product.status = 'Awaiting Seller Approval';
         product.isVendorEdit = false;
-        product.preEditSnapshot = undefined;
         product.vendorEditedAt = undefined;
         product.adminPricingApproved = true;
         product.sellerPricingAccepted = false;
         product.approvedByAdminAt = new Date();
         product.isActive = false;
+        product.markModified('adminPricing');
+        product.markModified('referralCommission');
         await product.save();
         const populatedProduct = await populateProduct(Product_1.default.findById(product._id));
         res.json({
+            success: true,
             message: 'Admin pricing saved. Waiting for seller approval.',
             product: populatedProduct,
         });
     }
     catch (error) {
+        console.error('Failed to configure admin pricing error:', error);
         res.status(500).json({
-            message: 'Failed to configure admin pricing',
+            success: false,
+            message: error.message || 'Failed to configure admin pricing',
             error: error.message,
         });
     }

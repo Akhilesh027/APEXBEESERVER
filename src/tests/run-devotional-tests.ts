@@ -102,16 +102,17 @@ async function runDevotionalTests() {
       const childDoc = await Category.findOne({ slug: 'devotional-pooja-essentials-agarbatti' });
       assert.ok(childDoc);
       const resolved = await resolveCategorySchema(childDoc._id.toString());
+      assert.ok(resolved, 'Schema should be resolved for this test category');
 
       // Missing required 'fragrance'
       const invalidPayload = { pack_count: 10 };
-      const valFail = validatePayloadAgainstSchema(invalidPayload, resolved);
+      const valFail = validatePayloadAgainstSchema(invalidPayload, resolved!);
       assert.strictEqual(valFail.isValid, false);
       assert.ok(valFail.errors.some(e => e.includes('fragrance')));
 
       // Valid payload
       const validPayload = { fragrance: 'Sandalwood', pack_count: 50 };
-      const valPass = validatePayloadAgainstSchema(validPayload, resolved);
+      const valPass = validatePayloadAgainstSchema(validPayload, resolved!);
       assert.strictEqual(valPass.isValid, true);
     });
 
