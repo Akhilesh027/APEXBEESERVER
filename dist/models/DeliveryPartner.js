@@ -45,6 +45,14 @@ const VehicleDetailsSchema = new mongoose_1.Schema({
     insuranceExpiry: { type: Date },
     licenseExpiry: { type: Date }
 }, { _id: false });
+const BankDetailsSchema = new mongoose_1.Schema({
+    bankName: { type: String, default: '' },
+    accountNumber: { type: String, default: '' },
+    ifscCode: { type: String, default: '' },
+    ifsc: { type: String, default: '' },
+    upiId: { type: String, default: '' },
+    accountHolderName: { type: String, default: '' }
+}, { _id: false });
 const DeliveryRatingsSchema = new mongoose_1.Schema({
     customerRating: { type: Number, default: 5.0 },
     vendorRating: { type: Number, default: 5.0 },
@@ -66,7 +74,15 @@ const DeliveryPartnerSchema = new mongoose_1.Schema({
     email: { type: String, required: true },
     status: { type: String, enum: ['active', 'pending_approval', 'suspended', 'offline'], default: 'pending_approval' },
     partnerType: { type: String, enum: ['Employee', 'Freelancer'], default: 'Employee' },
-    vehicle: { type: VehicleDetailsSchema },
+    zone: { type: String, default: 'LB Nagar' },
+    currentLocation: {
+        lat: { type: Number, default: 19.7207 },
+        lng: { type: Number, default: 78.4186 },
+        address: { type: String, default: 'LB Nagar, Hyderabad' },
+        updatedAt: { type: Date, default: Date.now }
+    },
+    vehicle: { type: VehicleDetailsSchema, default: () => ({ type: 'Bike' }) },
+    bankDetails: { type: BankDetailsSchema, default: () => ({}) },
     kyc: { type: DeliveryKycSchema, default: () => ({ isVerified: false }) },
     ratings: { type: DeliveryRatingsSchema, default: () => ({}) },
     fixedSalary: { type: Number, default: 0 },

@@ -245,23 +245,28 @@ router.get('/subscriptions/vendor/:vendorId', protect, async (req: Request, res:
           subObj.vendorName = vendor.businessName || vendor.ownerName;
           subObj.vendorPhone = vendor.mobile;
           subObj.vendorAddress = vendor.address || 'Store Pickup Location';
-        } else {
-          subObj.vendorName = 'Local Merchant Store';
-          subObj.vendorPhone = '+91 99999 88888';
-          subObj.vendorAddress = 'Amanora Mall, Hadapsar, Pune, Maharashtra - 411028';
+          subObj.vendorName = 'GNS Stores';
+          subObj.vendorPhone = '9177176969';
+          subObj.vendorAddress = 'NH67, బుచ్చిరెడ్డిపాలెం, Sri Potti Sriramulu Nellore, Andhra Pradesh, 524305, India';
         }
       } catch (err) {
-        subObj.vendorName = 'Local Merchant Store';
-        subObj.vendorPhone = '+91 99999 88888';
-        subObj.vendorAddress = 'Amanora Mall, Hadapsar, Pune, Maharashtra - 411028';
+        subObj.vendorName = 'GNS Stores';
+        subObj.vendorPhone = '9177176969';
+        subObj.vendorAddress = 'NH67, బుచ్చిరెడ్డిపాలెం, Sri Potti Sriramulu Nellore, Andhra Pradesh, 524305, India';
       }
 
       return subObj;
     }));
 
+    const filteredSubscriptions = enrichedSubscriptions.filter((s: any) => {
+      const pName = (s.productName || s.itemName || s.title || '').toLowerCase();
+      const pCat = (s.category || s.subCategory || '').toLowerCase();
+      return !pName.includes('academy') && !pCat.includes('academy');
+    });
+
     res.status(200).json({
       success: true,
-      subscriptions: enrichedSubscriptions
+      subscriptions: filteredSubscriptions
     });
   } catch (err: any) {
     res.status(500).json({ success: false, message: err.message });
@@ -269,7 +274,7 @@ router.get('/subscriptions/vendor/:vendorId', protect, async (req: Request, res:
 });
 
 // 1.2 GET /subscriptions/admin/all
-router.get('/subscriptions/admin/all', protect, restrictTo('admin'), async (req: Request, res: Response): Promise<void> => {
+router.get('/subscriptions/admin/all', protect, async (req: Request, res: Response): Promise<void> => {
   try {
     const subscriptions = await LocalShopSubscription.find()
       .populate({
@@ -325,10 +330,29 @@ router.post('/subscriptions', async (req: Request, res: Response): Promise<void>
       customDays,
       deliverySlot,
       autoRenew,
+      customerName,
+      customerPhone,
+      address,
+      deliveryAddress,
       userLocation
     } = req.body;
 
     const startDate = new Date().toISOString().split('T')[0];
+
+    let finalCustomerName = customerName || '';
+    let finalCustomerPhone = customerPhone || '';
+    let finalAddress = address || deliveryAddress || (userLocation && userLocation.address) || '';
+
+    if (userId && (!finalAddress || !finalCustomerName || !finalCustomerPhone)) {
+      try {
+        const u = await User.findById(userId);
+        if (u) {
+          if (!finalCustomerName) finalCustomerName = u.name || '';
+          if (!finalCustomerPhone) finalCustomerPhone = u.phone || u.mobile || '';
+          if (!finalAddress) finalAddress = (u as any).address || (userLocation && userLocation.address) || '';
+        }
+      } catch (e) {}
+    }
 
     // Auto-create or update Address using GPS coordinates / userLocation
     if (userLocation && userLocation.address) {
@@ -392,6 +416,10 @@ router.post('/subscriptions', async (req: Request, res: Response): Promise<void>
       status: 'active',
       autoRenew: autoRenew !== false,
       skippedDates: [],
+      customerName: finalCustomerName,
+      customerPhone: finalCustomerPhone,
+      address: finalAddress,
+      deliveryAddress: finalAddress,
       startDate
     });
 

@@ -24,6 +24,10 @@ export interface ILocalShopSubscription extends Document {
     updatedAt?: Date;
   }>;
   startDate: string;
+  customerName?: string;
+  customerPhone?: string;
+  address?: string;
+  deliveryAddress?: string;
   deliveryAgentId?: mongoose.Types.ObjectId | string | null;
   deliveryAgentType?: string;
   deliveryAgentName?: string;
@@ -96,6 +100,22 @@ const LocalShopSubscriptionSchema = new Schema<ILocalShopSubscription>(
     startDate: {
       type: String,
       required: true
+    },
+    customerName: {
+      type: String,
+      default: ''
+    },
+    customerPhone: {
+      type: String,
+      default: ''
+    },
+    address: {
+      type: String,
+      default: ''
+    },
+    deliveryAddress: {
+      type: String,
+      default: ''
     },
     deliveryAgentId: {
       type: Schema.Types.Mixed,

@@ -33,6 +33,7 @@ router.get('/reports/comparison/:userId', auth_1.protect, vendorController_1.get
 router.get('/reports/delivery-zones/:userId', auth_1.protect, vendorController_1.getVendorDeliveryZones);
 router.get('/commissions/:userId', auth_1.protect, vendorController_1.getVendorCommissions);
 router.get('/entrepreneurs/:userId', auth_1.protect, vendorController_1.getVendorEntrepreneurs);
+router.get('/entrepreneurs', auth_1.protect, vendorController_1.getVendorEntrepreneurs);
 // Store detail & feedback routes (placed last)
 router.get('/:vendorId', vendorController_1.getVendorDetails);
 router.get('/:vendorId/reviews', vendorController_1.getVendorReviews);

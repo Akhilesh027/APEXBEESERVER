@@ -167,13 +167,13 @@ const getHomeDashboard = async (req, res) => {
                 isCourierShipping = true;
                 deliveryTimeLabel = '🌐 Pan-India Courier';
                 duration = 2880;
-                shippingCharge = 40;
+                shippingCharge = pObj.adminPricing?.shippingCharge ?? 0;
             }
             else {
                 isCourierShipping = false;
                 duration = 15;
                 deliveryTimeLabel = '⚡ Fast [15 MINS]';
-                shippingCharge = 0;
+                shippingCharge = pObj.adminPricing?.shippingCharge ?? 0;
                 distanceKm = 1.5;
             }
             const mrp = pObj.baseMrp || pObj.baseSellingPrice || 0;

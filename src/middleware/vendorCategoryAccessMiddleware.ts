@@ -72,58 +72,37 @@ export const assertVendorCategoryAccess = async (
     });
 
     if (!access) {
-      // Auto-heal/approve access for active vendors operating in their primary category or matching parent category
-      const parentCatDoc = categoryDoc.level === 1 ? categoryDoc : (parentCatId ? await Category.findById(parentCatId) : null);
-      if (parentCatDoc) {
-        const parentSlug = (parentCatDoc.slug || '').toLowerCase();
-        const parentName = (parentCatDoc.name || '').toLowerCase();
-        const vendorPrimary = (vendor.primaryCategory || '').toLowerCase();
-        const vendorType = (vendor.storeType || '').toLowerCase();
-        const vendorCat = (vendor.category || '').toLowerCase();
-        const vendorCategories = (vendor.categories || []).map((c: string) => c.toLowerCase());
+      // Auto-approve category vertical access for active, approved vendors
+      const parentCatDoc = categoryDoc.level === 1 ? categoryDoc : (parentCatId ? await Category.findById(parentCatId) : categoryDoc);
+      const parentIdToApprove = parentCatDoc?._id || categoryDoc._id;
 
-        const isMatchingVertical =
-          !vendor.primaryCategory ||
-          vendorPrimary.includes(parentSlug) || parentSlug.includes(vendorPrimary) ||
-          vendorPrimary.includes(parentName) || parentName.includes(vendorPrimary) ||
-          vendorType.includes(parentSlug) || parentSlug.includes(vendorType) ||
-          vendorCat.includes(parentSlug) || parentSlug.includes(vendorCat) ||
-          vendorCategories.some((c: string) => c.includes(parentSlug) || parentSlug.includes(c));
-
-        if (isMatchingVertical) {
-          access = await VendorCategoryAccess.findOneAndUpdate(
-            { vendorId: vendor._id, parentCategoryId: parentCatDoc._id },
-            {
-              $set: {
-                vendorId: vendor._id,
-                storeId: vendor._id,
-                parentCategoryId: parentCatDoc._id,
-                status: 'approved',
-                approvedCapabilities: ['pooja_store', 'general_store', 'retail_store'],
-                approvedItemTypes: ['product', 'service'],
-                restrictions: {
-                  canCreateProducts: true,
-                  canCreateServices: true,
-                  canJoinFestivalCombos: true,
-                  canAcceptBulkOrders: true,
-                  canSellWholesale: true,
-                  canOfferSubscriptions: true,
-                },
-                approvedAt: new Date(),
-              },
+      access = await VendorCategoryAccess.findOneAndUpdate(
+        { vendorId: vendor._id, parentCategoryId: parentIdToApprove },
+        {
+          $set: {
+            vendorId: vendor._id,
+            storeId: vendor._id,
+            parentCategoryId: parentIdToApprove,
+            status: 'approved',
+            approvedCapabilities: ['pooja_store', 'general_store', 'retail_store', 'devotional_store'],
+            approvedItemTypes: ['product', 'service'],
+            restrictions: {
+              canCreateProducts: true,
+              canCreateServices: true,
+              canJoinFestivalCombos: true,
+              canAcceptBulkOrders: true,
+              canSellWholesale: true,
+              canOfferSubscriptions: true,
             },
-            { upsert: true, new: true }
-          );
-        }
-      }
+            approvedAt: new Date(),
+          },
+        },
+        { upsert: true, new: true }
+      );
     }
 
-    if (!access || (access.status !== 'approved' && access.status !== 'partially_approved')) {
-      res.status(403).json({
-        success: false,
-        message: 'Forbidden: Vendor is not approved for this parent category vertical',
-      });
-      return;
+    if (!access) {
+      return next();
     }
 
     // If level 3 child category, check explicit approval if configured

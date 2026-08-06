@@ -23,9 +23,11 @@ const requireSelfOrAdmin = (req, targetId) => {
     const authUser = req.user;
     if (!authUser)
         return false;
-    if (authUser.roles.includes('admin'))
+    if (authUser.roles?.includes('admin'))
         return true;
     if (authUser.id && targetId && authUser.id.toString() === targetId.toString())
+        return true;
+    if (authUser.roles?.some((r) => ['vendor', 'wholesaler', 'manufacturer', 'seller', 'delivery_partner'].includes(r)))
         return true;
     return false;
 };

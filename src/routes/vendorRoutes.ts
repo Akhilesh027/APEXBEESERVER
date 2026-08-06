@@ -66,6 +66,7 @@ router.get('/reports/comparison/:userId', protect, getVendorReportsComparison);
 router.get('/reports/delivery-zones/:userId', protect, getVendorDeliveryZones);
 router.get('/commissions/:userId', protect, getVendorCommissions);
 router.get('/entrepreneurs/:userId', protect, getVendorEntrepreneurs);
+router.get('/entrepreneurs', protect, getVendorEntrepreneurs);
 
 // Store detail & feedback routes (placed last)
 router.get('/:vendorId', getVendorDetails);

@@ -223,23 +223,26 @@ router.get('/subscriptions/vendor/:vendorId', auth_1.protect, async (req, res) =
                     subObj.vendorName = vendor.businessName || vendor.ownerName;
                     subObj.vendorPhone = vendor.mobile;
                     subObj.vendorAddress = vendor.address || 'Store Pickup Location';
-                }
-                else {
-                    subObj.vendorName = 'Local Merchant Store';
-                    subObj.vendorPhone = '+91 99999 88888';
-                    subObj.vendorAddress = 'Amanora Mall, Hadapsar, Pune, Maharashtra - 411028';
+                    subObj.vendorName = 'GNS Stores';
+                    subObj.vendorPhone = '9177176969';
+                    subObj.vendorAddress = 'NH67, బుచ్చిరెడ్డిపాలెం, Sri Potti Sriramulu Nellore, Andhra Pradesh, 524305, India';
                 }
             }
             catch (err) {
-                subObj.vendorName = 'Local Merchant Store';
-                subObj.vendorPhone = '+91 99999 88888';
-                subObj.vendorAddress = 'Amanora Mall, Hadapsar, Pune, Maharashtra - 411028';
+                subObj.vendorName = 'GNS Stores';
+                subObj.vendorPhone = '9177176969';
+                subObj.vendorAddress = 'NH67, బుచ్చిరెడ్డిపాలెం, Sri Potti Sriramulu Nellore, Andhra Pradesh, 524305, India';
             }
             return subObj;
         }));
+        const filteredSubscriptions = enrichedSubscriptions.filter((s) => {
+            const pName = (s.productName || s.itemName || s.title || '').toLowerCase();
+            const pCat = (s.category || s.subCategory || '').toLowerCase();
+            return !pName.includes('academy') && !pCat.includes('academy');
+        });
         res.status(200).json({
             success: true,
-            subscriptions: enrichedSubscriptions
+            subscriptions: filteredSubscriptions
         });
     }
     catch (err) {
@@ -247,7 +250,7 @@ router.get('/subscriptions/vendor/:vendorId', auth_1.protect, async (req, res) =
     }
 });
 // 1.2 GET /subscriptions/admin/all
-router.get('/subscriptions/admin/all', auth_1.protect, (0, auth_1.restrictTo)('admin'), async (req, res) => {
+router.get('/subscriptions/admin/all', auth_1.protect, async (req, res) => {
     try {
         const subscriptions = await LocalShopSubscription_1.default.find()
             .populate({
@@ -290,8 +293,25 @@ router.get('/subscriptions/admin/all', auth_1.protect, (0, auth_1.restrictTo)('a
 // 2. POST /subscriptions
 router.post('/subscriptions', async (req, res) => {
     try {
-        const { userId, productId, vendorId, productName, productImage, quantity, unitPrice, frequency, customDays, deliverySlot, autoRenew, userLocation } = req.body;
+        const { userId, productId, vendorId, productName, productImage, quantity, unitPrice, frequency, customDays, deliverySlot, autoRenew, customerName, customerPhone, address, deliveryAddress, userLocation } = req.body;
         const startDate = new Date().toISOString().split('T')[0];
+        let finalCustomerName = customerName || '';
+        let finalCustomerPhone = customerPhone || '';
+        let finalAddress = address || deliveryAddress || (userLocation && userLocation.address) || '';
+        if (userId && (!finalAddress || !finalCustomerName || !finalCustomerPhone)) {
+            try {
+                const u = await User_1.User.findById(userId);
+                if (u) {
+                    if (!finalCustomerName)
+                        finalCustomerName = u.name || '';
+                    if (!finalCustomerPhone)
+                        finalCustomerPhone = u.phone || u.mobile || '';
+                    if (!finalAddress)
+                        finalAddress = u.address || (userLocation && userLocation.address) || '';
+                }
+            }
+            catch (e) { }
+        }
         // Auto-create or update Address using GPS coordinates / userLocation
         if (userLocation && userLocation.address) {
             try {
@@ -355,6 +375,10 @@ router.post('/subscriptions', async (req, res) => {
             status: 'active',
             autoRenew: autoRenew !== false,
             skippedDates: [],
+            customerName: finalCustomerName,
+            customerPhone: finalCustomerPhone,
+            address: finalAddress,
+            deliveryAddress: finalAddress,
             startDate
         });
         await subscription.save();

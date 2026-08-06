@@ -709,12 +709,12 @@ export const getAllProducts = async (req: Request, res: Response) => {
         isCourierShipping = true;
         deliveryTimeLabel = '🌐 Pan-India Courier';
         duration = 2880;
-        shippingCharge = 40;
+        shippingCharge = productObj.adminPricing?.shippingCharge ?? 0;
       } else {
         isCourierShipping = false;
         duration = 15;
         deliveryTimeLabel = '⚡ Fast [15 MINS]';
-        shippingCharge = 0;
+        shippingCharge = productObj.adminPricing?.shippingCharge ?? 0;
         distanceKm = 1.5;
       }
 
@@ -722,8 +722,9 @@ export const getAllProducts = async (req: Request, res: Response) => {
         productObj.adminPricing = {};
       }
 
-      productObj.adminPricing.shippingCharge = shippingCharge;
-      productObj.shippingCharge = shippingCharge;
+      const finalShippingCharge = productObj.adminPricing?.shippingCharge ?? shippingCharge;
+      productObj.adminPricing.shippingCharge = finalShippingCharge;
+      productObj.shippingCharge = finalShippingCharge;
       productObj.calculatedDistanceKm = distanceKm !== null ? parseFloat(distanceKm.toFixed(1)) : null;
       productObj.estimatedDeliveryMinutes = duration;
       productObj.deliveryTimeLabel = deliveryTimeLabel;

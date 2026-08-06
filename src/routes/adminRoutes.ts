@@ -35,6 +35,7 @@ import {
   processEntrepreneurCommissionRelease,
   getWallets,
   getReconciliationStats,
+  getTreasuryMasterStats,
   getDeliveryPartners,
   createDeliveryPartner,
   cleanupExpiredReservations,
@@ -91,6 +92,7 @@ router.post('/entrepreneurs/:userId/release-commission', protect, restrictTo('ad
 
 router.get('/wallets', protect, restrictTo('admin'), getWallets);
 router.get('/reconciliation', protect, restrictTo('admin'), getReconciliationStats);
+router.get('/treasury-master', protect, restrictTo('admin'), getTreasuryMasterStats);
 router.post('/settlements/release', protect, restrictTo('admin'), processReferralReleases);
 router.post('/inventory/cleanup-expired-reservations', protect, restrictTo('admin'), cleanupExpiredReservations);
 router.get('/feature-flags', protect, restrictTo('admin'), getFeatureFlag);

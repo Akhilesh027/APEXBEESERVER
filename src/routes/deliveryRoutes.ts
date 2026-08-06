@@ -15,6 +15,7 @@ import {
   outForDelivery,
   reachedCustomer,
   deliverOrder,
+  collectCodPayment,
   failedOrder,
   rescheduleOrder,
   returnOrder,
@@ -36,13 +37,15 @@ import {
   getSubscriptions,
   updateSubscriptionRun,
   register,
+  updateProfile,
   applyLeave,
   getLeaves,
   getReferrals,
   getDeliverySlots,
   bookDeliverySlot,
   configureSlotLimits,
-  triggerCourierFallback
+  triggerCourierFallback,
+  getAllDeliveryPartners
 } from '../controllers/deliveryController';
 import { protect } from '../middleware/auth';
 
@@ -54,15 +57,19 @@ router.post('/verify-otp', verifyOtp);
 router.post('/register', register);
 
 // Protected routes (Require authentication token)
+router.get('/all-partners', protect, getAllDeliveryPartners);
+router.get('/admin/partners', protect, getAllDeliveryPartners);
+router.put('/profile', protect, updateProfile);
 router.post('/checkin', protect, checkIn);
 router.post('/checkout', protect, checkOut);
 router.post('/break/toggle', protect, toggleBreak);
 router.post('/location', protect, updateLocation);
-router.get('/agents', protect, getDeliveryAgents);
+router.get('/agents', protect, getAllDeliveryPartners);
 router.get('/pickups', protect, getScheduledPickups);
 router.post('/pickups', protect, createScheduledPickup);
 router.get('/subscriptions', protect, getSubscriptions);
-router.post('/subscriptions/:subId/run', protect, updateSubscriptionRun);
+router.post('/subscriptions/:subscriptionId/status', protect, updateSubscriptionRun);
+router.post('/subscriptions/:subscriptionId/run', protect, updateSubscriptionRun);
 
 // Leaves & Referrals routes
 router.post('/leaves', protect, applyLeave);
@@ -85,6 +92,7 @@ router.post('/orders/:id/pickup', protect, pickupOrder);
 router.post('/orders/:id/out-for-delivery', protect, outForDelivery);
 router.post('/orders/:id/reached-customer', protect, reachedCustomer);
 router.post('/orders/:id/delivered', protect, deliverOrder);
+router.post('/orders/:id/cod-payment', protect, collectCodPayment);
 router.post('/orders/:id/resend-otp', protect, resendDeliveryOtp);
 router.post('/orders/:id/failed', protect, failedOrder);
 router.post('/orders/:id/reschedule', protect, rescheduleOrder);

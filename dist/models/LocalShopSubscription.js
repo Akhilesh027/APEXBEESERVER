@@ -100,6 +100,22 @@ const LocalShopSubscriptionSchema = new mongoose_1.Schema({
         type: String,
         required: true
     },
+    customerName: {
+        type: String,
+        default: ''
+    },
+    customerPhone: {
+        type: String,
+        default: ''
+    },
+    address: {
+        type: String,
+        default: ''
+    },
+    deliveryAddress: {
+        type: String,
+        default: ''
+    },
     deliveryAgentId: {
         type: mongoose_1.Schema.Types.Mixed,
         default: null

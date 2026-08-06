@@ -26,6 +26,22 @@ export interface IDeliveryKyc {
   isVerified: boolean;
 }
 
+export interface IBankDetails {
+  bankName?: string;
+  accountNumber?: string;
+  ifscCode?: string;
+  ifsc?: string;
+  upiId?: string;
+  accountHolderName?: string;
+}
+
+export interface IDeliveryLocation {
+  lat?: number;
+  lng?: number;
+  address?: string;
+  updatedAt?: Date;
+}
+
 export interface IDeliveryPartner extends Document {
   userId: mongoose.Types.ObjectId;
   deliveryPartnerId?: string;
@@ -34,7 +50,10 @@ export interface IDeliveryPartner extends Document {
   email: string;
   status: 'active' | 'pending_approval' | 'suspended' | 'offline';
   partnerType: 'Employee' | 'Freelancer';
+  zone?: string;
+  currentLocation?: IDeliveryLocation;
   vehicle?: IVehicleDetails;
+  bankDetails?: IBankDetails;
   kyc?: IDeliveryKyc;
   ratings: IDeliveryRatings;
   fixedSalary: number;
@@ -57,6 +76,15 @@ const VehicleDetailsSchema = new Schema<IVehicleDetails>({
   rcExpiry: { type: Date },
   insuranceExpiry: { type: Date },
   licenseExpiry: { type: Date }
+}, { _id: false });
+
+const BankDetailsSchema = new Schema<IBankDetails>({
+  bankName: { type: String, default: '' },
+  accountNumber: { type: String, default: '' },
+  ifscCode: { type: String, default: '' },
+  ifsc: { type: String, default: '' },
+  upiId: { type: String, default: '' },
+  accountHolderName: { type: String, default: '' }
 }, { _id: false });
 
 const DeliveryRatingsSchema = new Schema<IDeliveryRatings>({
@@ -82,7 +110,15 @@ const DeliveryPartnerSchema = new Schema<IDeliveryPartner>({
   email: { type: String, required: true },
   status: { type: String, enum: ['active', 'pending_approval', 'suspended', 'offline'], default: 'pending_approval' },
   partnerType: { type: String, enum: ['Employee', 'Freelancer'], default: 'Employee' },
-  vehicle: { type: VehicleDetailsSchema },
+  zone: { type: String, default: 'LB Nagar' },
+  currentLocation: {
+    lat: { type: Number, default: 19.7207 },
+    lng: { type: Number, default: 78.4186 },
+    address: { type: String, default: 'LB Nagar, Hyderabad' },
+    updatedAt: { type: Date, default: Date.now }
+  },
+  vehicle: { type: VehicleDetailsSchema, default: () => ({ type: 'Bike' }) },
+  bankDetails: { type: BankDetailsSchema, default: () => ({}) },
   kyc: { type: DeliveryKycSchema, default: () => ({ isVerified: false }) },
   ratings: { type: DeliveryRatingsSchema, default: () => ({}) },
   fixedSalary: { type: Number, default: 0 },

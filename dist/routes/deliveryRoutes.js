@@ -9,15 +9,19 @@ router.post('/login', deliveryController_1.login);
 router.post('/verify-otp', deliveryController_1.verifyOtp);
 router.post('/register', deliveryController_1.register);
 // Protected routes (Require authentication token)
+router.get('/all-partners', auth_1.protect, deliveryController_1.getAllDeliveryPartners);
+router.get('/admin/partners', auth_1.protect, deliveryController_1.getAllDeliveryPartners);
+router.put('/profile', auth_1.protect, deliveryController_1.updateProfile);
 router.post('/checkin', auth_1.protect, deliveryController_1.checkIn);
 router.post('/checkout', auth_1.protect, deliveryController_1.checkOut);
 router.post('/break/toggle', auth_1.protect, deliveryController_1.toggleBreak);
 router.post('/location', auth_1.protect, deliveryController_1.updateLocation);
-router.get('/agents', auth_1.protect, deliveryController_1.getDeliveryAgents);
+router.get('/agents', auth_1.protect, deliveryController_1.getAllDeliveryPartners);
 router.get('/pickups', auth_1.protect, deliveryController_1.getScheduledPickups);
 router.post('/pickups', auth_1.protect, deliveryController_1.createScheduledPickup);
 router.get('/subscriptions', auth_1.protect, deliveryController_1.getSubscriptions);
-router.post('/subscriptions/:subId/run', auth_1.protect, deliveryController_1.updateSubscriptionRun);
+router.post('/subscriptions/:subscriptionId/status', auth_1.protect, deliveryController_1.updateSubscriptionRun);
+router.post('/subscriptions/:subscriptionId/run', auth_1.protect, deliveryController_1.updateSubscriptionRun);
 // Leaves & Referrals routes
 router.post('/leaves', auth_1.protect, deliveryController_1.applyLeave);
 router.get('/leaves', auth_1.protect, deliveryController_1.getLeaves);
@@ -37,6 +41,7 @@ router.post('/orders/:id/pickup', auth_1.protect, deliveryController_1.pickupOrd
 router.post('/orders/:id/out-for-delivery', auth_1.protect, deliveryController_1.outForDelivery);
 router.post('/orders/:id/reached-customer', auth_1.protect, deliveryController_1.reachedCustomer);
 router.post('/orders/:id/delivered', auth_1.protect, deliveryController_1.deliverOrder);
+router.post('/orders/:id/cod-payment', auth_1.protect, deliveryController_1.collectCodPayment);
 router.post('/orders/:id/resend-otp', auth_1.protect, deliveryController_1.resendDeliveryOtp);
 router.post('/orders/:id/failed', auth_1.protect, deliveryController_1.failedOrder);
 router.post('/orders/:id/reschedule', auth_1.protect, deliveryController_1.rescheduleOrder);
