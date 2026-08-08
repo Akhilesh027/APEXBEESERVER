@@ -16,15 +16,15 @@ export const createTableBooking = async (req: Request, res: Response) => {
     }
 
     const booking = new TableBooking({
-      vendorId,
-      userId: (req as any).user?.id || (req as any).user?._id || null,
-      guestName,
-      guestPhone,
-      bookingDate: new Date(bookingDate),
-      timeSlot,
+      restaurantId: vendorId,
+      bookingNumber: `TB-${Math.floor(100000 + Math.random() * 900000)}`,
+      customerName: guestName,
+      customerPhone: guestPhone,
+      bookingDate: String(bookingDate),
+      bookingTime: String(timeSlot),
       guestCount: Number(guestCount) || 2,
       specialRequests: specialRequests || '',
-      status: 'pending',
+      status: 'PENDING',
     });
 
     await booking.save();
@@ -39,10 +39,28 @@ export const createTableBooking = async (req: Request, res: Response) => {
   }
 };
 
+export const getCustomerTableBookings = async (req: Request, res: Response) => {
+  try {
+    const { phone, email, userId } = req.query;
+
+    const query: any = {};
+    if (phone) query.customerPhone = String(phone);
+    else if (email) query.customerEmail = String(email);
+
+    const bookings = await TableBooking.find(query)
+      .populate('restaurantId', 'restaurantName name logo coverBanner locality city phone')
+      .sort({ createdAt: -1 });
+
+    return res.json({ success: true, count: bookings.length, bookings });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 export const getVendorTableBookings = async (req: Request, res: Response) => {
   try {
     const { vendorId } = req.params;
-    const bookings = await TableBooking.find({ vendorId }).sort({ bookingDate: -1, createdAt: -1 });
+    const bookings = await TableBooking.find({ restaurantId: vendorId }).sort({ bookingDate: -1, createdAt: -1 });
 
     res.json({ success: true, bookings });
   } catch (error: any) {
@@ -60,8 +78,8 @@ export const updateTableBookingStatus = async (req: Request, res: Response) => {
       return res.status(404).json({ message: 'Booking not found' });
     }
 
-    res.json({ success: true, message: `Reservation status updated to ${status}`, booking });
+    res.json({ success: true, booking });
   } catch (error: any) {
-    res.status(500).json({ message: 'Failed to update reservation status', error: error.message });
+    res.status(500).json({ message: 'Failed to update booking status', error: error.message });
   }
 };

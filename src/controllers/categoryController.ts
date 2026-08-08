@@ -463,7 +463,6 @@ export const getCategorySubcategories = async (req: Request, res: Response) => {
     let categoryId = id;
     if (!mongoose.Types.ObjectId.isValid(id)) {
       const cleanName = (s: string) => s.replace(/[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDC00-\uDFFF]/g, '').trim().toLowerCase();
-      const nameRegex = new RegExp(`^${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
       const cleanTarget = cleanName(id);
 
       const cats = await Category.find();
@@ -476,6 +475,10 @@ export const getCategorySubcategories = async (req: Request, res: Response) => {
       if (match) {
         categoryId = match._id.toString();
       }
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(categoryId)) {
+      return res.json({ success: true, subcategories: [] });
     }
 
     const subcategories = await Subcategory.find({ categoryId, isActive: true }).sort({ displayOrder: 1, name: 1 });

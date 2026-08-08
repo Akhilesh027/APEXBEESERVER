@@ -53,12 +53,12 @@ export interface IDeliveryAssignment extends Document {
 const DeliveryAssignmentSchema = new Schema<IDeliveryAssignment>(
   {
     orderId: { type: Schema.Types.ObjectId, ref: 'Order', required: true },
-    deliveryPartnerId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    deliveryPartnerId: { type: Schema.Types.ObjectId, ref: 'User' },
     vendorId: { type: Schema.Types.ObjectId, ref: 'User' },
     customerId: { type: Schema.Types.ObjectId, ref: 'User' },
     partnerSnapshot: {
-      name: { type: String, required: true },
-      phoneMasked: { type: String, required: true },
+      name: { type: String },
+      phoneMasked: { type: String },
       photoUrl: { type: String },
     },
     assignedAt: { type: Date, required: true, default: Date.now },

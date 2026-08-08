@@ -6,6 +6,8 @@ export interface IOrderItem {
   sku: string;
   quantity: number;
   price: number;
+  categoryId?: mongoose.Types.ObjectId | string;
+  categoryName?: string;
 }
 
 export type OrderStatus =
@@ -70,14 +72,19 @@ export interface IOrder extends Document {
   courierPartner?: string;
   trackingId?: string;
   pickupVerification?: any;
+  categoryId?: mongoose.Types.ObjectId | string;
+  categoryName?: string;
+  orderType?: string;
 }
 
 const OrderItemSchema = new Schema<IOrderItem>({
   productId: { type: Schema.Types.ObjectId, ref: 'Product', required: true },
   productName: { type: String, required: true },
-  sku: { type: String, required: true },
+  sku: { type: String, default: 'N/A' },
   quantity: { type: Number, required: true, default: 1 },
   price: { type: Number, required: true },
+  categoryId: { type: Schema.Types.Mixed },
+  categoryName: { type: String, default: '' },
 });
 
 const OrderSchema = new Schema<IOrder>(
@@ -109,11 +116,19 @@ const OrderSchema = new Schema<IOrder>(
         'refund_pending',
         'refunded',
         'Placed',
+        'Accepted',
+        'assigned',
+        'Assigned',
         'Confirmed',
         'Packed',
         'Ready',
         'Shipped',
+        'Reached Vendor',
+        'Pickup OTP Verified',
+        'Picked Up',
         'Out for Delivery',
+        'Reached Customer',
+        'Delivery OTP Verified',
         'Delivered',
         'Completed',
         'Returned',
@@ -164,6 +179,9 @@ const OrderSchema = new Schema<IOrder>(
     courierPartner: { type: String },
     trackingId: { type: String },
     pickupVerification: { type: Schema.Types.Mixed },
+    categoryId: { type: Schema.Types.Mixed },
+    categoryName: { type: String, default: '' },
+    orderType: { type: String, default: 'RETAIL' },
   },
   { timestamps: true }
 );

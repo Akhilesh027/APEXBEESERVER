@@ -72,6 +72,8 @@ const UserSchema = new mongoose_1.Schema({
                 "customer",
                 "academy_manager",
                 "counsellor",
+                "food_partner",
+                "food_staff",
             ],
             required: true,
         },

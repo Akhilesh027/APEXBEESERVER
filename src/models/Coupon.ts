@@ -12,8 +12,14 @@ export interface ICoupon extends Document {
   usageLimit?: number;
   userLimit?: number;
   status: 'Active' | 'Inactive' | 'Expired';
-  scope: 'vendor' | 'platform';
+  scope: 'vendor' | 'platform' | 'restaurant';
   vendorId?: mongoose.Types.ObjectId;
+  restaurantId?: mongoose.Types.ObjectId;
+  fundingSource?: 'RESTAURANT_FUNDED' | 'APEXBEE_FUNDED' | 'SHARED';
+  restaurantContributionPercent?: number;
+  apexbeeContributionPercent?: number;
+  applicableCategoryIds?: mongoose.Types.ObjectId[];
+  applicableMenuItemIds?: mongoose.Types.ObjectId[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -41,7 +47,7 @@ const CouponSchema = new Schema<ICoupon>(
     },
     scope: {
       type: String,
-      enum: ['vendor', 'platform'],
+      enum: ['vendor', 'platform', 'restaurant'],
       default: 'vendor',
       required: true
     },
@@ -51,7 +57,21 @@ const CouponSchema = new Schema<ICoupon>(
       required: function() {
         return this.scope === 'vendor';
       }
-    }
+    },
+    restaurantId: {
+      type: Schema.Types.ObjectId,
+      ref: 'RestaurantProfile',
+      default: null
+    },
+    fundingSource: {
+      type: String,
+      enum: ['RESTAURANT_FUNDED', 'APEXBEE_FUNDED', 'SHARED'],
+      default: 'RESTAURANT_FUNDED'
+    },
+    restaurantContributionPercent: { type: Number, default: 100 },
+    apexbeeContributionPercent: { type: Number, default: 0 },
+    applicableCategoryIds: [{ type: Schema.Types.ObjectId, ref: 'FoodMenuCategory' }],
+    applicableMenuItemIds: [{ type: Schema.Types.ObjectId, ref: 'FoodMenuItem' }]
   },
   { timestamps: true }
 );

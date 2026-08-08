@@ -73,6 +73,11 @@ const BusinessApplicationSchema = new mongoose_1.Schema({
     vehicleType: { type: String, default: "" },
     licenseNumber: { type: String, default: "" },
     aadhaarNumber: { type: String, default: "" },
+    restaurantName: { type: String, default: "" },
+    foodBusinessType: { type: String, default: "RESTAURANT" },
+    fssaiNumber: { type: String, default: "" },
+    cuisines: [{ type: String, trim: true }],
+    foodPreference: { type: String, default: "Both" },
     documents: {
         aadhaar: { type: String, default: "" },
         pan: { type: String, default: "" },

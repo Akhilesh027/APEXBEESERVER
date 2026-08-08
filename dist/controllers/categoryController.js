@@ -374,7 +374,6 @@ const getCategorySubcategories = async (req, res) => {
         let categoryId = id;
         if (!mongoose_1.default.Types.ObjectId.isValid(id)) {
             const cleanName = (s) => s.replace(/[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDC00-\uDFFF]/g, '').trim().toLowerCase();
-            const nameRegex = new RegExp(`^${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
             const cleanTarget = cleanName(id);
             const cats = await Category_1.default.find();
             const match = cats.find(c => c.name.toLowerCase() === id.toLowerCase() ||
@@ -383,6 +382,9 @@ const getCategorySubcategories = async (req, res) => {
             if (match) {
                 categoryId = match._id.toString();
             }
+        }
+        if (!mongoose_1.default.Types.ObjectId.isValid(categoryId)) {
+            return res.json({ success: true, subcategories: [] });
         }
         const subcategories = await Subcategory_1.default.find({ categoryId, isActive: true }).sort({ displayOrder: 1, name: 1 });
         res.json({ success: true, subcategories });

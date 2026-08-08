@@ -38,9 +38,11 @@ const mongoose_1 = __importStar(require("mongoose"));
 const OrderItemSchema = new mongoose_1.Schema({
     productId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Product', required: true },
     productName: { type: String, required: true },
-    sku: { type: String, required: true },
+    sku: { type: String, default: 'N/A' },
     quantity: { type: Number, required: true, default: 1 },
     price: { type: Number, required: true },
+    categoryId: { type: mongoose_1.Schema.Types.Mixed },
+    categoryName: { type: String, default: '' },
 });
 const OrderSchema = new mongoose_1.Schema({
     orderNumber: { type: String, required: true, unique: true },
@@ -70,11 +72,19 @@ const OrderSchema = new mongoose_1.Schema({
             'refund_pending',
             'refunded',
             'Placed',
+            'Accepted',
+            'assigned',
+            'Assigned',
             'Confirmed',
             'Packed',
             'Ready',
             'Shipped',
+            'Reached Vendor',
+            'Pickup OTP Verified',
+            'Picked Up',
             'Out for Delivery',
+            'Reached Customer',
+            'Delivery OTP Verified',
             'Delivered',
             'Completed',
             'Returned',
@@ -125,6 +135,9 @@ const OrderSchema = new mongoose_1.Schema({
     courierPartner: { type: String },
     trackingId: { type: String },
     pickupVerification: { type: mongoose_1.Schema.Types.Mixed },
+    categoryId: { type: mongoose_1.Schema.Types.Mixed },
+    categoryName: { type: String, default: '' },
+    orderType: { type: String, default: 'RETAIL' },
 }, { timestamps: true });
 OrderSchema.index({ orderNumber: 1 });
 OrderSchema.index({ customerId: 1 });

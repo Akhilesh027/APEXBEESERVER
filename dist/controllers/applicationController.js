@@ -21,6 +21,8 @@ const mapApplicationTypeToRole = (appType) => {
         return "course_provider";
     if (type === "delivery_partner" || type.includes("delivery"))
         return "delivery_partner";
+    if (type === "food_partner" || type.includes("food"))
+        return "food_partner";
     if (type === "entrepreneur" || type.includes("entrepreneur"))
         return "entrepreneur";
     if (type === "state_franchise")
@@ -192,6 +194,11 @@ const createApplication = async (req, res) => {
                 return [];
             })(),
             requestedCapabilities: req.body.requestedCapabilities || [],
+            restaurantName: req.body.restaurantName || businessName,
+            foodBusinessType: req.body.foodBusinessType || "RESTAURANT",
+            fssaiNumber: req.body.fssaiNumber || "",
+            cuisines: req.body.cuisines || [],
+            foodPreference: req.body.foodPreference || "Both",
             status: "pending",
         });
         // Link application to Referral
@@ -243,7 +250,11 @@ const getUserApplications = async (req, res) => {
             email: app.email,
             state: app.state,
             district: app.district,
-            mandal: app.mandal,
+            restaurantName: app.restaurantName || app.businessName,
+            foodBusinessType: app.foodBusinessType || "RESTAURANT",
+            fssaiNumber: app.fssaiNumber || "",
+            cuisines: app.cuisines || [],
+            foodPreference: app.foodPreference || "Both",
             documents: app.documents || {},
         }));
         res.status(200).json({

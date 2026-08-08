@@ -166,6 +166,17 @@ const connectDB = async () => {
             catch (e) {
                 console.error('migrateServiceProviderKycs non-fatal error:', e.message);
             }
+            try {
+                const db = mongoose_1.default.connection.db;
+                if (db) {
+                    await db.collection('products').dropIndex('slug_1');
+                    console.log('[Migration] Dropped unique slug_1 index from products collection');
+                }
+            }
+            catch (e) {
+                if (!e.message.includes('not found'))
+                    console.log('[Migration] slug_1 index:', e.message);
+            }
         }
         else {
             console.log(`[Database] Skipping admin/service provider seeding/migrations on clustered instance ${process.env.NODE_APP_INSTANCE}`);

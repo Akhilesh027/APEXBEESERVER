@@ -287,20 +287,35 @@ export class SettlementEngine {
         const qty = item.quantity;
         const totalSellingAmount = sellingPrice * qty;
 
-        // Platform fee calculation
+        // Platform fee & vendor commission calculations
         const platformFeePercent = product.adminPricing?.platformFeePercent || 0;
         const totalPlatformFee = (totalSellingAmount * platformFeePercent) / 100;
+
+        const vendorCommissionPercent = product.adminPricing?.vendorCommissionPercent || 0;
+        const totalVendorCommission = (totalSellingAmount * vendorCommissionPercent) / 100;
+
+        const distributedFrom = product.adminPricing?.distributedFrom || 'platform_fee';
+        let distributionPool = totalPlatformFee;
+
+        if (distributedFrom === 'apexbee_commission') {
+          distributionPool = totalVendorCommission;
+        } else if (distributedFrom === 'both') {
+          distributionPool = totalPlatformFee + totalVendorCommission;
+        } else if (distributedFrom === 'none') {
+          distributionPool = 0;
+        }
 
         // A. Generate Referral Transactions using adminPricing.commissionShares strictly
         const shares = product.adminPricing?.commissionShares || [];
         const getShareAmount = (type: string) => {
+          if (distributedFrom === 'none') return 0;
           const sh = shares.find((s: any) => s.type === type && s.isActive !== false);
           if (!sh) return 0;
           const commissionBase = product.adminPricing?.commissionBase || 'platform_fee';
           if (commissionBase === 'sale_price') {
             return (totalSellingAmount * sh.percent) / 100;
           }
-          return sh.amount ? (sh.amount * qty) : ((totalPlatformFee * sh.percent) / 100);
+          return sh.amount ? (sh.amount * qty) : ((distributionPool * sh.percent) / 100);
         };
 
         if (customer.referralHierarchy) {
@@ -342,7 +357,9 @@ export class SettlementEngine {
         const rel = await queryRel;
 
         // Vendor Payout Calculation
-        const finalSellerAmount = (product.adminPricing?.finalSellerAmount || (sellingPrice - (platformFeePercent * sellingPrice / 100))) * qty;
+        const finalSellerAmount = (product.adminPricing?.finalSellerAmount !== undefined
+          ? (product.adminPricing.finalSellerAmount * qty)
+          : (totalSellingAmount - totalPlatformFee - totalVendorCommission));
 
         // 1. Create Vendor Settlement Row
         if (finalSellerAmount > 0) {
@@ -363,7 +380,7 @@ export class SettlementEngine {
         }
 
         // 2. Franchise & Company splits
-        if (rel && totalPlatformFee > 0) {
+        if (rel && (distributionPool > 0 || totalPlatformFee > 0)) {
           const statePercent = (shares.find((s: any) => s.type === "state" && s.isActive !== false)?.percent || 0);
           const districtPercent = (shares.find((s: any) => s.type === "district" && s.isActive !== false)?.percent || 0);
           const mandalPercent = (shares.find((s: any) => s.type === "mandal" && s.isActive !== false)?.percent || 0);
@@ -374,13 +391,14 @@ export class SettlementEngine {
             (100 - (statePercent + districtPercent + mandalPercent + entrepreneurPercent + wishLinkPercent + referralPoolPercent));
 
           const getSplitAmount = (type: string, percent: number) => {
+            if (distributedFrom === 'none') return 0;
             const sh = shares.find((s: any) => s.type === type && s.isActive !== false);
             const commissionBase = product.adminPricing?.commissionBase || 'platform_fee';
             if (commissionBase === 'sale_price') {
               return (totalSellingAmount * percent) / 100;
             }
             if (sh && sh.amount) return sh.amount * qty;
-            return (totalPlatformFee * percent) / 100;
+            return (distributionPool * percent) / 100;
           };
 
           const stateCommission = getSplitAmount("state", statePercent);

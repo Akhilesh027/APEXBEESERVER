@@ -14,6 +14,11 @@ router.patch('/applications/:id/approve', auth_1.protect, (0, auth_1.restrictTo)
 router.patch('/applications/:id/reject', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.rejectApplication);
 router.patch('/applications/:id/review', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.reviewApplication);
 router.patch('/applications/:id/verify-kyc', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.verifyKycApplication);
+// Food & Dining Admin Inspection Routes
+router.get('/food/live-orders', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.getAdminLiveFoodOrders);
+router.get('/food/restaurants', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.getAdminFoodRestaurants);
+router.get('/food/restaurants/:restaurantId/menu', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.getAdminRestaurantMenu);
+router.get('/food/restaurants/:restaurantId/orders', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.getAdminRestaurantOrders);
 router.post('/vendors/:userId/request-document', auth_1.protect, (0, auth_1.restrictTo)('admin'), vendorController_1.requestVendorDocument);
 router.get('/vendors', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.getVendors);
 router.get('/vendors/:userId/products', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.getVendorProducts);

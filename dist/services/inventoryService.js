@@ -8,6 +8,7 @@ const mongoose_1 = __importDefault(require("mongoose"));
 const Inventory_1 = require("../models/Inventory");
 const InventoryReservation_1 = require("../models/InventoryReservation");
 const Product_1 = __importDefault(require("../models/Product"));
+const FoodMenuItem_1 = __importDefault(require("../models/FoodMenuItem"));
 const InsufficientStockError_1 = require("../errors/InsufficientStockError");
 class InventoryService {
     /**
@@ -19,20 +20,27 @@ class InventoryService {
         let inv = await Inventory_1.Inventory.findOne({ productId, variantId: vId }).session(session || null);
         if (inv) {
             const product = await Product_1.default.findById(productId).session(session || null);
-            const moq = Number(product?.minimumOrderQuantity || product?.moq || 1);
-            const minRequired = Math.max(moq * 5, 500);
-            if ((inv.onHand || 0) < minRequired) {
-                inv.onHand = minRequired;
-                await inv.save({ session });
-            }
-            if (product && product.stock < minRequired) {
-                product.stock = minRequired;
-                await product.save({ session });
+            if (product) {
+                const moq = Number(product?.minimumOrderQuantity || product?.moq || 1);
+                const minRequired = Math.max(moq * 5, 500);
+                if ((inv.onHand || 0) < minRequired) {
+                    inv.onHand = minRequired;
+                    await inv.save({ session });
+                }
+                if (product.stock < minRequired) {
+                    product.stock = minRequired;
+                    await product.save({ session });
+                }
             }
         }
         else {
             const product = await Product_1.default.findById(productId).session(session || null);
             if (!product) {
+                // Check if item belongs to FoodMenuItem model
+                const foodItem = await FoodMenuItem_1.default.findById(productId).session(session || null);
+                if (foodItem) {
+                    return null; // Food dishes do not use physical retail warehouse inventory
+                }
                 throw new Error(`Product not found for inventory setup: ${productId}`);
             }
             const moq = Number(product.minimumOrderQuantity || product.moq || 1);
@@ -58,8 +66,11 @@ class InventoryService {
         for (const item of items) {
             const pId = item.productId;
             const vId = item.variantId ? item.variantId : null;
-            // 1. Ensure inventory record exists
-            await this.getOrCreateInventory(pId, vId, session);
+            // 1. Ensure inventory record exists (returns null for FoodMenuItem dishes)
+            const inv = await this.getOrCreateInventory(pId, vId, session);
+            if (!inv) {
+                continue; // Skip physical warehouse stock reservation for food menu dishes
+            }
             // 2. Perform atomic conditional reservation update
             const filter = {
                 productId: pId,

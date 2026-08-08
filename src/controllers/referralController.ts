@@ -284,6 +284,17 @@ export const processReferralReleases = async (req: Request, res: Response) => {
     const adminId = (req as any).user?.id || (req as any).user?._id;
     const stats = await SettlementEngine.releaseEligibleSettlements(undefined, orderId, adminId);
     
+    if (orderId) {
+      try {
+        await Order.findByIdAndUpdate(orderId, {
+          commissionReleaseStatus: 'Released',
+          commissionReleasedAt: new Date()
+        });
+      } catch (e) {
+        console.warn('[processReferralReleases] Order status update warning:', e);
+      }
+    }
+
     if (stats.releasedTxs + stats.releasedSettlements === 0) {
       return res.status(200).json({
         success: true,

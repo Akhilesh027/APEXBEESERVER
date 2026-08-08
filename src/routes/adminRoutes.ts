@@ -6,6 +6,10 @@ import {
   rejectApplication,
   reviewApplication,
   verifyKycApplication,
+  getAdminFoodRestaurants,
+  getAdminRestaurantMenu,
+  getAdminRestaurantOrders,
+  getAdminLiveFoodOrders,
   getDashboardStats,
   getVendors,
   getVendorProducts,
@@ -57,6 +61,12 @@ router.patch('/applications/:id/approve', protect, restrictTo('admin'), approveA
 router.patch('/applications/:id/reject', protect, restrictTo('admin'), rejectApplication);
 router.patch('/applications/:id/review', protect, restrictTo('admin'), reviewApplication);
 router.patch('/applications/:id/verify-kyc', protect, restrictTo('admin'), verifyKycApplication);
+
+// Food & Dining Admin Inspection Routes
+router.get('/food/live-orders', protect, restrictTo('admin'), getAdminLiveFoodOrders);
+router.get('/food/restaurants', protect, restrictTo('admin'), getAdminFoodRestaurants);
+router.get('/food/restaurants/:restaurantId/menu', protect, restrictTo('admin'), getAdminRestaurantMenu);
+router.get('/food/restaurants/:restaurantId/orders', protect, restrictTo('admin'), getAdminRestaurantOrders);
 router.post('/vendors/:userId/request-document', protect, restrictTo('admin'), requestVendorDocument);
 router.get('/vendors', protect, restrictTo('admin'), getVendors);
 router.get('/vendors/:userId/products', protect, restrictTo('admin'), getVendorProducts);

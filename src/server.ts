@@ -1,3 +1,4 @@
+// ApexBee Live Backend Service
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
@@ -16,7 +17,9 @@ import { seedDatabase } from './config/seed';
 import { seedBannerDefaults } from './seeds/seedBanners';
 import { seedVendor50Products } from './seeds/seedVendorProducts';
 import { InventoryService } from './services/inventoryService';
-import Product from './models/Product';
+import { BusinessApplication } from './models/BusinessApplication';
+import { Vendor } from './models/Vendor';
+import { RestaurantProfile } from './models/RestaurantProfile';
 import { User } from './models/User';
 import { ReferralSettings } from './models/ReferralSettings';
 import './models/Subcategory';
@@ -108,7 +111,12 @@ app.use(userRateLimiter);
 
 import devotionalRoutes from './routes/devotionalRoutes';
 
+import foodPartnerRoutes from './routes/foodPartnerRoutes';
+import foodCustomerRoutes from './routes/foodCustomerRoutes';
+
 // Routes mapping
+app.use('/api/food-partner', foodPartnerRoutes);
+app.use('/api/food', foodCustomerRoutes);
 app.use('/api/auth', criticalRateLimiter, authRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/applications', applicationRoutes);
@@ -118,6 +126,7 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api', subscriptionRoutes);
 app.use('/api/vendor', vendorRoutes);
+app.use('/api/vendors', vendorRoutes);
 app.use('/api/devotional', devotionalRoutes);
 app.use('/api/service-provider', serviceProviderRoutes);
 app.use('/api/franchise', franchiseRoutes);
@@ -125,6 +134,9 @@ app.use('/api/entrepreneur', entrepreneurRoutes);
 
 import tableBookingRoutes from './routes/tableBookingRoutes';
 
+import abhiAssistantRoutes from './routes/abhiAssistantRoutes';
+
+app.use('/api/abhi-assistant', abhiAssistantRoutes);
 app.use("/api/admin/territories", territoryRoutes);
 app.use("/api/territories", territoryRoutes);
 app.use('/api/business-relationships', businessRelationshipRoutes);
@@ -156,6 +168,7 @@ app.use("/api/banners", bannerRoutes);
 app.use("/api/order-tracking", orderTrackingRoutes);
 app.use('/api/home', homeRoutes);
 app.use('/api/v1/community', communityRoutes);
+app.use('/api/community', communityRoutes);
 app.use('/api', academyRoutes);
 app.use('/api', biRoutes);
 app.use('/api', subscriptionRoutes);
@@ -412,9 +425,87 @@ const startServer = async () => {
     // ─── STARTUP SEED: Admin login + Banners ─────────────────────────────────
     // All other data (categories, vendors, products, notifications,
     // subscription plans) must be added manually via Admin Panel or API.
+const syncApprovedFoodPartnerApplications = async () => {
+  try {
+    const verifiedFoodApps = await BusinessApplication.find({
+      applicationType: 'food_partner',
+      status: { $in: ['verified', 'approved'] },
+    });
+
+    for (const app of verifiedFoodApps) {
+      const user = await User.findById(app.userId);
+      if (user) {
+        if (!user.roles.includes('food_partner')) {
+          user.roles.push('food_partner');
+          await user.save();
+        }
+
+        let vendor = await Vendor.findOne({ userId: user._id });
+        if (!vendor) {
+          vendor = new Vendor({
+            userId: user._id,
+            businessName: app.restaurantName || app.businessName || user.name + ' Restaurant',
+            ownerName: user.name,
+            mobile: user.phone || app.mobile,
+            email: user.email,
+            address: app.address || 'Address Pending',
+            pincode: app.pincode || '500001',
+            storeType: 'restaurant',
+            categories: ['Food & Dining'],
+            marketplaceStatus: 'Approved',
+          });
+          await vendor.save();
+        }
+
+        let restaurant = await RestaurantProfile.findOne({ userId: user._id });
+        if (!restaurant) {
+          const slugName = (app.restaurantName || user.name || 'restaurant')
+            .toLowerCase()
+            .replace(/[^a-z0-9]/g, '-')
+            .replace(/-+/g, '-') + '-' + Math.floor(1000 + Math.random() * 9000);
+
+          restaurant = new RestaurantProfile({
+            userId: user._id,
+            vendorId: vendor._id,
+            storeId: vendor._id,
+            restaurantName: app.restaurantName || app.businessName,
+            slug: slugName,
+            businessType: app.foodBusinessType || 'RESTAURANT',
+            legalBusinessName: app.businessName || user.name,
+            phone: app.mobile || user.phone,
+            email: app.email || user.email,
+            fssaiNumber: app.fssaiNumber || '',
+            cuisines: app.cuisines || [],
+            foodPreference: (app.foodPreference === 'Veg' ? 'VEG' : app.foodPreference === 'Non-Veg' ? 'NON_VEG' : 'BOTH') as any,
+            address: app.address || 'Address Required',
+            locality: app.mandal || 'Locality Pending',
+            city: app.district || 'Hyderabad',
+            state: app.state || 'Telangana',
+            pincode: app.pincode || '500001',
+            location: { type: 'Point', coordinates: [78.4867, 17.385] },
+            verificationStatus: 'APPROVED',
+            accountStatus: 'ACTIVE',
+            onboardingStep: 10,
+            isOnboardingCompleted: true,
+          });
+          await restaurant.save();
+        } else {
+          restaurant.verificationStatus = 'APPROVED';
+          restaurant.accountStatus = 'ACTIVE';
+          restaurant.isOnboardingCompleted = true;
+          await restaurant.save();
+        }
+      }
+    }
+  } catch (err: any) {
+    console.error('syncApprovedFoodPartnerApplications error:', err.message);
+  }
+};
+
     if (process.env.NODE_APP_INSTANCE === undefined || process.env.NODE_APP_INSTANCE === '0') {
       try { await seedReferralDefaults(); } catch (e: any) { console.error('seedReferralDefaults non-fatal error:', e.message); }
       try { await seedBannerDefaults(); } catch (e: any) { console.error('seedBannerDefaults non-fatal error:', e.message); }
+      try { await syncApprovedFoodPartnerApplications(); } catch (e: any) { console.error('syncApprovedFoodPartnerApplications non-fatal error:', e.message); }
     } else {
       console.log(`[Server] Skipping startup seed on clustered instance ${process.env.NODE_APP_INSTANCE}`);
     }

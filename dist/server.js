@@ -37,6 +37,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.app = void 0;
+// ApexBee Live Backend Service
 const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
 const path_1 = __importDefault(require("path"));
@@ -52,6 +53,9 @@ const db_1 = require("./config/db");
 const seedBanners_1 = require("./seeds/seedBanners");
 const seedVendorProducts_1 = require("./seeds/seedVendorProducts");
 const inventoryService_1 = require("./services/inventoryService");
+const BusinessApplication_1 = require("./models/BusinessApplication");
+const Vendor_1 = require("./models/Vendor");
+const RestaurantProfile_1 = require("./models/RestaurantProfile");
 const User_1 = require("./models/User");
 const ReferralSettings_1 = require("./models/ReferralSettings");
 require("./models/Subcategory");
@@ -134,7 +138,11 @@ app.use('/uploads', express_1.default.static(path_1.default.join(__dirname, '../
 app.use(rateLimiter_1.ipRateLimiter);
 app.use(rateLimiter_1.userRateLimiter);
 const devotionalRoutes_1 = __importDefault(require("./routes/devotionalRoutes"));
+const foodPartnerRoutes_1 = __importDefault(require("./routes/foodPartnerRoutes"));
+const foodCustomerRoutes_1 = __importDefault(require("./routes/foodCustomerRoutes"));
 // Routes mapping
+app.use('/api/food-partner', foodPartnerRoutes_1.default);
+app.use('/api/food', foodCustomerRoutes_1.default);
 app.use('/api/auth', rateLimiter_1.criticalRateLimiter, authRoutes_1.default);
 app.use('/api/user', userRoutes_1.default);
 app.use('/api/applications', applicationRoutes_1.default);
@@ -144,11 +152,14 @@ app.use('/api/notifications', notificationRoutes_1.default);
 app.use('/api/upload', uploadRoutes_1.default);
 app.use('/api', subscriptionRoutes_1.default);
 app.use('/api/vendor', vendorRoutes_1.default);
+app.use('/api/vendors', vendorRoutes_1.default);
 app.use('/api/devotional', devotionalRoutes_1.default);
 app.use('/api/service-provider', serviceProviderRoutes_1.default);
 app.use('/api/franchise', franchiseRoutes_1.default);
 app.use('/api/entrepreneur', entrepreneurRoutes_1.default);
 const tableBookingRoutes_1 = __importDefault(require("./routes/tableBookingRoutes"));
+const abhiAssistantRoutes_1 = __importDefault(require("./routes/abhiAssistantRoutes"));
+app.use('/api/abhi-assistant', abhiAssistantRoutes_1.default);
 app.use("/api/admin/territories", territoryRoutes_1.default);
 app.use("/api/territories", territoryRoutes_1.default);
 app.use('/api/business-relationships', businessRelationshipRoutes_1.default);
@@ -179,6 +190,7 @@ app.use("/api/banners", bannerRoutes_1.default);
 app.use("/api/order-tracking", orderTrackingRoutes_1.default);
 app.use('/api/home', homeRoutes_1.default);
 app.use('/api/v1/community', communityRoutes_1.default);
+app.use('/api/community', communityRoutes_1.default);
 app.use('/api', academyRoutes_1.default);
 app.use('/api', biRoutes_1.default);
 app.use('/api', subscriptionRoutes_1.default);
@@ -412,6 +424,80 @@ const startServer = async () => {
         // ─── STARTUP SEED: Admin login + Banners ─────────────────────────────────
         // All other data (categories, vendors, products, notifications,
         // subscription plans) must be added manually via Admin Panel or API.
+        const syncApprovedFoodPartnerApplications = async () => {
+            try {
+                const verifiedFoodApps = await BusinessApplication_1.BusinessApplication.find({
+                    applicationType: 'food_partner',
+                    status: { $in: ['verified', 'approved'] },
+                });
+                for (const app of verifiedFoodApps) {
+                    const user = await User_1.User.findById(app.userId);
+                    if (user) {
+                        if (!user.roles.includes('food_partner')) {
+                            user.roles.push('food_partner');
+                            await user.save();
+                        }
+                        let vendor = await Vendor_1.Vendor.findOne({ userId: user._id });
+                        if (!vendor) {
+                            vendor = new Vendor_1.Vendor({
+                                userId: user._id,
+                                businessName: app.restaurantName || app.businessName || user.name + ' Restaurant',
+                                ownerName: user.name,
+                                mobile: user.phone || app.mobile,
+                                email: user.email,
+                                address: app.address || 'Address Pending',
+                                pincode: app.pincode || '500001',
+                                storeType: 'restaurant',
+                                categories: ['Food & Dining'],
+                                marketplaceStatus: 'Approved',
+                            });
+                            await vendor.save();
+                        }
+                        let restaurant = await RestaurantProfile_1.RestaurantProfile.findOne({ userId: user._id });
+                        if (!restaurant) {
+                            const slugName = (app.restaurantName || user.name || 'restaurant')
+                                .toLowerCase()
+                                .replace(/[^a-z0-9]/g, '-')
+                                .replace(/-+/g, '-') + '-' + Math.floor(1000 + Math.random() * 9000);
+                            restaurant = new RestaurantProfile_1.RestaurantProfile({
+                                userId: user._id,
+                                vendorId: vendor._id,
+                                storeId: vendor._id,
+                                restaurantName: app.restaurantName || app.businessName,
+                                slug: slugName,
+                                businessType: app.foodBusinessType || 'RESTAURANT',
+                                legalBusinessName: app.businessName || user.name,
+                                phone: app.mobile || user.phone,
+                                email: app.email || user.email,
+                                fssaiNumber: app.fssaiNumber || '',
+                                cuisines: app.cuisines || [],
+                                foodPreference: (app.foodPreference === 'Veg' ? 'VEG' : app.foodPreference === 'Non-Veg' ? 'NON_VEG' : 'BOTH'),
+                                address: app.address || 'Address Required',
+                                locality: app.mandal || 'Locality Pending',
+                                city: app.district || 'Hyderabad',
+                                state: app.state || 'Telangana',
+                                pincode: app.pincode || '500001',
+                                location: { type: 'Point', coordinates: [78.4867, 17.385] },
+                                verificationStatus: 'APPROVED',
+                                accountStatus: 'ACTIVE',
+                                onboardingStep: 10,
+                                isOnboardingCompleted: true,
+                            });
+                            await restaurant.save();
+                        }
+                        else {
+                            restaurant.verificationStatus = 'APPROVED';
+                            restaurant.accountStatus = 'ACTIVE';
+                            restaurant.isOnboardingCompleted = true;
+                            await restaurant.save();
+                        }
+                    }
+                }
+            }
+            catch (err) {
+                console.error('syncApprovedFoodPartnerApplications error:', err.message);
+            }
+        };
         if (process.env.NODE_APP_INSTANCE === undefined || process.env.NODE_APP_INSTANCE === '0') {
             try {
                 await seedReferralDefaults();
@@ -424,6 +510,12 @@ const startServer = async () => {
             }
             catch (e) {
                 console.error('seedBannerDefaults non-fatal error:', e.message);
+            }
+            try {
+                await syncApprovedFoodPartnerApplications();
+            }
+            catch (e) {
+                console.error('syncApprovedFoodPartnerApplications non-fatal error:', e.message);
             }
         }
         else {

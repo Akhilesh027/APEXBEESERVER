@@ -28,6 +28,11 @@ export interface IBusinessApplication extends Document {
   vehicleType?: string;
   licenseNumber?: string;
   aadhaarNumber?: string;
+  restaurantName?: string;
+  foodBusinessType?: string;
+  fssaiNumber?: string;
+  cuisines?: string[];
+  foodPreference?: string;
   assignedFranchise?: {
     stateFranchiseId?: mongoose.Types.ObjectId;
     districtFranchiseId?: mongoose.Types.ObjectId;
@@ -105,6 +110,11 @@ assignedFranchise: {
     vehicleType: { type: String, default: "" },
     licenseNumber: { type: String, default: "" },
     aadhaarNumber: { type: String, default: "" },
+    restaurantName: { type: String, default: "" },
+    foodBusinessType: { type: String, default: "RESTAURANT" },
+    fssaiNumber: { type: String, default: "" },
+    cuisines: [{ type: String, trim: true }],
+    foodPreference: { type: String, default: "Both" },
 
     documents: {
       aadhaar: { type: String, default: "" },

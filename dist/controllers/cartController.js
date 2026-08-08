@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.removeFromCart = exports.updateCartItemQuantity = exports.addToCart = exports.getCart = void 0;
 const Cart_1 = __importDefault(require("../models/Cart"));
 const Product_1 = __importDefault(require("../models/Product"));
+const FoodMenuItem_1 = __importDefault(require("../models/FoodMenuItem"));
 const cartService_1 = require("../services/cartService");
 const getCart = async (req, res) => {
     try {
@@ -13,20 +14,56 @@ const getCart = async (req, res) => {
         if (!userId) {
             return res.status(400).json({ success: false, message: 'User ID is required' });
         }
-        const cart = await Cart_1.default.findOne({ userId }).populate({
-            path: 'items.productId',
-            populate: [
-                { path: 'categoryId', select: 'name' },
-                { path: 'sellerId', select: 'name sellerProfile' }
-            ]
-        });
-        if (!cart) {
+        const cart = await Cart_1.default.findOne({ userId }).lean();
+        if (!cart || !cart.items || cart.items.length === 0) {
             return res.status(200).json({ success: true, cart: { items: [] } });
         }
-        const mappedItems = cart.items.map((item) => {
-            const product = item.productId;
-            if (!product)
+        const mappedItems = await Promise.all(cart.items.map(async (item) => {
+            const rawId = item.productId;
+            if (!rawId)
                 return null;
+            // Try Product collection first
+            let product = await Product_1.default.findById(rawId)
+                .populate({ path: 'categoryId', select: 'name' })
+                .populate({ path: 'sellerId', select: 'name sellerProfile' });
+            // If not found in Product, check FoodMenuItem collection
+            if (!product) {
+                const foodItem = await FoodMenuItem_1.default.findById(rawId).populate('restaurantId');
+                if (foodItem) {
+                    const restaurant = foodItem.restaurantId || {};
+                    const price = foodItem.offerPrice && foodItem.offerPrice > 0 ? foodItem.offerPrice : foodItem.basePrice;
+                    return {
+                        _id: item._id,
+                        productId: foodItem._id,
+                        quantity: item.quantity,
+                        color: item.color || 'default',
+                        size: item.size || 'default',
+                        name: foodItem.name,
+                        itemName: foodItem.name,
+                        image: foodItem.image || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?q=80&w=400&auto=format&fit=crop',
+                        images: foodItem.image ? [foodItem.image] : [],
+                        price: price,
+                        afterDiscount: price,
+                        salesPrice: price,
+                        originalPrice: foodItem.basePrice,
+                        deliveryFee: 0,
+                        packingCharge: foodItem.packagingCharge || 0,
+                        sellingPrice: price,
+                        stock: foodItem.soldOut ? 0 : 99,
+                        vendorId: restaurant._id || restaurant.id,
+                        vendorName: restaurant.restaurantName || restaurant.name || 'Food Partner',
+                        categoryName: 'Food & Dining',
+                        returnPolicy: 'Non-returnable Food Item',
+                        allowPickup: true,
+                        pickupAvailable: true,
+                        isPreOrder: false,
+                        preOrder: false,
+                        availableOn: null,
+                        preOrderDate: null,
+                    };
+                }
+                return null;
+            }
             // Find matching variant based on attributes
             const variant = product.variants?.find((v) => {
                 if (!v.attributes)
@@ -56,7 +93,6 @@ const getCart = async (req, res) => {
                 originalPrice = variant.mrp ?? originalPrice;
                 sellingPrice = variant.sellingPrice ?? sellingPrice;
             }
-            // customerSellingAmount (price) = sellingPrice + packingCharge + deliveryFee
             const price = sellingPrice + packingCharge + deliveryFee;
             return {
                 _id: item._id,
@@ -87,8 +123,9 @@ const getCart = async (req, res) => {
                 availableOn: product.attributes?.availableOn ?? null,
                 preOrderDate: product.attributes?.availableOn ?? null,
             };
-        }).filter(Boolean);
-        res.status(200).json({ success: true, cart: { items: mappedItems } });
+        }));
+        const filteredItems = mappedItems.filter(Boolean);
+        res.status(200).json({ success: true, cart: { items: filteredItems } });
     }
     catch (error) {
         res.status(500).json({ success: false, message: 'Failed to fetch cart', error: error.message });
@@ -105,10 +142,13 @@ const addToCart = async (req, res) => {
         const resolvedColor = color || selectedColor || 'default';
         const resolvedSize = size || selectedSize || 'default';
         const resolvedQty = Number(quantity) || 1;
-        // Verify product exists
+        // Verify product exists in Product OR FoodMenuItem
         const product = await Product_1.default.findById(productId);
         if (!product) {
-            return res.status(404).json({ success: false, error: 'Product not found' });
+            const foodItem = await FoodMenuItem_1.default.findById(productId);
+            if (!foodItem) {
+                return res.status(404).json({ success: false, error: 'Product or Food Item not found' });
+            }
         }
         const cart = await cartService_1.CartService.addToCart(customerId, productId, resolvedQty, resolvedColor, resolvedSize);
         res.status(200).json({ success: true, message: 'Added to cart successfully', cart });

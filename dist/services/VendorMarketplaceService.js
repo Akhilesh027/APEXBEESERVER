@@ -45,133 +45,110 @@ class VendorMarketplaceService {
         return "open";
     }
     /**
-     * Find nearby vendors using a geoNear aggregation query, enforcing vendor-defined service radius.
+     * Calculate Haversine distance in kilometers between two geographic coordinates.
+     */
+    static haversineDistanceKm(lat1, lon1, lat2, lon2) {
+        const R = 6371; // Radius of Earth in KM
+        const dLat = ((lat2 - lat1) * Math.PI) / 180;
+        const dLon = ((lon2 - lon1) * Math.PI) / 180;
+        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos((lat1 * Math.PI) / 180) *
+                Math.cos((lat2 * Math.PI) / 180) *
+                Math.sin(dLon / 2) *
+                Math.sin(dLon / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return Math.round(R * c * 10) / 10;
+    }
+    /**
+     * Find nearby vendors enforcing strict location matching (GPS radius, pincode, district/city).
      */
     static async findNearbyShops(lat, lng, options = {}) {
         const limitNum = options.limit || 50;
-        let rawVendors = [];
-        let searchMode = 'gps';
-        // ── Stage 1: GPS-based geoNear ────────────────────────────────────
-        if (lat && lng) {
-            searchMode = 'gps';
-            const radiusMeters = (options.radiusKm || 20) * 1000;
-            const pipeline = [
-                {
-                    $geoNear: {
-                        near: { type: "Point", coordinates: [Number(lng), Number(lat)] },
-                        distanceField: "distance",
-                        spherical: true,
-                        maxDistance: radiusMeters,
-                        query: {
-                            status: { $in: ["active", "Approved", "approved"] },
-                            marketplaceStatus: { $in: ["Approved", "Approved & Verified", "active"] },
-                            isMarketplaceListed: true
-                        }
-                    }
-                },
-                {
-                    $match: {
-                        $expr: {
-                            $lte: [
-                                { $divide: ["$distance", 1000] },
-                                "$deliveryRadiusKm"
-                            ]
-                        }
+        const maxRadiusKm = options.radiusKm || 20;
+        // Build base active vendor query
+        const baseQuery = {
+            status: { $in: ["active", "Approved", "approved", "ACTIVE"] },
+        };
+        if (options.category && options.category !== "ALL") {
+            baseQuery.categories = options.category;
+        }
+        const allVendors = await Vendor_1.Vendor.find(baseQuery).lean();
+        let matchedVendors = [];
+        const userLat = lat !== undefined && lat !== null && !isNaN(Number(lat)) ? Number(lat) : null;
+        const userLng = lng !== undefined && lng !== null && !isNaN(Number(lng)) ? Number(lng) : null;
+        const userPin = options.pincode ? String(options.pincode).trim() : null;
+        const userCity = options.city ? String(options.city).trim().toLowerCase() : null;
+        if (userLat !== null && userLng !== null) {
+            // ── GPS Distance Filtering via Haversine Formula ──────────────
+            allVendors.forEach((v) => {
+                let distanceKm = null;
+                if (v.location?.coordinates && Array.isArray(v.location.coordinates) && v.location.coordinates.length === 2) {
+                    const [vLng, vLat] = v.location.coordinates;
+                    if (vLat && vLng && !isNaN(vLat) && !isNaN(vLng)) {
+                        distanceKm = this.haversineDistanceKm(userLat, userLng, Number(vLat), Number(vLng));
                     }
                 }
-            ];
-            if (options.category && options.category !== "ALL") {
-                pipeline.push({ $match: { categories: options.category } });
-            }
-            pipeline.push({
-                $project: {
-                    _id: 1, userId: 1, businessName: 1, ownerName: 1, mobile: 1, email: 1,
-                    state: 1, district: 1, mandal: 1, address: 1, pincode: 1,
-                    status: 1, storeDesign: 1, location: 1, deliveryMode: 1,
-                    deliveryRadiusKm: 1, categories: 1, estimatedDeliveryMinutes: 1,
-                    minOrder: 1, deliveryCharge: 1, fssaiNumber: 1, verifiedBadge: 1,
-                    rating: 1, liveStatus: 1, businessHours: 1, whatsappNumber: 1,
-                    gallery: 1, offers: 1, createdAt: 1, isMarketplaceListed: 1,
-                    distanceInKm: { $divide: ["$distance", 1000] }
+                const pinMatch = userPin && (v.pincode === userPin || v.pinCode === userPin);
+                const cityMatch = userCity && ((v.district && v.district.toLowerCase().includes(userCity)) ||
+                    (v.mandal && v.mandal.toLowerCase().includes(userCity)) ||
+                    (v.address && v.address.toLowerCase().includes(userCity)));
+                if (distanceKm !== null && distanceKm <= maxRadiusKm) {
+                    matchedVendors.push({ ...v, distanceInKm: distanceKm });
+                }
+                else if (distanceKm === null && (pinMatch || cityMatch)) {
+                    matchedVendors.push({ ...v, distanceInKm: 1.5 });
                 }
             });
-            let sortStage = { $sort: { distanceInKm: 1 } };
-            if (options.sort === "highest_rated")
-                sortStage = { $sort: { "rating.average": -1, distanceInKm: 1 } };
-            else if (options.sort === "fastest_delivery")
-                sortStage = { $sort: { estimatedDeliveryMinutes: 1, distanceInKm: 1 } };
-            else if (options.sort === "lowest_delivery_fee")
-                sortStage = { $sort: { deliveryCharge: 1, distanceInKm: 1 } };
-            else if (options.sort === "trending")
-                sortStage = { $sort: { "rating.totalReviews": -1, distanceInKm: 1 } };
-            pipeline.push(sortStage);
-            pipeline.push({ $limit: limitNum });
-            rawVendors = await Vendor_1.Vendor.aggregate(pipeline);
         }
-        // ── Stage 2: Pincode-based fallback ──────────────────────────────
-        else if (options.pincode) {
-            searchMode = 'pincode';
-            const query = {
-                status: { $in: ["active", "Approved", "approved"] },
-                marketplaceStatus: { $in: ["Approved", "Approved & Verified", "active"] },
-                isMarketplaceListed: true,
-                pincode: options.pincode.trim()
-            };
-            if (options.category && options.category !== "ALL") {
-                query.categories = options.category;
-            }
-            const vendors = await Vendor_1.Vendor.find(query).limit(limitNum).lean();
-            rawVendors = vendors.map(v => ({ ...v, distanceInKm: null }));
+        else if (userPin) {
+            // ── Pincode Matching ──────────────────────────────────────────
+            allVendors.forEach((v) => {
+                if (v.pincode === userPin || v.pinCode === userPin) {
+                    matchedVendors.push({ ...v, distanceInKm: 1.2 });
+                }
+            });
         }
-        // ── Stage 3: City/district name fallback ─────────────────────────
-        else if (options.city) {
-            searchMode = 'city';
-            const cityRegex = new RegExp(options.city.trim(), 'i');
-            const query = {
-                status: { $in: ["active", "Approved", "approved"] },
-                marketplaceStatus: { $in: ["Approved", "Approved & Verified", "active"] },
-                isMarketplaceListed: true,
-                $and: [{
-                        $or: [
-                            { district: cityRegex },
-                            { mandal: cityRegex },
-                            { village: cityRegex },
-                            { state: cityRegex }
-                        ]
-                    }]
-            };
-            if (options.category && options.category !== "ALL") {
-                query.categories = options.category;
-            }
-            const vendors = await Vendor_1.Vendor.find(query).limit(limitNum).lean();
-            rawVendors = vendors.map(v => ({ ...v, distanceInKm: null }));
+        else if (userCity) {
+            // ── City / District Matching ──────────────────────────────────
+            allVendors.forEach((v) => {
+                const cityMatch = ((v.district && v.district.toLowerCase().includes(userCity)) ||
+                    (v.mandal && v.mandal.toLowerCase().includes(userCity)) ||
+                    (v.address && v.address.toLowerCase().includes(userCity)) ||
+                    (v.city && v.city.toLowerCase().includes(userCity)));
+                if (cityMatch) {
+                    matchedVendors.push({ ...v, distanceInKm: 2.0 });
+                }
+            });
         }
-        // ── Stage 4: Global active vendors fallback ───────────────────────
-        if (rawVendors.length === 0) {
-            searchMode = 'city';
-            const query = {
-                status: { $in: ["active", "Approved", "approved"] },
-                marketplaceStatus: { $in: ["Approved", "Approved & Verified", "active"] },
-                isMarketplaceListed: true
-            };
-            if (options.category && options.category !== "ALL") {
-                query.categories = options.category;
-            }
-            const vendors = await Vendor_1.Vendor.find(query).limit(limitNum).lean();
-            rawVendors = vendors.map(v => ({ ...v, distanceInKm: 1.5 }));
+        else {
+            // No user location specified: return active vendors with default distance
+            matchedVendors = allVendors.map((v) => ({ ...v, distanceInKm: 2.5 }));
         }
-        // Populate favorites if user is logged in
+        // Sort vendors by user preference (default: nearest distance)
+        if (options.sort === "highest_rated") {
+            matchedVendors.sort((a, b) => (b.rating?.average || 0) - (a.rating?.average || 0));
+        }
+        else if (options.sort === "fastest_delivery") {
+            matchedVendors.sort((a, b) => (a.estimatedDeliveryMinutes || 30) - (b.estimatedDeliveryMinutes || 30));
+        }
+        else if (options.sort === "lowest_delivery_fee") {
+            matchedVendors.sort((a, b) => (a.deliveryCharge || 0) - (b.deliveryCharge || 0));
+        }
+        else {
+            matchedVendors.sort((a, b) => (a.distanceInKm || 999) - (b.distanceInKm || 999));
+        }
+        const limitedVendors = matchedVendors.slice(0, limitNum);
+        // Populate user favorites
         let favoriteVendorIds = [];
         if (options.userId) {
             const favs = await FavoriteVendors_1.FavoriteVendor.find({ userId: options.userId });
             favoriteVendorIds = favs.map(f => f.vendorId.toString());
         }
-        // Attach dynamic properties + searchMode
-        return rawVendors.map(v => ({
+        return limitedVendors.map(v => ({
             ...v,
             computedAvailability: this.calculateAvailability(v.businessHours, v.liveStatus),
             isFavorite: favoriteVendorIds.includes(v._id.toString()),
-            searchMode
+            searchMode: userLat !== null ? 'gps' : userPin ? 'pincode' : 'city'
         }));
     }
     /**

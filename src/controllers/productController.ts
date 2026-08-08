@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
 import Product from '../models/Product';
+import { FoodMenuItem } from '../models/FoodMenuItem';
 import Category from '../models/Category';
 import CategoryExperienceConfig from '../models/CategoryExperienceConfig';
 import { Vendor } from '../models/Vendor';
@@ -137,11 +138,32 @@ const buildAdminPricing = (body: any) => {
   const mrp = normalizeNumber(body.mrp);
   const sellingPrice = normalizeNumber(body.sellingPrice);
   const platformFeePercent = normalizeNumber(body.platformFeePercent);
+  const vendorCommissionPercent = normalizeNumber(body.vendorCommissionPercent);
+
+  const vendorCommissionAmount = roundMoney(
+    body.vendorCommissionAmount !== undefined
+      ? normalizeNumber(body.vendorCommissionAmount)
+      : (sellingPrice * vendorCommissionPercent) / 100
+  );
 
   const platformFeeAmount = roundMoney(
     body.platformFeeAmount !== undefined
       ? normalizeNumber(body.platformFeeAmount)
       : (sellingPrice * platformFeePercent) / 100
+  );
+
+  const distributedFrom = body.distributedFrom || 'platform_fee';
+
+  const distributionPool = roundMoney(
+    body.distributionPool !== undefined
+      ? normalizeNumber(body.distributionPool)
+      : distributedFrom === 'apexbee_commission'
+      ? vendorCommissionAmount
+      : distributedFrom === 'both'
+      ? (vendorCommissionAmount + platformFeeAmount)
+      : distributedFrom === 'none'
+      ? 0
+      : platformFeeAmount
   );
 
   const shippingCharge = normalizeNumber(body.shippingCharge);
@@ -151,9 +173,9 @@ const buildAdminPricing = (body: any) => {
     (item: any) => {
       const percent = normalizeNumber(item.percent);
       const amount = roundMoney(
-        item.amount !== undefined
+        item.amount !== undefined && distributedFrom !== 'none'
           ? normalizeNumber(item.amount)
-          : (platformFeeAmount * percent) / 100
+          : (distributionPool * percent) / 100
       );
 
       return {
@@ -161,19 +183,23 @@ const buildAdminPricing = (body: any) => {
         label: item.label,
         percent,
         amount,
-        isActive: item.isActive !== false,
+        isActive: distributedFrom !== 'none' && item.isActive !== false,
       };
     }
   );
 
   const totalCommissionAmount = roundMoney(
     commissionShares.reduce(
-      (sum: number, item: any) => sum + normalizeNumber(item.amount),
+      (sum: number, item: any) => sum + (item.isActive ? normalizeNumber(item.amount) : 0),
       0
     )
   );
 
-  const finalSellerAmount = roundMoney(sellingPrice - platformFeeAmount);
+  const finalSellerAmount = roundMoney(
+    body.finalSellerAmount !== undefined
+      ? normalizeNumber(body.finalSellerAmount)
+      : sellingPrice - platformFeeAmount - vendorCommissionAmount
+  );
 
   const customerSellingAmount = roundMoney(
     body.customerSellingAmount !== undefined
@@ -184,7 +210,7 @@ const buildAdminPricing = (body: any) => {
   const platformNetProfit = roundMoney(
     body.platformNetProfit !== undefined
       ? normalizeNumber(body.platformNetProfit)
-      : platformFeeAmount - totalCommissionAmount
+      : (platformFeeAmount + vendorCommissionAmount) - totalCommissionAmount
   );
 
   return {
@@ -192,6 +218,10 @@ const buildAdminPricing = (body: any) => {
     sellingPrice,
     platformFeePercent,
     platformFeeAmount,
+    vendorCommissionPercent,
+    vendorCommissionAmount,
+    distributedFrom,
+    distributionPool,
     shippingCharge,
     packingCharge,
     commissionShares,
@@ -1078,7 +1108,38 @@ export const configureAdminPricing = async (req: Request, res: Response) => {
       return;
     }
 
-    const product = await Product.findById(prodId);
+    // Try finding by Product _id first, then by foodMenuItemId
+    let product = await Product.findById(prodId);
+    if (!product) {
+      product = await Product.findOne({ foodMenuItemId: prodId });
+    }
+
+    // If still not found, check if a FoodMenuItem exists and auto-create the Product record
+    if (!product) {
+      const foodItem = await FoodMenuItem.findById(prodId);
+      if (foodItem) {
+        product = await Product.create({
+          name: foodItem.name,
+          slug: foodItem.slug || foodItem.name.toLowerCase().replace(/[^a-z0-9]/g, '-') + '-' + Date.now(),
+          description: foodItem.description || '',
+          sellerId: foodItem.restaurantId,
+          sellerType: 'RestaurantProfile',
+          itemType: 'FOOD',
+          foodMenuItemId: foodItem._id,
+          baseMrp: foodItem.basePrice,
+          baseSellingPrice: foodItem.offerPrice || foodItem.basePrice,
+          thumbnail: foodItem.image || '',
+          images: foodItem.image ? [foodItem.image] : [],
+          moderationStatus: 'pending',
+          status: 'Pending Review',
+          isActive: false,
+          stock: 9999,
+          sku: `FOOD-${foodItem._id.toString().slice(-6).toUpperCase()}`,
+          adminPricingApproved: false,
+          sellerPricingAccepted: false,
+        });
+      }
+    }
 
     if (!product) {
       res.status(404).json({ success: false, message: 'Product not found' });
@@ -1127,6 +1188,20 @@ export const configureAdminPricing = async (req: Request, res: Response) => {
 
     await product.save();
 
+    if (product.foodMenuItemId) {
+      try {
+        await FoodMenuItem.findByIdAndUpdate(product.foodMenuItemId, {
+          platformCommissionPercent: product.adminPricing.platformFeePercent,
+          platformShareAmount: product.adminPricing.platformFeeAmount,
+          vendorPayoutAmount: product.adminPricing.finalSellerAmount,
+          approvalStatus: 'PENDING_RESTAURANT_ACCEPTANCE',
+          adminApprovedAt: new Date(),
+        });
+      } catch (e) {
+        console.warn('[configureAdminPricing] FoodMenuItem sync warning:', e);
+      }
+    }
+
     const populatedProduct = await populateProduct(Product.findById(product._id));
 
     res.json({
@@ -1174,6 +1249,18 @@ export const sellerAcceptPricing = async (req: Request, res: Response) => {
     product.liveAt = new Date();
 
     await product.save();
+
+    if (product.foodMenuItemId) {
+      try {
+        await FoodMenuItem.findByIdAndUpdate(product.foodMenuItemId, {
+          approvalStatus: 'PUBLISHED_LIVE',
+          status: 'ACTIVE',
+          restaurantAcceptedAt: new Date(),
+        });
+      } catch (e) {
+        console.warn('[sellerAcceptPricing] FoodMenuItem sync warning:', e);
+      }
+    }
 
     const populatedProduct = await populateProduct(Product.findById(product._id));
 
@@ -1256,7 +1343,10 @@ export const sellerNegotiatePricing = async (req: Request, res: Response) => {
 
 export const rejectProduct = async (req: Request, res: Response) => {
   try {
-    const product = await Product.findById(req.params.id);
+    let product = await Product.findById(req.params.id);
+    if (!product) {
+      product = await Product.findOne({ foodMenuItemId: req.params.id });
+    }
 
     if (!product) {
       res.status(404).json({ message: 'Product not found' });

@@ -1,0 +1,12 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const foodCustomerController_1 = require("../controllers/foodCustomerController");
+const router = (0, express_1.Router)();
+router.get('/items', foodCustomerController_1.getAllFoodItems);
+router.get('/restaurants', foodCustomerController_1.getCustomerRestaurantsListing);
+router.get('/restaurants/:idOrSlug', foodCustomerController_1.getCustomerRestaurantDetail);
+router.post('/cart/validate', foodCustomerController_1.validateFoodCart);
+router.get('/dining/venues', foodCustomerController_1.getDiningVenues);
+router.post('/dining/book', foodCustomerController_1.createCustomerTableBooking);
+exports.default = router;

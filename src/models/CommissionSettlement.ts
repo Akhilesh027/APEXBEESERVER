@@ -38,7 +38,7 @@ export interface ICommissionSettlement extends Document {
 const CommissionSettlementSchema = new Schema<ICommissionSettlement>(
   {
     orderId: { type: Schema.Types.ObjectId, ref: "Order", required: true, index: true },
-    productId: { type: Schema.Types.ObjectId, ref: "Product", required: true, index: true },
+    productId: { type: Schema.Types.ObjectId, ref: "Product", required: false, index: true },
     
     recipientId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
     amount: { type: Number, required: true, default: 0 },
@@ -74,7 +74,7 @@ const CommissionSettlementSchema = new Schema<ICommissionSettlement>(
     released: { type: Boolean, default: false },
     walletCredited: { type: Boolean, default: false },
     releasedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
-    releaseDate: { type: Date, required: true },
+    releaseDate: { type: Date, default: Date.now },
     releasedAt: { type: Date, default: null }
   },
   { timestamps: true }

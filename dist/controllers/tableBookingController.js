@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.updateTableBookingStatus = exports.getVendorTableBookings = exports.createTableBooking = void 0;
+exports.updateTableBookingStatus = exports.getVendorTableBookings = exports.getCustomerTableBookings = exports.createTableBooking = void 0;
 const TableBooking_1 = __importDefault(require("../models/TableBooking"));
 const Vendor_1 = require("../models/Vendor");
 const createTableBooking = async (req, res) => {
@@ -17,15 +17,15 @@ const createTableBooking = async (req, res) => {
             return res.status(404).json({ message: 'Restaurant vendor not found' });
         }
         const booking = new TableBooking_1.default({
-            vendorId,
-            userId: req.user?.id || req.user?._id || null,
-            guestName,
-            guestPhone,
-            bookingDate: new Date(bookingDate),
-            timeSlot,
+            restaurantId: vendorId,
+            bookingNumber: `TB-${Math.floor(100000 + Math.random() * 900000)}`,
+            customerName: guestName,
+            customerPhone: guestPhone,
+            bookingDate: String(bookingDate),
+            bookingTime: String(timeSlot),
             guestCount: Number(guestCount) || 2,
             specialRequests: specialRequests || '',
-            status: 'pending',
+            status: 'PENDING',
         });
         await booking.save();
         res.status(201).json({
@@ -39,10 +39,28 @@ const createTableBooking = async (req, res) => {
     }
 };
 exports.createTableBooking = createTableBooking;
+const getCustomerTableBookings = async (req, res) => {
+    try {
+        const { phone, email, userId } = req.query;
+        const query = {};
+        if (phone)
+            query.customerPhone = String(phone);
+        else if (email)
+            query.customerEmail = String(email);
+        const bookings = await TableBooking_1.default.find(query)
+            .populate('restaurantId', 'restaurantName name logo coverBanner locality city phone')
+            .sort({ createdAt: -1 });
+        return res.json({ success: true, count: bookings.length, bookings });
+    }
+    catch (error) {
+        return res.status(500).json({ success: false, message: error.message });
+    }
+};
+exports.getCustomerTableBookings = getCustomerTableBookings;
 const getVendorTableBookings = async (req, res) => {
     try {
         const { vendorId } = req.params;
-        const bookings = await TableBooking_1.default.find({ vendorId }).sort({ bookingDate: -1, createdAt: -1 });
+        const bookings = await TableBooking_1.default.find({ restaurantId: vendorId }).sort({ bookingDate: -1, createdAt: -1 });
         res.json({ success: true, bookings });
     }
     catch (error) {
@@ -58,10 +76,10 @@ const updateTableBookingStatus = async (req, res) => {
         if (!booking) {
             return res.status(404).json({ message: 'Booking not found' });
         }
-        res.json({ success: true, message: `Reservation status updated to ${status}`, booking });
+        res.json({ success: true, booking });
     }
     catch (error) {
-        res.status(500).json({ message: 'Failed to update reservation status', error: error.message });
+        res.status(500).json({ message: 'Failed to update booking status', error: error.message });
     }
 };
 exports.updateTableBookingStatus = updateTableBookingStatus;

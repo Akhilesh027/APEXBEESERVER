@@ -47,9 +47,9 @@ exports.env = {
     ENABLE_NEW_WALLET_LEDGER: getBooleanFlag(process.env.ENABLE_NEW_WALLET_LEDGER, false),
     ENABLE_BULLMQ_WORKERS: getBooleanFlag(process.env.ENABLE_BULLMQ_WORKERS, false),
     ENABLE_SOCKET_REDIS: getBooleanFlag(process.env.ENABLE_SOCKET_REDIS, false),
-    MONGODB_MAX_POOL_SIZE: Number(process.env.MONGODB_MAX_POOL_SIZE) || Number(process.env.MONGO_MAX_POOL_SIZE) || 30,
-    MONGODB_MIN_POOL_SIZE: Number(process.env.MONGODB_MIN_POOL_SIZE) || Number(process.env.MONGO_MIN_POOL_SIZE) || 5,
-    MONGODB_MAX_CONNECTING: Number(process.env.MONGODB_MAX_CONNECTING) || 4,
-    MONGODB_WAIT_QUEUE_TIMEOUT_MS: Number(process.env.MONGODB_WAIT_QUEUE_TIMEOUT_MS) || 5000,
+    MONGODB_MAX_POOL_SIZE: Number(process.env.MONGODB_MAX_POOL_SIZE) || Number(process.env.MONGO_MAX_POOL_SIZE) || 100,
+    MONGODB_MIN_POOL_SIZE: Number(process.env.MONGODB_MIN_POOL_SIZE) || Number(process.env.MONGO_MIN_POOL_SIZE) || 10,
+    MONGODB_MAX_CONNECTING: Number(process.env.MONGODB_MAX_CONNECTING) || 10,
+    MONGODB_WAIT_QUEUE_TIMEOUT_MS: Number(process.env.MONGODB_WAIT_QUEUE_TIMEOUT_MS) || 30000,
 };
 exports.default = exports.env;

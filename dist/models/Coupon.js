@@ -57,7 +57,7 @@ const CouponSchema = new mongoose_1.Schema({
     },
     scope: {
         type: String,
-        enum: ['vendor', 'platform'],
+        enum: ['vendor', 'platform', 'restaurant'],
         default: 'vendor',
         required: true
     },
@@ -67,6 +67,20 @@ const CouponSchema = new mongoose_1.Schema({
         required: function () {
             return this.scope === 'vendor';
         }
-    }
+    },
+    restaurantId: {
+        type: mongoose_1.Schema.Types.ObjectId,
+        ref: 'RestaurantProfile',
+        default: null
+    },
+    fundingSource: {
+        type: String,
+        enum: ['RESTAURANT_FUNDED', 'APEXBEE_FUNDED', 'SHARED'],
+        default: 'RESTAURANT_FUNDED'
+    },
+    restaurantContributionPercent: { type: Number, default: 100 },
+    apexbeeContributionPercent: { type: Number, default: 0 },
+    applicableCategoryIds: [{ type: mongoose_1.Schema.Types.ObjectId, ref: 'FoodMenuCategory' }],
+    applicableMenuItemIds: [{ type: mongoose_1.Schema.Types.ObjectId, ref: 'FoodMenuItem' }]
 }, { timestamps: true });
 exports.Coupon = mongoose_1.default.model("Coupon", CouponSchema);

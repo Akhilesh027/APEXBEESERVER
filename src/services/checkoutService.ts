@@ -45,12 +45,19 @@ export class CheckoutService {
 
     const orderNumber = `AB-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
 
+    const firstItem = pricing.orderItems[0] || {};
+    const primaryCategoryId = firstItem.categoryId || null;
+    const primaryCategoryName = firstItem.categoryName || '';
+    const orderType = firstItem.orderType || 'RETAIL';
+
     const items = pricing.orderItems.map((item: any) => ({
       productId: new mongoose.Types.ObjectId(item.productId),
       productName: item.name,
-      sku: item.sku,
+      sku: item.sku || item.slug || `SKU-${item.productId}` || 'N/A',
       quantity: item.quantity,
       price: item.price,
+      categoryId: item.categoryId || primaryCategoryId,
+      categoryName: item.categoryName || primaryCategoryName,
     }));
 
     const timeline = [
@@ -92,6 +99,9 @@ export class CheckoutService {
       orderStatusObj,
       checkoutIdempotencyKey: input.checkoutIdempotencyKey || null,
       checkoutRequestHash: input.checkoutRequestHash || null,
+      categoryId: primaryCategoryId,
+      categoryName: primaryCategoryName,
+      orderType,
     });
 
     // 3. Atomically redeem coupon under the session if present

@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.PricingService = void 0;
 const mongoose_1 = __importDefault(require("mongoose"));
 const Product_1 = __importDefault(require("../models/Product"));
+const FoodMenuItem_1 = __importDefault(require("../models/FoodMenuItem"));
 const Coupon_1 = require("../models/Coupon");
 class PricingService {
     /**
@@ -25,9 +26,49 @@ class PricingService {
         let firstSellerId = '';
         const orderItems = [];
         for (const item of items) {
-            const product = productsMap.get(item.productId);
+            let product = productsMap.get(item.productId);
             if (!product) {
-                throw new Error(`Product not found: ${item.productId}`);
+                // Try FoodMenuItem
+                const foodItem = await FoodMenuItem_1.default.findById(item.productId).populate('restaurantId');
+                if (!foodItem) {
+                    throw new Error(`Product or Food item not found: ${item.productId}`);
+                }
+                const restaurant = foodItem.restaurantId || {};
+                // Check if restaurant is closed, in busy mode, or not accepting orders
+                const isClosed = restaurant.acceptingOrders === false ||
+                    restaurant.busyMode === true ||
+                    restaurant.operationalStatus === 'CLOSED' ||
+                    restaurant.operationalStatus === 'TEMPORARILY_CLOSED';
+                if (isClosed) {
+                    throw new Error(`Restaurant "${restaurant.restaurantName || restaurant.name || 'outlet'}" is currently CLOSED and not accepting online orders right now. Please try again later.`);
+                }
+                const sellerId = restaurant._id ? restaurant._id.toString() : 'food-vendor';
+                if (!firstSellerId) {
+                    firstSellerId = sellerId;
+                }
+                const unitSelling = foodItem.offerPrice && foodItem.offerPrice > 0 ? foodItem.offerPrice : foodItem.basePrice;
+                const unitMrp = foodItem.basePrice;
+                const itemPacking = foodItem.packagingCharge || 0;
+                const itemTotal = unitSelling * item.quantity;
+                subtotal += itemTotal;
+                packingFee += itemPacking * item.quantity;
+                orderItems.push({
+                    productId: foodItem._id.toString(),
+                    name: foodItem.name,
+                    price: unitSelling,
+                    originalPrice: unitMrp,
+                    image: foodItem.image || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?q=80&w=400&auto=format&fit=crop',
+                    quantity: item.quantity,
+                    color: item.color || 'default',
+                    size: item.size || 'default',
+                    vendorId: sellerId,
+                    itemTotal,
+                    sku: foodItem.slug || `FOOD-${foodItem._id}`,
+                    categoryId: foodItem.categoryId || 'Food & Dining',
+                    categoryName: 'Food & Dining',
+                    orderType: 'FOOD',
+                });
+                continue;
             }
             if (product.status !== 'Live' || product.isActive === false) {
                 throw new Error(`Product is not active or live: ${product.name}`);
@@ -87,6 +128,9 @@ class PricingService {
                 itemTotal,
                 deliveryFee: itemShipping,
                 sku: matchedVariant?.sku || product.sku || 'SKU-GEN',
+                categoryId: product.categoryId || null,
+                categoryName: product.categoryName || product.category || '',
+                orderType: 'RETAIL',
             });
         }
         // Coupon Validation Logic

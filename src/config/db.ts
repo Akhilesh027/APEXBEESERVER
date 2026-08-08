@@ -155,6 +155,15 @@ export const connectDB = async (): Promise<void> => {
       try { await seedAdmin(); } catch (e: any) { console.error('seedAdmin non-fatal error:', e.message); }
       try { await migrateServiceProviders(); } catch (e: any) { console.error('migrateServiceProviders non-fatal error:', e.message); }
       try { await migrateServiceProviderKycs(); } catch (e: any) { console.error('migrateServiceProviderKycs non-fatal error:', e.message); }
+      try {
+        const db = mongoose.connection.db;
+        if (db) {
+          await db.collection('products').dropIndex('slug_1');
+          console.log('[Migration] Dropped unique slug_1 index from products collection');
+        }
+      } catch (e: any) {
+        if (!e.message.includes('not found')) console.log('[Migration] slug_1 index:', e.message);
+      }
     } else {
       console.log(`[Database] Skipping admin/service provider seeding/migrations on clustered instance ${process.env.NODE_APP_INSTANCE}`);
     }

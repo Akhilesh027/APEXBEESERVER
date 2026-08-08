@@ -57,6 +57,7 @@ export interface IProduct extends Document {
   schemaVersion?: number;
   productMode?: string;
   itemType?: string;
+  foodMenuItemId?: mongoose.Types.ObjectId;
   keywords?: string[];
   tags?: string[];
   supportedUnits?: string[];
@@ -79,9 +80,9 @@ export interface IProduct extends Document {
 const ProductSchema = new Schema<IProduct>(
   {
     name: { type: String, required: true, trim: true },
-    slug: { type: String, required: true, unique: true, lowercase: true, trim: true },
+    slug: { type: String, required: true, lowercase: true, trim: true },
     description: { type: String, required: true, default: '' },
-    categoryId: { type: Schema.Types.ObjectId, ref: 'Category', required: true },
+    categoryId: { type: Schema.Types.ObjectId, ref: 'Category', required: false },
     subcategoryId: { type: Schema.Types.ObjectId, ref: 'Subcategory', required: false },
     brandId: { type: Schema.Types.ObjectId, ref: 'Brand' },
     productType: { type: String, enum: ['physical'], default: 'physical', required: false },
@@ -128,8 +129,9 @@ const ProductSchema = new Schema<IProduct>(
     referralCommission: { type: Schema.Types.Mixed },
     sellerNegotiations: [Schema.Types.Mixed],
     rejectionReason: { type: String },
-    badges: [{ type: String }],
     isArchived: { type: Boolean, default: false },
+    itemType: { type: String, default: 'PHYSICAL' },
+    foodMenuItemId: { type: Schema.Types.ObjectId, ref: 'FoodMenuItem', index: true },
 
     // Catalogue Master Seed Metadata
     catalogueSource: { type: String, enum: ['system', 'vendor', 'migration'], default: 'vendor' },

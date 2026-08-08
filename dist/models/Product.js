@@ -37,9 +37,9 @@ exports.Product = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
 const ProductSchema = new mongoose_1.Schema({
     name: { type: String, required: true, trim: true },
-    slug: { type: String, required: true, unique: true, lowercase: true, trim: true },
+    slug: { type: String, required: true, lowercase: true, trim: true },
     description: { type: String, required: true, default: '' },
-    categoryId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Category', required: true },
+    categoryId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Category', required: false },
     subcategoryId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Subcategory', required: false },
     brandId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Brand' },
     productType: { type: String, enum: ['physical'], default: 'physical', required: false },
@@ -86,8 +86,9 @@ const ProductSchema = new mongoose_1.Schema({
     referralCommission: { type: mongoose_1.Schema.Types.Mixed },
     sellerNegotiations: [mongoose_1.Schema.Types.Mixed],
     rejectionReason: { type: String },
-    badges: [{ type: String }],
     isArchived: { type: Boolean, default: false },
+    itemType: { type: String, default: 'PHYSICAL' },
+    foodMenuItemId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'FoodMenuItem', index: true },
     // Catalogue Master Seed Metadata
     catalogueSource: { type: String, enum: ['system', 'vendor', 'migration'], default: 'vendor' },
     seedKey: { type: String, sparse: true },

@@ -1,40 +1,57 @@
-import mongoose, { Schema, Document } from 'mongoose';
+import mongoose, { Document, Schema } from 'mongoose';
+
+export type DiningBookingStatus = 'PENDING' | 'CONFIRMED' | 'SEATED' | 'COMPLETED' | 'CANCELLED' | 'REJECTED';
 
 export interface ITableBooking extends Document {
-  vendorId: mongoose.Types.ObjectId;
-  userId?: mongoose.Types.ObjectId;
-  guestName: string;
-  guestPhone: string;
-  bookingDate: Date;
-  timeSlot: string;
+  restaurantId: mongoose.Types.ObjectId;
+  bookingNumber: string;
+  customerName: string;
+  customerPhone: string;
+  customerEmail?: string;
   guestCount: number;
+  bookingDate: string; // YYYY-MM-DD
+  bookingTime: string; // e.g. "07:30 PM"
+  tableType: string;
+  occasion?: string;
   specialRequests?: string;
-  status: 'pending' | 'confirmed' | 'cancelled' | 'completed';
+  status: DiningBookingStatus;
+  tableNumber?: string;
+  rejectionReason?: string;
+  depositAmount?: number;
+  depositStatus?: 'PENDING' | 'PAID' | 'REFUNDED';
   createdAt: Date;
   updatedAt: Date;
 }
 
 const TableBookingSchema = new Schema<ITableBooking>(
   {
-    vendorId: { type: Schema.Types.ObjectId, ref: 'Vendor', required: true },
-    userId: { type: Schema.Types.ObjectId, ref: 'User' },
-    guestName: { type: String, required: true },
-    guestPhone: { type: String, required: true },
-    bookingDate: { type: Date, required: true },
-    timeSlot: { type: String, required: true },
-    guestCount: { type: Number, required: true, default: 2 },
+    restaurantId: { type: Schema.Types.ObjectId, ref: 'RestaurantProfile', required: true, index: true },
+    bookingNumber: { type: String, required: true, unique: true },
+    customerName: { type: String, required: true, trim: true },
+    customerPhone: { type: String, required: true, trim: true },
+    customerEmail: { type: String, default: '' },
+    guestCount: { type: Number, required: true, min: 1, default: 2 },
+    bookingDate: { type: String, required: true, index: true },
+    bookingTime: { type: String, required: true },
+    tableType: { type: String, default: 'Standard Table' },
+    occasion: { type: String, default: 'Casual Dining' },
     specialRequests: { type: String, default: '' },
     status: {
       type: String,
-      enum: ['pending', 'confirmed', 'cancelled', 'completed'],
-      default: 'pending',
+      enum: ['PENDING', 'CONFIRMED', 'SEATED', 'COMPLETED', 'CANCELLED', 'REJECTED'],
+      default: 'PENDING',
+      index: true
     },
+    tableNumber: { type: String, default: '' },
+    rejectionReason: { type: String, default: '' },
+    depositAmount: { type: Number, default: 0 },
+    depositStatus: { type: String, enum: ['PENDING', 'PAID', 'REFUNDED'], default: 'PAID' }
   },
   { timestamps: true }
 );
 
-TableBookingSchema.index({ vendorId: 1, bookingDate: 1 });
-TableBookingSchema.index({ guestPhone: 1 });
+TableBookingSchema.index({ restaurantId: 1, bookingDate: 1 });
+TableBookingSchema.index({ restaurantId: 1, status: 1 });
 
 export const TableBooking = mongoose.model<ITableBooking>('TableBooking', TableBookingSchema);
 export default TableBooking;

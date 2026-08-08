@@ -3,11 +3,14 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getTreasuryMasterStats = exports.updateVendorCategoryGovernance = exports.getMetrics = exports.setFeatureFlag = exports.getFeatureFlag = exports.cleanupExpiredReservations = exports.requestServiceProviderDocument = exports.updateServiceProviderDocumentStatus = exports.createDeliveryPartner = exports.getDeliveryPartners = exports.getReconciliationStats = exports.getWallets = exports.processEntrepreneurCommissionRelease = exports.processManufacturerDrawdown = exports.processWholesalerDrawdown = exports.processVendorDrawdown = exports.updateEntrepreneurStatus = exports.updateManufacturerStatus = exports.updateWholesalerStatus = exports.updateUserStatus = exports.createTerritory = exports.getTerritories = exports.getFranchises = exports.updateServiceProviderStatus = exports.getServiceProviders = exports.getEntrepreneurs = exports.getManufacturers = exports.getWholesalers = exports.getUsers = exports.updateServiceProviderKycStatus = exports.getServiceProviderKycs = exports.updateVendorStatus = exports.updateVendorDocumentStatus = exports.getVendorProducts = exports.getVendors = exports.getDashboardStats = exports.reviewApplication = exports.rejectApplication = exports.verifyKycApplication = exports.approveApplication = exports.getApplicationById = exports.getApplications = void 0;
+exports.getAdminLiveFoodOrders = exports.getAdminRestaurantOrders = exports.getAdminRestaurantMenu = exports.getAdminFoodRestaurants = exports.getTreasuryMasterStats = exports.updateVendorCategoryGovernance = exports.getMetrics = exports.setFeatureFlag = exports.getFeatureFlag = exports.cleanupExpiredReservations = exports.requestServiceProviderDocument = exports.updateServiceProviderDocumentStatus = exports.createDeliveryPartner = exports.getDeliveryPartners = exports.getReconciliationStats = exports.getWallets = exports.processEntrepreneurCommissionRelease = exports.processManufacturerDrawdown = exports.processWholesalerDrawdown = exports.processVendorDrawdown = exports.updateEntrepreneurStatus = exports.updateManufacturerStatus = exports.updateWholesalerStatus = exports.updateUserStatus = exports.createTerritory = exports.getTerritories = exports.getFranchises = exports.updateServiceProviderStatus = exports.getServiceProviders = exports.getEntrepreneurs = exports.getManufacturers = exports.getWholesalers = exports.getUsers = exports.updateServiceProviderKycStatus = exports.getServiceProviderKycs = exports.updateVendorStatus = exports.updateVendorDocumentStatus = exports.getVendorProducts = exports.getVendors = exports.getDashboardStats = exports.reviewApplication = exports.rejectApplication = exports.verifyKycApplication = exports.approveApplication = exports.getApplicationById = exports.getApplications = void 0;
 exports.assignTerritoryAndMapFranchises = assignTerritoryAndMapFranchises;
 const mongoose_1 = __importDefault(require("mongoose"));
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const BusinessApplication_1 = require("../models/BusinessApplication");
+const RestaurantProfile_1 = require("../models/RestaurantProfile");
+const FoodMenuCategory_1 = require("../models/FoodMenuCategory");
+const FoodMenuItem_1 = require("../models/FoodMenuItem");
 const User_1 = require("../models/User");
 const notificationEmitter_1 = require("../modules/notifications/events/notificationEmitter");
 const createNotificationCompat = async (payload, options) => {
@@ -68,6 +71,8 @@ const getTargetRole = (app) => {
         return "entrepreneur";
     if (type.includes("delivery"))
         return "delivery_partner";
+    if (type.includes("food"))
+        return "food_partner";
     if (type.includes("franchise")) {
         const level = String(app.franchiseLevel || "").toLowerCase();
         if (level === "state")
@@ -999,6 +1004,62 @@ const verifyKycApplication = async (req, res) => {
             }, { upsert: true, new: true });
             if (savedDeliveryPartner) {
                 await assignTerritoryAndMapFranchises("delivery_partner", savedDeliveryPartner);
+            }
+        }
+        else if (targetRole === "food_partner") {
+            let vendor = await Vendor_1.Vendor.findOne({ userId: user._id });
+            if (!vendor) {
+                vendor = new Vendor_1.Vendor({
+                    userId: user._id,
+                    businessName: app.restaurantName || app.businessName || user.name + ' Restaurant',
+                    ownerName: user.name,
+                    mobile: user.phone || app.mobile,
+                    email: user.email,
+                    address: app.address || 'Address Pending',
+                    pincode: app.pincode || '500001',
+                    storeType: 'restaurant',
+                    categories: ['Food & Dining'],
+                    marketplaceStatus: 'Approved',
+                });
+                await vendor.save();
+            }
+            let restaurant = await RestaurantProfile_1.RestaurantProfile.findOne({ userId: user._id });
+            if (!restaurant) {
+                const slugName = (app.restaurantName || user.name || 'restaurant')
+                    .toLowerCase()
+                    .replace(/[^a-z0-9]/g, '-')
+                    .replace(/-+/g, '-') + '-' + Math.floor(1000 + Math.random() * 9000);
+                restaurant = new RestaurantProfile_1.RestaurantProfile({
+                    userId: user._id,
+                    vendorId: vendor._id,
+                    storeId: vendor._id,
+                    restaurantName: app.restaurantName || app.businessName,
+                    slug: slugName,
+                    businessType: app.foodBusinessType || 'RESTAURANT',
+                    legalBusinessName: app.businessName || user.name,
+                    phone: app.mobile || user.phone,
+                    email: app.email || user.email,
+                    fssaiNumber: app.fssaiNumber || '',
+                    cuisines: app.cuisines || [],
+                    foodPreference: (app.foodPreference === 'Veg' ? 'VEG' : app.foodPreference === 'Non-Veg' ? 'NON_VEG' : 'BOTH'),
+                    address: app.address || 'Address Required',
+                    locality: app.mandal || 'Locality Pending',
+                    city: app.district || 'Hyderabad',
+                    state: app.state || 'Telangana',
+                    pincode: app.pincode || '500001',
+                    location: { type: 'Point', coordinates: [78.4867, 17.385] },
+                    verificationStatus: 'APPROVED',
+                    accountStatus: 'ACTIVE',
+                    onboardingStep: 10,
+                    isOnboardingCompleted: true,
+                });
+                await restaurant.save();
+            }
+            else {
+                restaurant.verificationStatus = 'APPROVED';
+                restaurant.accountStatus = 'ACTIVE';
+                restaurant.isOnboardingCompleted = true;
+                await restaurant.save();
             }
         }
         if (adminRemarks) {
@@ -2266,12 +2327,17 @@ const getReconciliationStats = async (req, res) => {
             { $group: { _id: null, total: { $sum: "$amount" } } }
         ]);
         const totalReferralEarnings = referralEarningsAgg[0]?.total || 0;
-        // 5. Total Company Earnings (released company settlements)
+        // 5. Total Company Platform Fees (calculated per-product from vendor settlements)
+        const platformFeeAgg = await CommissionSettlement_1.CommissionSettlement.aggregate([
+            { $match: { settlementType: 'vendor' } },
+            { $group: { _id: null, total: { $sum: "$totalPlatformFee" } } }
+        ]);
+        const totalPlatformFees = platformFeeAgg[0]?.total || 0;
         const companyEarningsAgg = await CommissionSettlement_1.CommissionSettlement.aggregate([
             { $match: { settlementType: 'company', status: 'released' } },
             { $group: { _id: null, total: { $sum: "$amount" } } }
         ]);
-        const totalCompanyEarnings = companyEarningsAgg[0]?.total || 0;
+        const totalCompanyEarnings = (companyEarningsAgg[0]?.total || 0) || totalPlatformFees;
         // 6. Total Pending Releases (pending settlements + pending referral transactions)
         const pendingSettlementsAgg = await CommissionSettlement_1.CommissionSettlement.aggregate([
             { $match: { status: 'pending' } },
@@ -2658,13 +2724,28 @@ const getTreasuryMasterStats = async (req, res) => {
             .populate('sellerId', 'businessName ownerName mobile')
             .sort({ createdAt: -1 })
             .limit(30);
+        const orderIds = ordersList.map((o) => o._id);
+        const settlements = await CommissionSettlement_1.CommissionSettlement.find({ orderId: { $in: orderIds } });
+        let sumPlatformComm = 0;
+        let sumFranchiseShare = 0;
         const orderFinancialSplits = ordersList.map((o) => {
             const gross = o.totalAmount || 0;
-            const platformComm = Math.round(gross * 0.10); // 10% marketplace fee
-            const riderFee = o.deliveryFee || 25;
-            const franchiseFee = Math.round(gross * 0.02); // 2% territory share
-            const vendorShare = gross - platformComm;
-            const netProfit = platformComm - franchiseFee;
+            const orderSettlements = settlements.filter((s) => String(s.orderId) === String(o._id));
+            const vendorS = orderSettlements.find((s) => s.settlementType === 'vendor');
+            const franchiseS = orderSettlements.filter((s) => s.settlementType === 'franchise');
+            const companyS = orderSettlements.find((s) => s.settlementType === 'company');
+            let vendorShare = vendorS ? vendorS.amount : 0;
+            let franchiseFee = franchiseS.reduce((sum, s) => sum + (s.amount || 0), 0);
+            let platformComm = companyS ? companyS.amount : 0;
+            if (orderSettlements.length === 0) {
+                vendorShare = o.vendorPayoutAmount ?? Math.max(0, gross - Math.round(gross * 0.10));
+                platformComm = o.platformCommissionAmount ?? (gross - vendorShare);
+                franchiseFee = o.franchiseShareAmount ?? Math.round(gross * 0.02);
+            }
+            const riderFee = o.deliveryFee || (o.orderSummary?.shippingFee) || 0;
+            const netProfit = Math.max(0, platformComm - franchiseFee);
+            sumPlatformComm += platformComm;
+            sumFranchiseShare += franchiseFee;
             return {
                 orderId: o._id,
                 orderNumber: o.orderNumber || `AB-${o._id.toString().slice(-6)}`,
@@ -2682,9 +2763,9 @@ const getTreasuryMasterStats = async (req, res) => {
             };
         });
         // 3. Platform Revenue Breakdown
-        const totalVendorCommissions = Math.round(totalSales * 0.10);
-        const totalFranchiseShare = Math.round(totalSales * 0.02);
-        const totalRiderFeesPaid = Math.round(totalOrdersCount * 25);
+        const totalVendorCommissions = sumPlatformComm;
+        const totalFranchiseShare = sumFranchiseShare;
+        const totalRiderFeesPaid = ordersList.reduce((sum, o) => sum + (o.deliveryFee || o.orderSummary?.shippingFee || 0), 0);
         const apexbeeNetProfit = totalVendorCommissions - totalFranchiseShare;
         // 4. Ecosystem Wallets Summary
         const wallets = await Wallet_1.Wallet.find().populate('userId', 'name email role');
@@ -2772,3 +2853,92 @@ const getTreasuryMasterStats = async (req, res) => {
     }
 };
 exports.getTreasuryMasterStats = getTreasuryMasterStats;
+const getAdminFoodRestaurants = async (req, res) => {
+    try {
+        const restaurants = await RestaurantProfile_1.RestaurantProfile.find()
+            .populate('userId', 'name email phone mobile status roles')
+            .populate('vendorId')
+            .sort({ createdAt: -1 });
+        res.status(200).json({ success: true, restaurants });
+    }
+    catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to fetch restaurants', error: error.message });
+    }
+};
+exports.getAdminFoodRestaurants = getAdminFoodRestaurants;
+const getAdminRestaurantMenu = async (req, res) => {
+    try {
+        const { restaurantId } = req.params;
+        const [categories, items] = await Promise.all([
+            FoodMenuCategory_1.FoodMenuCategory.find({ restaurantId }).sort({ sortOrder: 1, createdAt: -1 }),
+            FoodMenuItem_1.FoodMenuItem.find({ restaurantId }).sort({ createdAt: -1 }),
+        ]);
+        res.status(200).json({ success: true, categories, items });
+    }
+    catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to fetch restaurant menu', error: error.message });
+    }
+};
+exports.getAdminRestaurantMenu = getAdminRestaurantMenu;
+const getAdminRestaurantOrders = async (req, res) => {
+    try {
+        const { restaurantId } = req.params;
+        const restaurant = await RestaurantProfile_1.RestaurantProfile.findById(restaurantId);
+        const matchIds = [restaurantId];
+        if (restaurant) {
+            if (restaurant.userId)
+                matchIds.push(restaurant.userId);
+            if (restaurant.vendorId)
+                matchIds.push(restaurant.vendorId);
+            if (restaurant.storeId)
+                matchIds.push(restaurant.storeId);
+        }
+        const objectIds = matchIds
+            .filter((id) => mongoose_1.default.Types.ObjectId.isValid(String(id)))
+            .map((id) => new mongoose_1.default.Types.ObjectId(String(id)));
+        const stringIds = matchIds.map((id) => String(id));
+        const orders = await Order_1.Order.find({
+            $or: [
+                { restaurantId: { $in: [...objectIds, ...stringIds] } },
+                { vendorId: { $in: [...objectIds, ...stringIds] } },
+                { sellerId: { $in: [...objectIds, ...stringIds] } },
+                { storeId: { $in: [...objectIds, ...stringIds] } },
+                { 'items.restaurantId': { $in: [...objectIds, ...stringIds] } },
+            ],
+        })
+            .populate('customerId', 'name phone email')
+            .populate('sellerId', 'name businessName')
+            .sort({ createdAt: -1 })
+            .limit(100);
+        res.status(200).json({ success: true, orders });
+    }
+    catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to fetch restaurant orders', error: error.message });
+    }
+};
+exports.getAdminRestaurantOrders = getAdminRestaurantOrders;
+const getAdminLiveFoodOrders = async (req, res) => {
+    try {
+        const { status, search } = req.query;
+        const filter = {
+            $or: [
+                { orderType: { $in: ['FOOD', 'FOOD_DELIVERY', 'RESTAURANT', 'food'] } },
+                { 'items.itemType': 'FOOD' },
+                { restaurantId: { $exists: true, $ne: null } },
+            ],
+        };
+        if (status && status !== 'ALL') {
+            filter.orderStatus = status;
+        }
+        const orders = await Order_1.Order.find(filter)
+            .populate('customerId', 'name phone email')
+            .populate('sellerId', 'name businessName')
+            .sort({ createdAt: -1 })
+            .limit(100);
+        res.status(200).json({ success: true, orders });
+    }
+    catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to fetch admin live food orders', error: error.message });
+    }
+};
+exports.getAdminLiveFoodOrders = getAdminLiveFoodOrders;

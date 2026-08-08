@@ -37,7 +37,7 @@ exports.CommissionSettlement = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
 const CommissionSettlementSchema = new mongoose_1.Schema({
     orderId: { type: mongoose_1.Schema.Types.ObjectId, ref: "Order", required: true, index: true },
-    productId: { type: mongoose_1.Schema.Types.ObjectId, ref: "Product", required: true, index: true },
+    productId: { type: mongoose_1.Schema.Types.ObjectId, ref: "Product", required: false, index: true },
     recipientId: { type: mongoose_1.Schema.Types.ObjectId, ref: "User", required: true, index: true },
     amount: { type: Number, required: true, default: 0 },
     settlementType: {
@@ -69,7 +69,7 @@ const CommissionSettlementSchema = new mongoose_1.Schema({
     released: { type: Boolean, default: false },
     walletCredited: { type: Boolean, default: false },
     releasedBy: { type: mongoose_1.Schema.Types.ObjectId, ref: "User", default: null },
-    releaseDate: { type: Date, required: true },
+    releaseDate: { type: Date, default: Date.now },
     releasedAt: { type: Date, default: null }
 }, { timestamps: true });
 // Compound unique index to prevent duplicate payouts

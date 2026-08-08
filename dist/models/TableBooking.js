@@ -36,21 +36,29 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.TableBooking = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
 const TableBookingSchema = new mongoose_1.Schema({
-    vendorId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Vendor', required: true },
-    userId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User' },
-    guestName: { type: String, required: true },
-    guestPhone: { type: String, required: true },
-    bookingDate: { type: Date, required: true },
-    timeSlot: { type: String, required: true },
-    guestCount: { type: Number, required: true, default: 2 },
+    restaurantId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'RestaurantProfile', required: true, index: true },
+    bookingNumber: { type: String, required: true, unique: true },
+    customerName: { type: String, required: true, trim: true },
+    customerPhone: { type: String, required: true, trim: true },
+    customerEmail: { type: String, default: '' },
+    guestCount: { type: Number, required: true, min: 1, default: 2 },
+    bookingDate: { type: String, required: true, index: true },
+    bookingTime: { type: String, required: true },
+    tableType: { type: String, default: 'Standard Table' },
+    occasion: { type: String, default: 'Casual Dining' },
     specialRequests: { type: String, default: '' },
     status: {
         type: String,
-        enum: ['pending', 'confirmed', 'cancelled', 'completed'],
-        default: 'pending',
+        enum: ['PENDING', 'CONFIRMED', 'SEATED', 'COMPLETED', 'CANCELLED', 'REJECTED'],
+        default: 'PENDING',
+        index: true
     },
+    tableNumber: { type: String, default: '' },
+    rejectionReason: { type: String, default: '' },
+    depositAmount: { type: Number, default: 0 },
+    depositStatus: { type: String, enum: ['PENDING', 'PAID', 'REFUNDED'], default: 'PAID' }
 }, { timestamps: true });
-TableBookingSchema.index({ vendorId: 1, bookingDate: 1 });
-TableBookingSchema.index({ guestPhone: 1 });
+TableBookingSchema.index({ restaurantId: 1, bookingDate: 1 });
+TableBookingSchema.index({ restaurantId: 1, status: 1 });
 exports.TableBooking = mongoose_1.default.model('TableBooking', TableBookingSchema);
 exports.default = exports.TableBooking;

@@ -17,6 +17,7 @@ const ServiceRequest_1 = require("../models/ServiceRequest");
 const Order_1 = __importDefault(require("../models/Order"));
 const Banner_1 = require("../models/Banner");
 const Restaurant_1 = require("../models/Restaurant");
+const LocalShopSubscription_1 = __importDefault(require("../models/LocalShopSubscription"));
 const ServiceProvider_1 = require("../models/ServiceProvider");
 const calculateDistance = (lat1, lon1, lat2, lon2) => {
     const R = 6371; // Radius of the earth in km
@@ -311,32 +312,25 @@ const getPersonalizationDetails = async (req, res) => {
         else if (hours >= 16 || hours < 4) {
             timeGreeting = "Good Evening";
         }
-        // Default mock schedules for Guest users (so guest checkout can show clean details)
+        // Default empty schedules for Guest users (strictly real data)
         let todaySchedule = {
-            slot: "6:00 AM Slot",
-            items: [
-                { emoji: "🌼", name: "Fresh Puja Flowers", status: "Dispatched" },
-                { emoji: "🥛", name: "Nandini Fresh Milk 1L", status: "Delivered at 6:02 AM" },
-                { emoji: "💧", name: "Bisleri Water Can 20L", status: "Scheduled" }
-            ]
+            slot: "No Slot",
+            items: []
         };
         let tomorrowSchedule = {
             slot: "Before 7:00 AM",
-            items: [
-                { emoji: "🌼", name: "Jasmine Flowers (Puja Special)", qty: "250g" },
-                { emoji: "💧", name: "Drinking Water Can", qty: "1 Unit" },
-                { emoji: "🥬", name: "Fresh Green Vegetables", qty: "Mixed basket" }
-            ]
+            items: []
         };
         let overview = {
-            deliveries: 2,
-            services: 1,
-            pending: 1,
-            message: "Home salon and spa booked for 4:00 PM today."
+            deliveries: 0,
+            services: 0,
+            pending: 0,
+            message: "No active bookings or deliveries scheduled today."
         };
         // If actual user is logged in, look up their dynamic delivery / order history from database!
-        if (userIdStr && mongoose_1.default.Types.ObjectId.isValid(userIdStr)) {
-            const userObjectId = new mongoose_1.default.Types.ObjectId(userIdStr);
+        if (userIdStr) {
+            const userObjectId = mongoose_1.default.Types.ObjectId.isValid(userIdStr) ? new mongoose_1.default.Types.ObjectId(userIdStr) : null;
+            const userQueryIds = [userIdStr, ...(userObjectId ? [userObjectId] : [])];
             const startOfToday = new Date();
             startOfToday.setHours(0, 0, 0, 0);
             const endOfToday = new Date();
@@ -347,63 +341,119 @@ const getPersonalizationDetails = async (req, res) => {
             const endOfTomorrow = new Date();
             endOfTomorrow.setDate(endOfTomorrow.getDate() + 1);
             endOfTomorrow.setHours(23, 59, 59, 999);
+            const todayStr = startOfToday.toISOString().split('T')[0];
+            const tomorrowStr = startOfTomorrow.toISOString().split('T')[0];
             try {
+                // 1. Fetch active user subscriptions from LocalShopSubscription
+                const userSubscriptions = await LocalShopSubscription_1.default.find({
+                    userId: { $in: userQueryIds },
+                    status: 'active'
+                });
+                // 2. Fetch specific ScheduledDelivery entries
                 const todaySchedules = await ScheduledDelivery_1.default.find({
-                    customerId: userObjectId,
+                    customerId: { $in: userQueryIds },
                     deliveryDate: { $gte: startOfToday, $lte: endOfToday }
                 }).populate('orderId');
                 const tomorrowSchedules = await ScheduledDelivery_1.default.find({
-                    customerId: userObjectId,
+                    customerId: { $in: userQueryIds },
                     deliveryDate: { $gte: startOfTomorrow, $lte: endOfTomorrow }
                 }).populate('orderId');
+                // 3. Fetch ServiceRequests
                 const todayServices = await ServiceRequest_1.ServiceRequest.find({
-                    customerId: userObjectId,
+                    customerId: { $in: userQueryIds },
                     createdAt: { $gte: startOfToday, $lte: endOfToday }
                 });
+                // 4. Fetch Pending & In-transit Orders
                 const pendingOrders = await Order_1.default.find({
-                    customerId: userObjectId,
-                    orderStatus: { $in: ['Pending', 'Placed', 'Processing', 'Accepted', 'Preparing'] }
+                    customerId: { $in: userQueryIds },
+                    orderStatus: { $in: ['Pending', 'Placed', 'Processing', 'Accepted', 'Preparing', 'ready_for_pickup', 'out_for_delivery', 'Shipped', 'Confirmed'] }
                 });
-                // Set to real database values
-                todaySchedule = {
-                    slot: todaySchedules.length > 0 ? (todaySchedules[0].deliveryWindow || "6:00 AM Slot") : "No Slot",
-                    items: todaySchedules.map((s) => {
-                        let emoji = "📦";
-                        let name = s.notes || (s.orderId?.itemName) || "Scheduled Delivery";
-                        if (name.toLowerCase().includes("flower"))
+                // Build Today's Items
+                const todayItems = [];
+                userSubscriptions.forEach((sub) => {
+                    if (!sub.skippedDates?.includes(todayStr)) {
+                        let emoji = "🥛";
+                        const name = sub.productName || "Daily Subscription";
+                        if (name.toLowerCase().includes("flower") || name.toLowerCase().includes("puja"))
                             emoji = "🌼";
-                        else if (name.toLowerCase().includes("milk"))
+                        else if (name.toLowerCase().includes("milk") || name.toLowerCase().includes("curd") || name.toLowerCase().includes("dairy"))
                             emoji = "🥛";
-                        else if (name.toLowerCase().includes("water"))
+                        else if (name.toLowerCase().includes("water") || name.toLowerCase().includes("can"))
                             emoji = "💧";
                         else if (name.toLowerCase().includes("vegetable") || name.toLowerCase().includes("fruit"))
                             emoji = "🥬";
-                        return {
+                        else if (name.toLowerCase().includes("bread") || name.toLowerCase().includes("bakery"))
+                            emoji = "🍞";
+                        const isDelivered = sub.completedDates?.includes(todayStr) || (sub.deliveryHistory || []).some((h) => h.date === todayStr && h.status === 'delivered');
+                        todayItems.push({
+                            emoji,
+                            name: `${name} (${sub.quantity || 1} Unit)`,
+                            status: isDelivered ? "Delivered at 6:15 AM" : "Scheduled for 6:00 AM Slot"
+                        });
+                    }
+                });
+                todaySchedules.forEach((s) => {
+                    let emoji = "📦";
+                    let name = s.notes || (s.orderId?.itemName) || "Scheduled Delivery";
+                    if (name.toLowerCase().includes("flower"))
+                        emoji = "🌼";
+                    else if (name.toLowerCase().includes("milk"))
+                        emoji = "🥛";
+                    else if (name.toLowerCase().includes("water"))
+                        emoji = "💧";
+                    else if (name.toLowerCase().includes("vegetable") || name.toLowerCase().includes("fruit"))
+                        emoji = "🥬";
+                    todayItems.push({
+                        emoji,
+                        name,
+                        status: s.status || "Scheduled"
+                    });
+                });
+                // Build Tomorrow's Items
+                const tomorrowItems = [];
+                userSubscriptions.forEach((sub) => {
+                    if (!sub.skippedDates?.includes(tomorrowStr)) {
+                        let emoji = "🥛";
+                        const name = sub.productName || "Daily Subscription";
+                        if (name.toLowerCase().includes("flower") || name.toLowerCase().includes("puja"))
+                            emoji = "🌼";
+                        else if (name.toLowerCase().includes("milk") || name.toLowerCase().includes("curd"))
+                            emoji = "🥛";
+                        else if (name.toLowerCase().includes("water") || name.toLowerCase().includes("can"))
+                            emoji = "💧";
+                        else if (name.toLowerCase().includes("vegetable") || name.toLowerCase().includes("fruit"))
+                            emoji = "🥬";
+                        tomorrowItems.push({
                             emoji,
                             name,
-                            status: s.status || "Scheduled"
-                        };
-                    })
+                            qty: `${sub.quantity || 1} Unit`
+                        });
+                    }
+                });
+                tomorrowSchedules.forEach((s) => {
+                    let emoji = "📦";
+                    let name = s.notes || (s.orderId?.itemName) || "Scheduled Delivery";
+                    if (name.toLowerCase().includes("flower"))
+                        emoji = "🌼";
+                    else if (name.toLowerCase().includes("milk"))
+                        emoji = "🥛";
+                    else if (name.toLowerCase().includes("water"))
+                        emoji = "💧";
+                    else if (name.toLowerCase().includes("vegetable") || name.toLowerCase().includes("fruit"))
+                        emoji = "🥬";
+                    tomorrowItems.push({
+                        emoji,
+                        name,
+                        qty: "1 Unit"
+                    });
+                });
+                todaySchedule = {
+                    slot: todayItems.length > 0 ? (userSubscriptions[0]?.deliverySlot || "6:00 AM Slot") : "No Slot",
+                    items: todayItems
                 };
                 tomorrowSchedule = {
-                    slot: tomorrowSchedules.length > 0 ? "Before 7:00 AM" : "No Slot",
-                    items: tomorrowSchedules.map((s) => {
-                        let emoji = "📦";
-                        let name = s.notes || (s.orderId?.itemName) || "Scheduled Delivery";
-                        if (name.toLowerCase().includes("flower"))
-                            emoji = "🌼";
-                        else if (name.toLowerCase().includes("milk"))
-                            emoji = "🥛";
-                        else if (name.toLowerCase().includes("water"))
-                            emoji = "💧";
-                        else if (name.toLowerCase().includes("vegetable") || name.toLowerCase().includes("fruit"))
-                            emoji = "🥬";
-                        return {
-                            emoji,
-                            name,
-                            qty: "1 Unit"
-                        };
-                    })
+                    slot: "Before 7:00 AM",
+                    items: tomorrowItems
                 };
                 let overviewMsg = "No active bookings or deliveries scheduled today.";
                 if (todayServices.length > 0) {
@@ -413,15 +463,18 @@ const getPersonalizationDetails = async (req, res) => {
                 else if (pendingOrders.length > 0) {
                     overviewMsg = `You have ${pendingOrders.length} pending order(s) today.`;
                 }
+                else if (todayItems.length > 0) {
+                    overviewMsg = `You have ${todayItems.length} scheduled delivery run(s) today.`;
+                }
                 overview = {
-                    deliveries: todaySchedules.length,
+                    deliveries: todayItems.length,
                     services: todayServices.length,
                     pending: pendingOrders.length,
                     message: overviewMsg
                 };
             }
             catch (dbErr) {
-                console.error('[Personalization] DB Fetch failed, falling back to mock:', dbErr);
+                console.error('[Personalization] DB Fetch failed:', dbErr);
             }
         }
         // Fetch Promo Banners from DB
