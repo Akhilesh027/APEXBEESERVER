@@ -350,7 +350,7 @@ class SettlementEngine {
                 // Vendor Payout Calculation
                 const finalSellerAmount = (product.adminPricing?.finalSellerAmount !== undefined
                     ? (product.adminPricing.finalSellerAmount * qty)
-                    : (totalSellingAmount - totalPlatformFee - totalVendorCommission));
+                    : (totalSellingAmount - totalVendorCommission));
                 // 1. Create Vendor Settlement Row
                 if (finalSellerAmount > 0) {
                     try {

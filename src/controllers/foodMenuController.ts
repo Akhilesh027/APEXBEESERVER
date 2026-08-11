@@ -97,6 +97,10 @@ export const getMenuItems = async (req: FoodPartnerAuthRequest, res: Response): 
     const formattedItems = items.map((item) => {
       const doc = item.toObject();
       (doc as any).imageUrl = doc.image || (item as any).imageUrl || '';
+      const pShare = doc.platformShareAmount || Math.round((doc.basePrice * (doc.platformCommissionPercent || 12)) / 100);
+      if (!doc.vendorPayoutAmount || doc.vendorPayoutAmount === (doc.basePrice - pShare)) {
+        doc.vendorPayoutAmount = doc.offerPrice || doc.basePrice;
+      }
       return doc;
     });
     res.status(200).json({ success: true, items: formattedItems });
@@ -179,7 +183,7 @@ export const createMenuItem = async (req: FoodPartnerAuthRequest, res: Response)
     const price = Number(basePrice) || 0;
     const initialCommissionPercent = 12;
     const platformShare = Math.round((price * initialCommissionPercent) / 100);
-    const vendorPayout = price - platformShare;
+    const vendorPayout = Number(offerPrice) || price;
 
     const itemImage = image || req.body.imageUrl || '';
     const slug = name.toLowerCase().replace(/[^a-z0-9]/g, '-') + '-' + Math.floor(100 + Math.random() * 900);
@@ -307,7 +311,7 @@ export const respondToCommissionOffer = async (req: FoodPartnerAuthRequest, res:
 export const adminReviewMenuItem = async (req: any, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const { platformCommissionPercent, adminPricingNotes, action } = req.body; // action: 'APPROVE_COMMISSION' | 'REJECT'
+    const { platformCommissionPercent, vendorCommissionPercent, distributedFrom, adminPricingNotes, action } = req.body; // action: 'APPROVE_COMMISSION' | 'REJECT'
 
     const item = await FoodMenuItem.findById(id);
     if (!item) {
@@ -322,10 +326,20 @@ export const adminReviewMenuItem = async (req: any, res: Response): Promise<void
     } else {
       const commPercent = Number(platformCommissionPercent) || item.platformCommissionPercent || 12;
       const platformShare = Math.round((item.basePrice * commPercent) / 100);
-      const vendorPayout = item.basePrice - platformShare;
+      const vCommPercent = Number(vendorCommissionPercent) || item.vendorCommissionPercent || 0;
+      const vCommAmount = Math.round(((item.basePrice * vCommPercent) / 100) * 100) / 100;
+      const poolMode = distributedFrom || item.distributedFrom || 'platform_fee';
+
+      const priceBase = item.offerPrice || item.basePrice;
+      const vendorPayout = (poolMode === 'apexbee_commission' || vCommPercent > 0)
+        ? Math.max(0, Math.round((priceBase - vCommAmount) * 100) / 100)
+        : priceBase;
 
       item.platformCommissionPercent = commPercent;
       item.platformShareAmount = platformShare;
+      item.vendorCommissionPercent = vCommPercent;
+      item.vendorCommissionAmount = vCommAmount;
+      item.distributedFrom = poolMode;
       item.vendorPayoutAmount = vendorPayout;
       item.adminPricingNotes = adminPricingNotes || '';
       item.approvalStatus = 'PENDING_RESTAURANT_ACCEPTANCE';

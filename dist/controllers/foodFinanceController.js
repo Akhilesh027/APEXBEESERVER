@@ -47,7 +47,7 @@ const getEarningsSummary = async (req, res) => {
                     else {
                         platformFee = Math.round((order.totalAmount || 0) * 0.12);
                     }
-                    const netVendorAmount = (order.totalAmount || 0) - platformFee;
+                    const netVendorAmount = order.totalAmount || 0;
                     const newSettlement = new CommissionSettlement_1.CommissionSettlement({
                         recipientId: ctx.userId || ctx.restaurantId,
                         orderId: order._id,
@@ -131,7 +131,7 @@ const getEarningsSummary = async (req, res) => {
             orderNumber: o.orderNumber,
             totalAmount: o.totalAmount || 0,
             platformFee: Math.round((o.totalAmount || 0) * 0.12),
-            vendorEarning: Math.round((o.totalAmount || 0) * 0.88),
+            vendorEarning: o.totalAmount || 0,
             createdAt: o.createdAt,
             orderStatus: o.orderStatus,
         }));

@@ -198,7 +198,7 @@ const buildAdminPricing = (body: any) => {
   const finalSellerAmount = roundMoney(
     body.finalSellerAmount !== undefined
       ? normalizeNumber(body.finalSellerAmount)
-      : sellingPrice - platformFeeAmount - vendorCommissionAmount
+      : sellingPrice - vendorCommissionAmount
   );
 
   const customerSellingAmount = roundMoney(
@@ -1197,6 +1197,9 @@ export const configureAdminPricing = async (req: Request, res: Response) => {
         await FoodMenuItem.findByIdAndUpdate(product.foodMenuItemId, {
           platformCommissionPercent: product.adminPricing.platformFeePercent,
           platformShareAmount: product.adminPricing.platformFeeAmount,
+          vendorCommissionPercent: product.adminPricing.vendorCommissionPercent,
+          vendorCommissionAmount: product.adminPricing.vendorCommissionAmount,
+          distributedFrom: product.adminPricing.distributedFrom,
           vendorPayoutAmount: product.adminPricing.finalSellerAmount,
           approvalStatus: 'PENDING_RESTAURANT_ACCEPTANCE',
           adminApprovedAt: new Date(),

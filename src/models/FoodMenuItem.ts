@@ -32,6 +32,9 @@ export interface IFoodMenuItem extends Document {
   status: ItemStatus;
   approvalStatus: ItemApprovalStatus;
   platformCommissionPercent: number;
+  vendorCommissionPercent?: number;
+  vendorCommissionAmount?: number;
+  distributedFrom?: string;
   vendorPayoutAmount?: number;
   platformShareAmount?: number;
   adminPricingNotes?: string;
@@ -90,6 +93,9 @@ const FoodMenuItemSchema = new Schema<IFoodMenuItem>(
       default: 'PENDING_ADMIN_REVIEW',
     },
     platformCommissionPercent: { type: Number, default: 12 },
+    vendorCommissionPercent: { type: Number, default: 0 },
+    vendorCommissionAmount: { type: Number, default: 0 },
+    distributedFrom: { type: String, default: 'platform_fee' },
     vendorPayoutAmount: { type: Number, default: 0 },
     platformShareAmount: { type: Number, default: 0 },
     adminPricingNotes: { type: String, default: '' },

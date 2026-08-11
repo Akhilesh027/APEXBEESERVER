@@ -53,7 +53,7 @@ export const getEarningsSummary = async (req: FoodPartnerAuthRequest, res: Respo
           } else {
             platformFee = Math.round((order.totalAmount || 0) * 0.12);
           }
-          const netVendorAmount = (order.totalAmount || 0) - platformFee;
+          const netVendorAmount = order.totalAmount || 0;
 
           const newSettlement = new CommissionSettlement({
             recipientId: ctx.userId || ctx.restaurantId,
@@ -141,7 +141,7 @@ export const getEarningsSummary = async (req: FoodPartnerAuthRequest, res: Respo
       orderNumber: o.orderNumber,
       totalAmount: o.totalAmount || 0,
       platformFee: Math.round((o.totalAmount || 0) * 0.12),
-      vendorEarning: Math.round((o.totalAmount || 0) * 0.88),
+      vendorEarning: o.totalAmount || 0,
       createdAt: o.createdAt,
       orderStatus: o.orderStatus,
     }));

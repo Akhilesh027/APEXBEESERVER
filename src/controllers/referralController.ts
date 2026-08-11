@@ -39,9 +39,9 @@ export const getMyReferralInfo = async (req: Request, res: Response) => {
     }
     const referredBy = (user.referredBy as any)?.referralCode || "APEXBEE";
 
-    const level1Count = await User.countDocuments({ "referralHierarchy.level1UserId": user._id });
-    const level2Count = await User.countDocuments({ "referralHierarchy.level2UserId": user._id });
-    const level3Count = await User.countDocuments({ "referralHierarchy.level3UserId": user._id });
+    const level1Count = await User.countDocuments({ "referralHierarchy.level1UserId": user._id, _id: { $ne: user._id } });
+    const level2Count = await User.countDocuments({ "referralHierarchy.level2UserId": user._id, _id: { $ne: user._id } });
+    const level3Count = await User.countDocuments({ "referralHierarchy.level3UserId": user._id, _id: { $ne: user._id } });
 
     return res.status(200).json({
       success: true,
@@ -69,9 +69,9 @@ export const getReferralDashboard = async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: "User not found" });
     }
 
-    const directReferrals = await User.countDocuments({ "referralHierarchy.level1UserId": user._id });
-    const level2Count = await User.countDocuments({ "referralHierarchy.level2UserId": user._id });
-    const level3Count = await User.countDocuments({ "referralHierarchy.level3UserId": user._id });
+    const directReferrals = await User.countDocuments({ "referralHierarchy.level1UserId": user._id, _id: { $ne: user._id } });
+    const level2Count = await User.countDocuments({ "referralHierarchy.level2UserId": user._id, _id: { $ne: user._id } });
+    const level3Count = await User.countDocuments({ "referralHierarchy.level3UserId": user._id, _id: { $ne: user._id } });
     const indirectReferrals = level2Count + level3Count;
 
     let wallet = await Wallet.findOne({ userId: user._id });
@@ -228,9 +228,9 @@ export const getReferralNetwork = async (req: Request, res: Response) => {
       return res.status(401).json({ success: false, message: "Unauthorized" });
     }
 
-    const level1Raw = await User.find({ "referralHierarchy.level1UserId": userId }, "name email phone mobile referralCode referredBy createdAt status referralHierarchy firstOrderQualified");
-    const level2Raw = await User.find({ "referralHierarchy.level2UserId": userId }, "name email phone mobile referralCode referredBy createdAt status referralHierarchy firstOrderQualified");
-    const level3Raw = await User.find({ "referralHierarchy.level3UserId": userId }, "name email phone mobile referralCode referredBy createdAt status referralHierarchy firstOrderQualified");
+    const level1Raw = await User.find({ "referralHierarchy.level1UserId": userId, _id: { $ne: userId } }, "name email phone mobile referralCode referredBy createdAt status referralHierarchy firstOrderQualified");
+    const level2Raw = await User.find({ "referralHierarchy.level2UserId": userId, _id: { $ne: userId } }, "name email phone mobile referralCode referredBy createdAt status referralHierarchy firstOrderQualified");
+    const level3Raw = await User.find({ "referralHierarchy.level3UserId": userId, _id: { $ne: userId } }, "name email phone mobile referralCode referredBy createdAt status referralHierarchy firstOrderQualified");
 
     const level1 = await enrichReferredUsers(level1Raw, userId);
     const level2 = await enrichReferredUsers(level2Raw, userId);
@@ -328,13 +328,13 @@ export const getReferralStats = async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: "User not found" });
     }
 
-    const level1Count = await User.countDocuments({ "referralHierarchy.level1UserId": user._id });
-    const level2Count = await User.countDocuments({ "referralHierarchy.level2UserId": user._id });
-    const level3Count = await User.countDocuments({ "referralHierarchy.level3UserId": user._id });
+    const level1Count = await User.countDocuments({ "referralHierarchy.level1UserId": user._id, _id: { $ne: user._id } });
+    const level2Count = await User.countDocuments({ "referralHierarchy.level2UserId": user._id, _id: { $ne: user._id } });
+    const level3Count = await User.countDocuments({ "referralHierarchy.level3UserId": user._id, _id: { $ne: user._id } });
 
-    const completedDirectReferrals = await User.countDocuments({ "referralHierarchy.level1UserId": user._id, firstOrderQualified: true });
-    const completedIndirectReferrals = await User.countDocuments({ "referralHierarchy.level2UserId": user._id, firstOrderQualified: true });
-    const completedLevel3Referrals = await User.countDocuments({ "referralHierarchy.level3UserId": user._id, firstOrderQualified: true });
+    const completedDirectReferrals = await User.countDocuments({ "referralHierarchy.level1UserId": user._id, _id: { $ne: user._id }, firstOrderQualified: true });
+    const completedIndirectReferrals = await User.countDocuments({ "referralHierarchy.level2UserId": user._id, _id: { $ne: user._id }, firstOrderQualified: true });
+    const completedLevel3Referrals = await User.countDocuments({ "referralHierarchy.level3UserId": user._id, _id: { $ne: user._id }, firstOrderQualified: true });
 
     // A. Signup Bonus: KYC referral rewards (Referrals with status "rewarded")
     const rewardedRefs = await Referral.find({ referrerUserId: user._id, status: "rewarded" });

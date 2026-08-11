@@ -23,7 +23,7 @@ const runTest = async () => {
         vendorCommissionAmount: 50,
         distributedFrom: "platform_fee",
         distributionPool: 100,
-        finalSellerAmount: 850,
+        finalSellerAmount: 950,
         platformNetProfit: 130,
         commissionShares: [
           { type: 'level1', label: 'Level 1 Referral', percent: 10, amount: 10, isActive: true },
@@ -37,7 +37,7 @@ const runTest = async () => {
       ? sampleProductData.adminPricing.platformFeeAmount
       : 0;
     console.log(" -> Expected Pool Target:", 100, "| Actual:", poolPlatformFee);
-    console.log(" -> Seller Payout:", 850, "| Net Profit:", 130);
+    console.log(" -> Seller Payout:", 950, "| Net Profit:", 130);
 
     console.log("\n2. Testing 'apexbee_commission' pool:");
     const poolVendorComm = 50; // vendorCommissionAmount
