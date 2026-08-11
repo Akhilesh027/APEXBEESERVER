@@ -107,10 +107,12 @@ const autoAssignDeliveryPartner = async (order: any, excludedPartnerIds: string[
       };
       await order.save();
 
-      // Perform state transition through the state machine
-      await OrderStateMachine.transition(order._id, 'Confirmed', {
-        notes: `Auto-assigned delivery partner: ${bestPartner.name} (Score: ${highestScore.toFixed(1)})`
-      });
+      // Perform state transition through the state machine if order is in initial placed state
+      if (['Placed', 'placed', 'pending_payment'].includes(order.orderStatus)) {
+        await OrderStateMachine.transition(order._id, 'Confirmed', {
+          notes: `Auto-assigned delivery partner: ${bestPartner.name} (Score: ${highestScore.toFixed(1)})`
+        });
+      }
 
       // Create Assignment with all required fields
       const assignment = new DeliveryAssignment({
@@ -247,7 +249,7 @@ export const createOrder = async (req: Request, res: Response) => {
     return res.status(400).json({ success: false, message: 'Customer ID is required' });
   }
 
-  const { orderItems, couponCode, shippingAddress, paymentDetails, isScheduledSubscription, scheduleDetails, preOrder } = req.body;
+  const { orderItems, couponCode, shippingAddress, paymentDetails, fulfillment, isScheduledSubscription, scheduleDetails, preOrder } = req.body;
 
   if (!orderItems || orderItems.length === 0) {
     return res.status(400).json({ success: false, message: 'Order items are required' });
@@ -261,6 +263,7 @@ export const createOrder = async (req: Request, res: Response) => {
         couponCode,
         shippingAddress,
         paymentDetails,
+        fulfillment,
         isScheduledSubscription,
         scheduleDetails,
         preOrder
@@ -372,6 +375,7 @@ export const createOrderWithProof = async (req: Request, res: Response) => {
             couponCode: orderData.couponCode,
             shippingAddress: orderData.shippingAddress,
             paymentDetails: orderData.paymentDetails,
+            fulfillment: orderData.fulfillment,
             isScheduledSubscription: orderData.isScheduledSubscription,
             scheduleDetails: orderData.scheduleDetails,
             preOrder: orderData.preOrder

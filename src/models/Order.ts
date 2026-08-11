@@ -72,6 +72,9 @@ export interface IOrder extends Document {
   courierPartner?: string;
   trackingId?: string;
   pickupVerification?: any;
+  fulfillment?: any;
+  deliveryDetails?: any;
+  isSelfPickup?: boolean;
   categoryId?: mongoose.Types.ObjectId | string;
   categoryName?: string;
   orderType?: string;
@@ -179,6 +182,9 @@ const OrderSchema = new Schema<IOrder>(
     courierPartner: { type: String },
     trackingId: { type: String },
     pickupVerification: { type: Schema.Types.Mixed },
+    fulfillment: { type: Schema.Types.Mixed },
+    deliveryDetails: { type: Schema.Types.Mixed },
+    isSelfPickup: { type: Boolean, default: false },
     categoryId: { type: Schema.Types.Mixed },
     categoryName: { type: String, default: '' },
     orderType: { type: String, default: 'RETAIL' },

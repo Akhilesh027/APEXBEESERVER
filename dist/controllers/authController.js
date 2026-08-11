@@ -11,6 +11,7 @@ const Wallet_1 = require("../models/Wallet");
 const Referral_1 = require("../models/Referral");
 const LoginAudit_1 = require("../models/LoginAudit");
 const redis_1 = require("../config/redis");
+const identityService_1 = require("../services/identityService");
 async function generateReferralCode(name) {
     const cleanName = name.replace(/[^a-zA-Z]/g, "").toUpperCase();
     const prefix = (cleanName.substring(0, 3) + "XXX").substring(0, 3);
@@ -126,7 +127,12 @@ const register = async (req, res) => {
         if (!mappedRoles.includes('customer')) {
             mappedRoles.push('customer');
         }
-        const generatedReferralCode = await generateReferralCode(name);
+        const generatedReferralCode = await (0, identityService_1.generateUniversalReferralCode)(name);
+        const masterCustomerId = await (0, identityService_1.generateMasterCustomerId)();
+        const roleReferenceIdsMap = {};
+        for (const r of mappedRoles) {
+            roleReferenceIdsMap[r] = (0, identityService_1.generateRoleReferenceId)(r);
+        }
         // Initial User document setup
         const user = new User_1.User({
             name,
@@ -142,6 +148,8 @@ const register = async (req, res) => {
             sellerProfile,
             entrepreneurProfile,
             referralCode: generatedReferralCode,
+            masterCustomerId,
+            roleReferenceIds: roleReferenceIdsMap,
             referredBy: referrer ? referrer._id : null,
             firstOrderQualified: false,
             referralHierarchy: referralHierarchy
@@ -220,6 +228,7 @@ const register = async (req, res) => {
             user: {
                 id: savedUser._id,
                 _id: savedUser._id,
+                masterCustomerId: savedUser.masterCustomerId,
                 name: savedUser.name,
                 email: savedUser.email,
                 phone: savedUser.phone,
@@ -232,7 +241,8 @@ const register = async (req, res) => {
                 assignedFranchise: savedUser.assignedFranchise,
                 sellerProfile: savedUser.sellerProfile,
                 entrepreneurProfile: savedUser.entrepreneurProfile,
-                referralCode: savedUser.referralCode
+                referralCode: savedUser.referralCode,
+                roleReferenceIds: savedUser.roleReferenceIds
             }
         });
     }
@@ -339,6 +349,7 @@ const login = async (req, res) => {
             user: {
                 id: user._id,
                 _id: user._id,
+                masterCustomerId: user.masterCustomerId,
                 name: user.name,
                 email: user.email,
                 phone: user.phone,
@@ -353,6 +364,7 @@ const login = async (req, res) => {
                 sellerProfile: user.sellerProfile,
                 entrepreneurProfile: user.entrepreneurProfile,
                 referralCode: user.referralCode,
+                roleReferenceIds: user.roleReferenceIds,
             },
         });
     }

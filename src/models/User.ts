@@ -62,6 +62,8 @@ export interface IUser extends Document {
     referredBy?: mongoose.Types.ObjectId;
   };
   referralCode?: string;
+  masterCustomerId?: string;
+  roleReferenceIds?: Map<string, string> | Record<string, string>;
   referredBy?: mongoose.Types.ObjectId | null;
   totalReferrals?: number;
   successfulReferrals?: number;
@@ -191,6 +193,12 @@ const UserSchema = new Schema<IUser>(
     },
 
     referralCode: { type: String, unique: true, sparse: true, index: true },
+    masterCustomerId: { type: String, unique: true, sparse: true, index: true },
+    roleReferenceIds: {
+      type: Map,
+      of: String,
+      default: {}
+    },
     referredBy: { type: Schema.Types.ObjectId, ref: "User", default: null, index: true },
     totalReferrals: { type: Number, default: 0 },
     successfulReferrals: { type: Number, default: 0 },
@@ -219,6 +227,7 @@ const UserSchema = new Schema<IUser>(
   { timestamps: true }
 );
 
+UserSchema.index({ masterCustomerId: 1 });
 UserSchema.index({ roles: 1, 'territory.state': 1, 'territory.district': 1, 'territory.mandal': 1 });
 
 export const User = mongoose.model<IUser>("User", UserSchema);

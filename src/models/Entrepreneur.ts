@@ -11,6 +11,7 @@ export interface IEntrepreneurBankDetails {
 export interface IEntrepreneur extends Document {
   userId: mongoose.Types.ObjectId;
   entrepreneurCode?: string;
+  referenceId?: string;
 
   name: string;
   mobile: string;
@@ -48,6 +49,7 @@ const EntrepreneurSchema = new Schema<IEntrepreneur>(
       required: true,
       unique: true,
     },
+    referenceId: { type: String, unique: true, sparse: true, index: true },
 
     entrepreneurCode: {
       type: String,

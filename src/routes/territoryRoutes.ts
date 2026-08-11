@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
   getTerritories,
   createTerritory,
+  updateTerritory,
   assignTerritory,
   removeTerritoryAssignment,
   deleteTerritory,
@@ -18,6 +19,7 @@ router.get("/mandals/:districtId", getMandals);
 
 router.get("/", getTerritories);
 router.post("/", createTerritory);
+router.put("/:id", updateTerritory);
 router.put("/:id/assign", assignTerritory);
 router.put("/:id/remove-assignment", removeTerritoryAssignment);
 router.delete("/:id", deleteTerritory);

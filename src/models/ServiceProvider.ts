@@ -68,6 +68,7 @@ export interface IServiceProviderDocuments {
 export interface IServiceProvider extends Document {
   userId: mongoose.Types.ObjectId;
   providerCode: string;
+  referenceId?: string;
 
   businessName: string;
   ownerName: string;
@@ -120,6 +121,7 @@ const ServiceProviderSchema = new Schema<IServiceProvider>(
       required: true,
       unique: true,
     },
+    referenceId: { type: String, unique: true, sparse: true, index: true },
 
     providerCode: {
       type: String,

@@ -42,6 +42,7 @@ const EntrepreneurSchema = new mongoose_1.Schema({
         required: true,
         unique: true,
     },
+    referenceId: { type: String, unique: true, sparse: true, index: true },
     entrepreneurCode: {
         type: String,
         unique: true,

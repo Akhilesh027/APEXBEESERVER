@@ -219,6 +219,11 @@ export const updateTerritory = async (req: Request, res: Response) => {
     }
 
     const {
+      name,
+      state,
+      district,
+      mandal,
+      pincode,
       status,
       density,
       targetCoverage,
@@ -255,10 +260,14 @@ export const updateTerritory = async (req: Request, res: Response) => {
       }
     }
 
-    existingTerritory.status = status || existingTerritory.status;
-    existingTerritory.density = density || existingTerritory.density;
-    existingTerritory.targetCoverage =
-      targetCoverage || existingTerritory.targetCoverage;
+    if (name !== undefined && name !== "") existingTerritory.name = name.trim();
+    if (state !== undefined && state !== "") existingTerritory.state = state.trim();
+    if (district !== undefined) existingTerritory.district = district.trim();
+    if (mandal !== undefined) existingTerritory.mandal = mandal.trim();
+    if (pincode !== undefined) existingTerritory.pincode = String(pincode).trim();
+    if (status !== undefined) existingTerritory.status = status;
+    if (density !== undefined) existingTerritory.density = density;
+    if (targetCoverage !== undefined) existingTerritory.targetCoverage = targetCoverage.trim();
     existingTerritory.franchiseId = newFranchiseId as any;
 
     await existingTerritory.save();

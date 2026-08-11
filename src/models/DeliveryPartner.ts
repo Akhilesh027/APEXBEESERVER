@@ -45,6 +45,7 @@ export interface IDeliveryLocation {
 export interface IDeliveryPartner extends Document {
   userId: mongoose.Types.ObjectId;
   deliveryPartnerId?: string;
+  referenceId?: string;
   name: string;
   mobile: string;
   email: string;
@@ -105,6 +106,7 @@ const DeliveryKycSchema = new Schema<IDeliveryKyc>({
 const DeliveryPartnerSchema = new Schema<IDeliveryPartner>({
   userId: { type: Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
   deliveryPartnerId: { type: String, unique: true, sparse: true },
+  referenceId: { type: String, unique: true, sparse: true, index: true },
   name: { type: String, required: true },
   mobile: { type: String, required: true },
   email: { type: String, required: true },

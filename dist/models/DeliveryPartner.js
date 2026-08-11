@@ -69,6 +69,7 @@ const DeliveryKycSchema = new mongoose_1.Schema({
 const DeliveryPartnerSchema = new mongoose_1.Schema({
     userId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
     deliveryPartnerId: { type: String, unique: true, sparse: true },
+    referenceId: { type: String, unique: true, sparse: true, index: true },
     name: { type: String, required: true },
     mobile: { type: String, required: true },
     email: { type: String, required: true },

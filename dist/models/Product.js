@@ -75,6 +75,7 @@ const ProductSchema = new mongoose_1.Schema({
     attributes: { type: mongoose_1.Schema.Types.Mixed },
     isStoreProduct: { type: Boolean, default: false },
     isSubscriptionAvailable: { type: Boolean, default: false },
+    isSelfPickup: { type: Boolean, default: true },
     deliveryScope: { type: String, enum: ['local', 'pan_india', 'both'], default: 'local' },
     isLocalDelivery: { type: Boolean, default: true },
     isPanIndia: { type: Boolean, default: false },

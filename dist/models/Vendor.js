@@ -47,6 +47,7 @@ const VendorSchema = new mongoose_1.Schema({
         required: true,
         unique: true,
     },
+    referenceId: { type: String, unique: true, sparse: true, index: true },
     businessName: { type: String, required: true },
     ownerName: { type: String, required: true },
     mobile: { type: String, required: true },

@@ -37,6 +37,7 @@ export interface IProduct extends Document {
   attributes?: any;
   isStoreProduct?: boolean;
   isSubscriptionAvailable?: boolean;
+  isSelfPickup?: boolean;
   deliveryScope?: 'local' | 'pan_india' | 'both';
   isLocalDelivery?: boolean;
   isPanIndia?: boolean;
@@ -118,6 +119,7 @@ const ProductSchema = new Schema<IProduct>(
     attributes: { type: Schema.Types.Mixed },
     isStoreProduct: { type: Boolean, default: false },
     isSubscriptionAvailable: { type: Boolean, default: false },
+    isSelfPickup: { type: Boolean, default: true },
     deliveryScope: { type: String, enum: ['local', 'pan_india', 'both'], default: 'local' },
     isLocalDelivery: { type: Boolean, default: true },
     isPanIndia: { type: Boolean, default: false },

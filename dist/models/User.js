@@ -124,6 +124,12 @@ const UserSchema = new mongoose_1.Schema({
         referredBy: { type: mongoose_1.Schema.Types.ObjectId, ref: "User" },
     },
     referralCode: { type: String, unique: true, sparse: true, index: true },
+    masterCustomerId: { type: String, unique: true, sparse: true, index: true },
+    roleReferenceIds: {
+        type: Map,
+        of: String,
+        default: {}
+    },
     referredBy: { type: mongoose_1.Schema.Types.ObjectId, ref: "User", default: null, index: true },
     totalReferrals: { type: Number, default: 0 },
     successfulReferrals: { type: Number, default: 0 },
@@ -149,5 +155,6 @@ const UserSchema = new mongoose_1.Schema({
     hasPets: { type: Boolean, default: true },
     hasKids: { type: Boolean, default: true }
 }, { timestamps: true });
+UserSchema.index({ masterCustomerId: 1 });
 UserSchema.index({ roles: 1, 'territory.state': 1, 'territory.district': 1, 'territory.mandal': 1 });
 exports.User = mongoose_1.default.model("User", UserSchema);

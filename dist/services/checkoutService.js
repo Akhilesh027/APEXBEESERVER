@@ -71,6 +71,14 @@ class CheckoutService {
             orderItems: pricing.orderItems,
             shippingAddress: input.shippingAddress,
             paymentDetails: input.paymentDetails,
+            fulfillment: input.fulfillment,
+            isSelfPickup: input.fulfillment?.type === 'pickup',
+            deliveryDetails: input.fulfillment?.type === 'pickup'
+                ? { expectedDelivery: 'Self Pickup at Store', shippingMethod: 'In-Store Self Pickup' }
+                : { expectedDelivery: 'Standard Delivery', shippingMethod: 'Home Delivery' },
+            pickupVerification: input.fulfillment?.type === 'pickup'
+                ? { otp: Math.floor(1000 + Math.random() * 9000).toString(), verified: false }
+                : undefined,
             orderSummary: pricing.orderSummary,
             preOrder: input.preOrder,
             isScheduledSubscription: input.isScheduledSubscription || false,

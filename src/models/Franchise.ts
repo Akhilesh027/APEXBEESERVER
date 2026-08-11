@@ -11,6 +11,7 @@ export interface IFranchiseBankDetails {
 export interface IFranchise extends Document {
   userId: mongoose.Types.ObjectId;
   franchiseCode?: string;
+  referenceId?: string;
 
   franchiseLevel: "state" | "district" | "mandal";
 
@@ -65,6 +66,8 @@ const FranchiseSchema = new Schema<IFranchise>(
       unique: true,
       index: true,
     },
+
+    referenceId: { type: String, unique: true, sparse: true, index: true },
 
     franchiseCode: {
       type: String,

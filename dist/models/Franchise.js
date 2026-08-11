@@ -43,6 +43,7 @@ const FranchiseSchema = new mongoose_1.Schema({
         unique: true,
         index: true,
     },
+    referenceId: { type: String, unique: true, sparse: true, index: true },
     franchiseCode: {
         type: String,
         unique: true,

@@ -42,6 +42,7 @@ const ServiceProviderSchema = new mongoose_1.Schema({
         required: true,
         unique: true,
     },
+    referenceId: { type: String, unique: true, sparse: true, index: true },
     providerCode: {
         type: String,
         required: true,

@@ -79,6 +79,9 @@ exports.submitProductReview = submitProductReview;
 const getProductReviews = async (req, res) => {
     try {
         const { productId } = req.params;
+        if (!productId || !mongoose_1.default.Types.ObjectId.isValid(productId)) {
+            return res.status(200).json({ success: true, reviews: [] });
+        }
         const reviews = await ProductReview_1.ProductReview.find({ productId, isApproved: true })
             .populate('customerId', 'name email')
             .sort({ createdAt: -1 });

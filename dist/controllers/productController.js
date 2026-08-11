@@ -393,6 +393,7 @@ const createProduct = async (req, res) => {
                 submittedAt: new Date(),
                 isStoreProduct: req.body.isStoreProduct === 'true' || req.body.isStoreProduct === true,
                 isSubscriptionAvailable: req.body.isSubscriptionAvailable === 'true' || req.body.isSubscriptionAvailable === true,
+                isSelfPickup: req.body.isSelfPickup === undefined ? true : (req.body.isSelfPickup === 'true' || req.body.isSelfPickup === true),
                 deliveryScope: req.body.deliveryScope || (req.body.isPanIndia === 'true' || req.body.isPanIndia === true ? 'pan_india' : 'local'),
                 isPanIndia: req.body.deliveryScope === 'pan_india' || req.body.isPanIndia === 'true' || req.body.isPanIndia === true,
             });
@@ -893,6 +894,9 @@ const updateProduct = async (req, res) => {
         }
         if (req.body.isSubscriptionAvailable !== undefined) {
             product.isSubscriptionAvailable = req.body.isSubscriptionAvailable === 'true' || req.body.isSubscriptionAvailable === true;
+        }
+        if (req.body.isSelfPickup !== undefined) {
+            product.isSelfPickup = req.body.isSelfPickup === 'true' || req.body.isSelfPickup === true;
         }
         if (req.body.deliveryScope) {
             product.deliveryScope = req.body.deliveryScope;

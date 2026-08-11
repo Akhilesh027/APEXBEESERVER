@@ -135,57 +135,67 @@ const connectDB = async () => {
             process.exit(1);
         }
     }
-    try {
-        console.log('Connecting to MongoDB Atlas...');
-        await mongoose_1.default.connect(mongoURI, {
-            serverSelectionTimeoutMS: 15000,
-            maxPoolSize: env_1.env.MONGODB_MAX_POOL_SIZE,
-            minPoolSize: env_1.env.MONGODB_MIN_POOL_SIZE,
-            maxConnecting: env_1.env.MONGODB_MAX_CONNECTING,
-            waitQueueTimeoutMS: env_1.env.MONGODB_WAIT_QUEUE_TIMEOUT_MS,
-            socketTimeoutMS: 45000,
-            connectTimeoutMS: 30000,
-        });
-        console.log(`MongoDB Atlas connected successfully to database "${dbName}"!`);
-        if (process.env.NODE_APP_INSTANCE === undefined || process.env.NODE_APP_INSTANCE === '0') {
-            try {
-                await seedAdmin();
-            }
-            catch (e) {
-                console.error('seedAdmin non-fatal error:', e.message);
-            }
-            try {
-                await migrateServiceProviders();
-            }
-            catch (e) {
-                console.error('migrateServiceProviders non-fatal error:', e.message);
-            }
-            try {
-                await migrateServiceProviderKycs();
-            }
-            catch (e) {
-                console.error('migrateServiceProviderKycs non-fatal error:', e.message);
-            }
-            try {
-                const db = mongoose_1.default.connection.db;
-                if (db) {
-                    await db.collection('products').dropIndex('slug_1');
-                    console.log('[Migration] Dropped unique slug_1 index from products collection');
+    let attempts = 0;
+    const maxAttempts = 3;
+    while (attempts < maxAttempts) {
+        try {
+            attempts++;
+            console.log(`Connecting to MongoDB Atlas (Attempt ${attempts}/${maxAttempts})...`);
+            await mongoose_1.default.connect(mongoURI, {
+                serverSelectionTimeoutMS: 15000,
+                maxPoolSize: env_1.env.MONGODB_MAX_POOL_SIZE,
+                minPoolSize: env_1.env.MONGODB_MIN_POOL_SIZE,
+                maxConnecting: env_1.env.MONGODB_MAX_CONNECTING,
+                waitQueueTimeoutMS: env_1.env.MONGODB_WAIT_QUEUE_TIMEOUT_MS,
+                socketTimeoutMS: 45000,
+                connectTimeoutMS: 30000,
+            });
+            console.log(`MongoDB Atlas connected successfully to database "${dbName}"!`);
+            if (process.env.NODE_APP_INSTANCE === undefined || process.env.NODE_APP_INSTANCE === '0') {
+                try {
+                    await seedAdmin();
+                }
+                catch (e) {
+                    console.error('seedAdmin non-fatal error:', e.message);
+                }
+                try {
+                    await migrateServiceProviders();
+                }
+                catch (e) {
+                    console.error('migrateServiceProviders non-fatal error:', e.message);
+                }
+                try {
+                    await migrateServiceProviderKycs();
+                }
+                catch (e) {
+                    console.error('migrateServiceProviderKycs non-fatal error:', e.message);
+                }
+                try {
+                    const db = mongoose_1.default.connection.db;
+                    if (db) {
+                        await db.collection('products').dropIndex('slug_1');
+                        console.log('[Migration] Dropped unique slug_1 index from products collection');
+                    }
+                }
+                catch (e) {
+                    if (!e.message.includes('not found'))
+                        console.log('[Migration] slug_1 index:', e.message);
                 }
             }
-            catch (e) {
-                if (!e.message.includes('not found'))
-                    console.log('[Migration] slug_1 index:', e.message);
+            else {
+                console.log(`[Database] Skipping admin/service provider seeding/migrations on clustered instance ${process.env.NODE_APP_INSTANCE}`);
             }
+            return;
         }
-        else {
-            console.log(`[Database] Skipping admin/service provider seeding/migrations on clustered instance ${process.env.NODE_APP_INSTANCE}`);
+        catch (error) {
+            console.error(`MongoDB Atlas connection attempt ${attempts} failed:`, error?.message || error);
+            if (attempts >= maxAttempts) {
+                console.error('All MongoDB connection attempts exhausted.');
+                process.exit(1);
+            }
+            console.log('Waiting 2 seconds before retrying...');
+            await new Promise((res) => setTimeout(res, 2000));
         }
-    }
-    catch (error) {
-        console.error('MongoDB Atlas connection failed:', error);
-        console.error('Server stopped to prevent using wrong/local database.');
-        process.exit(1);
     }
 };
 exports.connectDB = connectDB;

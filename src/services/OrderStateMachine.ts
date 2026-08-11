@@ -20,7 +20,17 @@ export type OrderStatus =
   | 'Payment Verified'
   | 'Payment Rejected'
   | 'Cancelled'
-  | 'Refunded';
+  | 'Refunded'
+  | 'Assigned'
+  | 'assigned'
+  | 'Reached Vendor'
+  | 'Pickup OTP Verified'
+  | 'Picked Up'
+  | 'Reached Customer'
+  | 'Delivery OTP Verified'
+  | 'ready_for_pickup'
+  | 'picked_up'
+  | 'out_for_delivery';
 
 export class OrderStateMachine {
   // Allow all status updates, but enforce correct side effects based on transitions.
@@ -31,6 +41,7 @@ export class OrderStateMachine {
       'Confirmed',
       'Packed',
       'Shipped',
+      'Out for Delivery',
       'Delivered',
       'Cancelled',
       'Payment Verified',
@@ -40,6 +51,7 @@ export class OrderStateMachine {
       'Packed',
       'Ready',
       'Shipped',
+      'Out for Delivery',
       'Delivered',
       'Cancelled',
       'Payment Verified',
@@ -48,21 +60,26 @@ export class OrderStateMachine {
     'Packed': [
       'Ready',
       'Shipped',
+      'Out for Delivery',
       'Delivered',
       'Cancelled'
     ],
     'Ready': [
       'Shipped',
+      'Out for Delivery',
       'Delivered',
       'Cancelled'
     ],
     'Shipped': [
       'Out for Delivery',
+      'Reached Customer',
       'Delivered',
       'Returned',
       'Cancelled'
     ],
     'Out for Delivery': [
+      'Reached Customer',
+      'Delivery OTP Verified',
       'Delivered',
       'Returned',
       'Cancelled'
@@ -82,10 +99,87 @@ export class OrderStateMachine {
       'Confirmed',
       'Packed',
       'Shipped',
+      'Out for Delivery',
       'Delivered',
       'Cancelled'
     ],
     'Payment Rejected': [
+      'Cancelled'
+    ],
+    'Assigned': [
+      'Reached Vendor',
+      'Pickup OTP Verified',
+      'Picked Up',
+      'Shipped',
+      'Out for Delivery',
+      'Reached Customer',
+      'Delivered',
+      'Cancelled'
+    ],
+    'assigned': [
+      'Reached Vendor',
+      'Pickup OTP Verified',
+      'Picked Up',
+      'Shipped',
+      'Out for Delivery',
+      'Reached Customer',
+      'Delivered',
+      'Cancelled'
+    ],
+    'Reached Vendor': [
+      'Pickup OTP Verified',
+      'Picked Up',
+      'Shipped',
+      'Out for Delivery',
+      'Reached Customer',
+      'Delivered',
+      'Cancelled'
+    ],
+    'Pickup OTP Verified': [
+      'Picked Up',
+      'Shipped',
+      'Out for Delivery',
+      'Reached Customer',
+      'Delivered',
+      'Cancelled'
+    ],
+    'Picked Up': [
+      'Out for Delivery',
+      'Reached Customer',
+      'Delivery OTP Verified',
+      'Delivered',
+      'Cancelled'
+    ],
+    'Reached Customer': [
+      'Delivery OTP Verified',
+      'Delivered',
+      'Completed',
+      'Cancelled',
+      'Returned'
+    ],
+    'Delivery OTP Verified': [
+      'Delivered',
+      'Completed',
+      'Cancelled'
+    ],
+    'ready_for_pickup': [
+      'picked_up',
+      'Delivered',
+      'Completed',
+      'Cancelled'
+    ],
+    'picked_up': [
+      'out_for_delivery',
+      'Reached Customer',
+      'Delivered',
+      'Completed',
+      'Cancelled'
+    ],
+    'out_for_delivery': [
+      'Reached Customer',
+      'Delivery OTP Verified',
+      'Delivered',
+      'Completed',
       'Cancelled'
     ],
     'Cancelled': [],

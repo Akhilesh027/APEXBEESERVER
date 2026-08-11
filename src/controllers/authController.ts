@@ -7,6 +7,7 @@ import { Referral } from '../models/Referral';
 import { LoginAudit } from '../models/LoginAudit';
 import { AuthRequest } from '../middleware/auth';
 import { getRedisClient } from '../config/redis';
+import { generateMasterCustomerId, generateUniversalReferralCode, generateRoleReferenceId } from '../services/identityService';
 
 async function generateReferralCode(name: string): Promise<string> {
   const cleanName = name.replace(/[^a-zA-Z]/g, "").toUpperCase();
@@ -139,7 +140,13 @@ export const register = async (req: Request, res: Response): Promise<void> => {
       mappedRoles.push('customer');
     }
 
-    const generatedReferralCode = await generateReferralCode(name);
+    const generatedReferralCode = await generateUniversalReferralCode(name);
+    const masterCustomerId = await generateMasterCustomerId();
+
+    const roleReferenceIdsMap: Record<string, string> = {};
+    for (const r of mappedRoles) {
+      roleReferenceIdsMap[r] = generateRoleReferenceId(r);
+    }
 
     // Initial User document setup
     const user = new User({
@@ -156,6 +163,8 @@ export const register = async (req: Request, res: Response): Promise<void> => {
       sellerProfile,
       entrepreneurProfile,
       referralCode: generatedReferralCode,
+      masterCustomerId,
+      roleReferenceIds: roleReferenceIdsMap,
       referredBy: referrer ? referrer._id : null,
       firstOrderQualified: false,
       referralHierarchy: referralHierarchy
@@ -250,6 +259,7 @@ export const register = async (req: Request, res: Response): Promise<void> => {
       user: {
         id: savedUser._id,
         _id: savedUser._id,
+        masterCustomerId: savedUser.masterCustomerId,
         name: savedUser.name,
         email: savedUser.email,
         phone: savedUser.phone,
@@ -262,7 +272,8 @@ export const register = async (req: Request, res: Response): Promise<void> => {
         assignedFranchise: savedUser.assignedFranchise,
         sellerProfile: savedUser.sellerProfile,
         entrepreneurProfile: savedUser.entrepreneurProfile,
-        referralCode: savedUser.referralCode
+        referralCode: savedUser.referralCode,
+        roleReferenceIds: savedUser.roleReferenceIds
       }
     });
   } catch (error: any) {
@@ -375,6 +386,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       user: {
         id: user._id,
         _id: user._id,
+        masterCustomerId: user.masterCustomerId,
         name: user.name,
         email: user.email,
         phone: user.phone,
@@ -389,6 +401,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
         sellerProfile: user.sellerProfile,
         entrepreneurProfile: user.entrepreneurProfile,
         referralCode: user.referralCode,
+        roleReferenceIds: user.roleReferenceIds,
       },
     });
   } catch (error: any) {

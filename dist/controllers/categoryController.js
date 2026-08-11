@@ -46,8 +46,10 @@ const parseArray = (value) => {
 const parseAttributes = (value) => {
     if (!value)
         return [];
+    if (Array.isArray(value))
+        return value;
     try {
-        const parsed = JSON.parse(value);
+        const parsed = typeof value === 'string' ? JSON.parse(value) : value;
         return Array.isArray(parsed) ? parsed : [];
     }
     catch {

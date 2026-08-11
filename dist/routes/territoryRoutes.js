@@ -8,6 +8,7 @@ router.get("/districts/:stateId", territoryController_1.getDistricts);
 router.get("/mandals/:districtId", territoryController_1.getMandals);
 router.get("/", territoryController_1.getTerritories);
 router.post("/", territoryController_1.createTerritory);
+router.put("/:id", territoryController_1.updateTerritory);
 router.put("/:id/assign", territoryController_1.assignTerritory);
 router.put("/:id/remove-assignment", territoryController_1.removeTerritoryAssignment);
 router.delete("/:id", territoryController_1.deleteTerritory);

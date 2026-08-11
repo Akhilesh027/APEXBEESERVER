@@ -72,6 +72,7 @@ export interface IVendorStoreConfig {
 
 export interface IVendor extends Document {
   userId: mongoose.Types.ObjectId;
+  referenceId?: string;
   businessName: string;
   ownerName: string;
   mobile: string;
@@ -153,6 +154,7 @@ const VendorSchema = new Schema<IVendor>(
       required: true,
       unique: true,
     },
+    referenceId: { type: String, unique: true, sparse: true, index: true },
 
     businessName: { type: String, required: true },
     ownerName: { type: String, required: true },
