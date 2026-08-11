@@ -139,7 +139,7 @@ export const options = {
   },
 };
 
-const BASE_URL = 'http://localhost:5500/api';
+const BASE_URL = 'https://server.apexbee.in/api';
 
 export default function () {
   // Select a random customer token based on virtual user ID
