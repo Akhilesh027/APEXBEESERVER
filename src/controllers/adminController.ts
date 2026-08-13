@@ -2148,6 +2148,53 @@ export const getFranchises = async (req: Request, res: Response): Promise<void> 
     });
   }
 };
+
+export const updateFranchiseStatus = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const { status, kycStatus } = req.body;
+
+    const franchise = await Franchise.findById(id);
+    if (!franchise) {
+      res.status(404).json({ success: false, message: "Franchise profile not found" });
+      return;
+    }
+
+    if (status) franchise.status = status;
+    if (kycStatus) franchise.kycStatus = kycStatus;
+    if (status === "active" || kycStatus === "Approved") {
+      franchise.approvedAt = new Date();
+    }
+
+    const saved = await franchise.save();
+
+    const user = await User.findById(franchise.userId);
+    if (user && status === "active") {
+      user.isVerified = true;
+      const fRole = (franchise.franchiseLevel + "_franchise") as any;
+      if (!user.roles.includes(fRole)) {
+        user.roles.push(fRole);
+      }
+      await user.save();
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Franchise status updated successfully",
+      franchise: saved,
+    });
+  } catch (error: any) {
+    console.error("Update franchise status error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error updating franchise status",
+      error: error.message,
+    });
+  }
+};
 export const getTerritories = async (req: Request, res: Response): Promise<void> => {
   try {
     if (req.query.clear === 'true') {

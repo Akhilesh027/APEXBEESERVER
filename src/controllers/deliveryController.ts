@@ -301,22 +301,30 @@ async function findOrderAndAssignment(id: string) {
 
 function addOrderTimelineStep(order: any, status: string, note: string, extraData?: any) {
   if (!order.timeline) order.timeline = [];
-  order.timeline.push({
-    status,
-    date: new Date(),
-    note
-  });
+  const lastTimeline = order.timeline[order.timeline.length - 1];
+  if (!lastTimeline || lastTimeline.status !== status || lastTimeline.note !== note) {
+    order.timeline.push({
+      status,
+      date: new Date(),
+      note
+    });
+  }
+
   order.orderStatus = status;
   if (!order.orderStatusObj) {
     order.orderStatusObj = { currentStatus: status, timeline: [] };
   }
   order.orderStatusObj.currentStatus = status;
   if (!order.orderStatusObj.timeline) order.orderStatusObj.timeline = [];
-  order.orderStatusObj.timeline.push({
-    status,
-    timestamp: new Date(),
-    description: note
-  });
+
+  const lastStatusObjTimeline = order.orderStatusObj.timeline[order.orderStatusObj.timeline.length - 1];
+  if (!lastStatusObjTimeline || lastStatusObjTimeline.status !== status || lastStatusObjTimeline.description !== note) {
+    order.orderStatusObj.timeline.push({
+      status,
+      timestamp: new Date(),
+      description: note
+    });
+  }
 
   if (extraData) {
     Object.assign(order, extraData);

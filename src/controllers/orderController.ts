@@ -263,6 +263,7 @@ export const createOrder = async (req: Request, res: Response) => {
         couponCode,
         shippingAddress,
         paymentDetails,
+        orderSummary: req.body.orderSummary,
         fulfillment,
         isScheduledSubscription,
         scheduleDetails,
@@ -501,19 +502,40 @@ export const getOrdersByUserId = async (req: Request, res: Response) => {
         orderNumber: order.orderNumber,
         createdAt: order.createdAt,
         orderItems: resolvedItems,
+        fulfillment: order.fulfillment || (order.isSelfPickup ? { type: 'pickup' } : { type: 'delivery' }),
+        deliveryDetails: order.deliveryDetails || {
+          expectedDelivery: order.createdAt ? new Date(new Date(order.createdAt).getTime() + 48 * 60 * 60 * 1000).toISOString() : new Date().toISOString(),
+          shippingMethod: 'Standard Home Delivery'
+        },
+        deliveryType: order.deliveryType || (order.fulfillment?.type === 'pickup' || order.isSelfPickup ? 'pickup' : 'delivery'),
+        coupon: order.coupon || null,
+        pickupVerification: order.pickupVerification || null,
+        deliveryVerification: order.deliveryVerification || null,
         orderSummary: order.orderSummary || {
-          total: order.totalAmount,
+          itemsCount: resolvedItems.reduce((sum: number, i: any) => sum + (i.quantity || 1), 0),
           subtotal: order.totalAmount,
+          shipping: 0,
+          discount: 0,
+          walletDeduction: 0,
+          rewardsDeduction: 0,
+          tax: 0,
+          total: order.totalAmount,
           grandTotal: order.totalAmount
         },
-        shippingAddress: order.shippingAddress,
+        shippingAddress: order.shippingAddress || (order.deliveryAddress ? {
+          name: order.customerName || 'Customer',
+          phone: order.customerPhone || '',
+          address: order.deliveryAddress,
+          city: 'Adilabad',
+          state: 'Telangana',
+          pincode: '504312'
+        } : null),
         paymentDetails: order.paymentDetails || {
           method: 'cod',
           status: order.paymentStatus === 'Paid' ? 'completed' : 'pending_verification',
           amount: order.totalAmount
         },
         orderStatus: (() => {
-          // FIX 7: Explicit status map prevents inconsistencies when new statuses are added
           const statusMap: Record<string, string> = {
             Placed: 'pending',
             Confirmed: 'confirmed',
@@ -525,11 +547,11 @@ export const getOrdersByUserId = async (req: Request, res: Response) => {
             Cancelled: 'cancelled'
           };
           return {
-            currentStatus: statusMap[order.orderStatus] ?? order.orderStatus.toLowerCase(),
+            currentStatus: statusMap[order.orderStatus] ?? (order.orderStatus ? order.orderStatus.toLowerCase() : 'pending'),
             timeline: (order.timeline || []).map((t: any) => ({
               status: t.status,
-              timestamp: t.date,
-              description: t.note
+              timestamp: t.date || t.timestamp,
+              description: t.note || t.description
             }))
           };
         })()
@@ -549,6 +571,76 @@ export const getOrdersByUserId = async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error('Get user orders error:', error);
     res.status(500).json({ success: false, message: 'Server error retrieving orders', error: error.message });
+  }
+};
+
+export const createReturnRequest = async (req: Request, res: Response) => {
+  try {
+    const { orderId, productId, userId, reason, description, refundMethod, amount } = req.body;
+    const order = await Order.findById(orderId);
+    if (!order) {
+      return res.status(404).json({ success: false, message: 'Order not found' });
+    }
+
+    const ReturnRequest = (mongoose.models.ReturnRequest as any) || (await import('../models/ReturnRequest')).default;
+
+    const returnReq = new ReturnRequest({
+      orderId: order._id,
+      customerId: userId || order.customerId,
+      vendorId: order.sellerId,
+      requestedItems: [{ productId, quantity: 1 }],
+      reason: reason || 'Return Requested',
+      inspectionNotes: description,
+      returnStatus: 'Requested',
+      amount: amount || order.totalAmount
+    });
+
+    await returnReq.save();
+
+    res.status(201).json({
+      success: true,
+      message: 'Return request submitted successfully',
+      return: {
+        _id: returnReq._id,
+        orderId: String(returnReq.orderId),
+        productId: String(productId),
+        reason: returnReq.reason,
+        description,
+        refundMethod: refundMethod || 'original',
+        status: 'requested',
+        createdAt: returnReq.createdAt,
+        amount: amount || order.totalAmount
+      }
+    });
+  } catch (error: any) {
+    console.error('Create return request error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const getUserReturns = async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.params;
+    const ReturnRequest = (mongoose.models.ReturnRequest as any) || (await import('../models/ReturnRequest')).default;
+
+    const returns = await ReturnRequest.find({ customerId: userId }).sort({ createdAt: -1 });
+
+    const mappedReturns = returns.map((r: any) => ({
+      _id: r._id,
+      orderId: String(r.orderId),
+      productId: String(r.requestedItems?.[0]?.productId || ''),
+      reason: r.reason,
+      description: r.inspectionNotes || '',
+      refundMethod: 'original',
+      status: r.returnStatus === 'Requested' ? 'requested' : r.returnStatus.toLowerCase(),
+      createdAt: r.createdAt,
+      amount: r.amount || 0
+    }));
+
+    res.status(200).json({ success: true, returns: mappedReturns });
+  } catch (error: any) {
+    console.error('Get user returns error:', error);
+    res.status(200).json({ success: true, returns: [] });
   }
 };
 

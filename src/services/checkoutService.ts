@@ -14,6 +14,7 @@ export interface CheckoutInput {
   couponCode?: string;
   shippingAddress: any;
   paymentDetails: any;
+  orderSummary?: any;
   fulfillment?: any;
   isScheduledSubscription?: boolean;
   scheduleDetails?: any;
@@ -80,19 +81,30 @@ export class CheckoutService {
       ],
     };
 
+    const finalGrandTotal = input.paymentDetails?.amount ?? input.orderSummary?.grandTotal ?? pricing.orderSummary.grandTotal;
+    const mergedOrderSummary = {
+      ...pricing.orderSummary,
+      ...(input.orderSummary || {}),
+      grandTotal: finalGrandTotal,
+      total: finalGrandTotal
+    };
+
     // 2. Create the Order document
     const newOrder = new Order({
       orderNumber,
       customerId: new mongoose.Types.ObjectId(customerId),
       sellerId: new mongoose.Types.ObjectId(pricing.sellerId),
       items,
-      totalAmount: pricing.orderSummary.grandTotal,
+      totalAmount: finalGrandTotal,
       paymentStatus: input.paymentDetails?.status === 'completed' ? 'Paid' : 'Pending',
       orderStatus: 'Placed',
       timeline,
       orderItems: pricing.orderItems,
       shippingAddress: input.shippingAddress,
-      paymentDetails: input.paymentDetails,
+      paymentDetails: {
+        ...(input.paymentDetails || {}),
+        amount: finalGrandTotal
+      },
       fulfillment: input.fulfillment,
       isSelfPickup: input.fulfillment?.type === 'pickup',
       deliveryDetails: input.fulfillment?.type === 'pickup'
@@ -101,7 +113,7 @@ export class CheckoutService {
       pickupVerification: input.fulfillment?.type === 'pickup'
         ? { otp: Math.floor(1000 + Math.random() * 9000).toString(), verified: false }
         : undefined,
-      orderSummary: pricing.orderSummary,
+      orderSummary: mergedOrderSummary,
       preOrder: input.preOrder,
       isScheduledSubscription: input.isScheduledSubscription || false,
       scheduleDetails: input.scheduleDetails,
