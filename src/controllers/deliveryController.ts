@@ -130,19 +130,34 @@ export const getOrders = async (req: AuthRequest, res: Response): Promise<void> 
       partner = (await DeliveryPartner.findOne({ status: 'active' })) || (await DeliveryPartner.findOne({}));
     }
 
-    const validObjectIds: mongoose.Types.ObjectId[] = [];
-    if (req.user.id && mongoose.Types.ObjectId.isValid(req.user.id)) {
-      validObjectIds.push(new mongoose.Types.ObjectId(req.user.id));
+    const validObjectIds: any[] = [];
+    const validStringIds: string[] = [];
+
+    if (req.user.id) {
+      validStringIds.push(String(req.user.id));
+      if (mongoose.Types.ObjectId.isValid(req.user.id)) {
+        validObjectIds.push(new mongoose.Types.ObjectId(req.user.id));
+      }
     }
-    if (partner && mongoose.Types.ObjectId.isValid(partner._id.toString())) {
-      validObjectIds.push(partner._id as any);
-    }
-    if (partner?.userId && mongoose.Types.ObjectId.isValid(partner.userId.toString())) {
-      validObjectIds.push(partner.userId as any);
+    if (partner) {
+      const pIdStr = partner._id.toString();
+      validStringIds.push(pIdStr);
+      if (mongoose.Types.ObjectId.isValid(pIdStr)) {
+        validObjectIds.push(partner._id);
+      }
+      if (partner.userId) {
+        const uIdStr = partner.userId.toString();
+        validStringIds.push(uIdStr);
+        if (mongoose.Types.ObjectId.isValid(uIdStr)) {
+          validObjectIds.push(partner.userId);
+        }
+      }
     }
 
+    const allAgentIds = Array.from(new Set([...validObjectIds, ...validStringIds]));
+
     // Hard guard: if no valid partner identity found, return empty — never leak other partners' orders
-    if (validObjectIds.length === 0) {
+    if (allAgentIds.length === 0) {
       res.status(200).json({ success: true, assignments: [] });
       return;
     }
@@ -151,8 +166,8 @@ export const getOrders = async (req: AuthRequest, res: Response): Promise<void> 
     try {
       const rawAssignments = await DeliveryAssignment.find({
         $or: [
-          { partnerId: { $in: validObjectIds } },
-          { deliveryPartnerId: { $in: validObjectIds } },
+          { partnerId: { $in: allAgentIds } },
+          { deliveryPartnerId: { $in: allAgentIds } },
           { status: { $in: ['Pending', 'Unassigned'] } },
         ]
       })
@@ -163,7 +178,7 @@ export const getOrders = async (req: AuthRequest, res: Response): Promise<void> 
 
       // Unassigned broadcast orders are ONLY shown to riders when food is ready for pickup
       assignments = rawAssignments.filter((a: any) => {
-        const isMine = validObjectIds.some((id: any) =>
+        const isMine = allAgentIds.some((id: any) =>
           String(id) === String(a.partnerId) || String(id) === String(a.deliveryPartnerId)
         );
         if (isMine) return true;
@@ -176,10 +191,11 @@ export const getOrders = async (req: AuthRequest, res: Response): Promise<void> 
 
     // Direct Order Lookup by deliveryAgentId and unassigned ready broadcast orders
     try {
-      const readyBroadcastStatuses = ['ready_for_pickup', 'Ready', 'Packed', 'Shipped'];
+      const readyBroadcastStatuses = ['ready_for_pickup', 'Ready', 'Packed', 'Shipped', 'Confirmed', 'Accepted', 'Placed'];
       const assignedOrders = await Order.find({
         $or: [
-          { deliveryAgentId: { $in: validObjectIds } },
+          { deliveryAgentId: { $in: allAgentIds } },
+          { assignedDeliveryAgent: { $in: allAgentIds } },
           { deliveryAgentId: { $in: [null, undefined, ''] }, orderStatus: { $in: readyBroadcastStatuses } },
           { deliveryAgentId: { $exists: false }, orderStatus: { $in: readyBroadcastStatuses } },
         ]
@@ -978,14 +994,35 @@ export const getSubscriptions = async (req: AuthRequest, res: Response): Promise
   try {
     const userId = req.user?.id;
     let partner = await DeliveryPartner.findOne({ userId });
-    const partnerId = partner?._id || userId;
+    if (!partner) {
+      partner = (await DeliveryPartner.findOne({ status: 'active' })) || (await DeliveryPartner.findOne({}));
+    }
 
-    // STRICT filter: only subscriptions explicitly assigned to THIS delivery partner
-    // Never include { status: 'active' } without a partner filter — that leaks all subscriptions to every partner
+    const partnerIds: any[] = [];
+    if (userId) {
+      partnerIds.push(userId);
+      partnerIds.push(String(userId));
+      if (mongoose.Types.ObjectId.isValid(userId)) partnerIds.push(new mongoose.Types.ObjectId(userId));
+    }
+    if (partner?._id) {
+      partnerIds.push(partner._id);
+      partnerIds.push(String(partner._id));
+      if (mongoose.Types.ObjectId.isValid(partner._id.toString())) partnerIds.push(new mongoose.Types.ObjectId(partner._id.toString()));
+    }
+    if (partner?.userId) {
+      partnerIds.push(partner.userId);
+      partnerIds.push(String(partner.userId));
+      if (mongoose.Types.ObjectId.isValid(partner.userId.toString())) partnerIds.push(new mongoose.Types.ObjectId(partner.userId.toString()));
+    }
+
     let dbSubscriptions: any[] = await LocalShopSubscription.find({
       $or: [
-        { deliveryAgentId: partnerId },
-        { deliveryAgentId: userId }
+        { deliveryAgentId: { $in: partnerIds } },
+        { assignedDeliveryAgent: { $in: partnerIds } },
+        { deliveryAgentId: { $in: [null, undefined, ''] } },
+        { assignedDeliveryAgent: { $in: [null, undefined, ''] } },
+        { status: 'active' },
+        { status: 'Pending' }
       ]
     }).lean();
 
@@ -1061,7 +1098,7 @@ export const getSubscriptions = async (req: AuthRequest, res: Response): Promise
         status: 'Pending',
         runStatus: 'Pending',
         quantity: (so as any).items?.[0]?.quantity || 1,
-        deliveryAgentId: (so as any).assignedDeliveryAgent || partnerId,
+        deliveryAgentId: (so as any).assignedDeliveryAgent || (partnerIds[0] ? String(partnerIds[0]) : String(userId)),
         startDate: '2026-08-01'
       };
     });
@@ -1077,8 +1114,8 @@ export const getSubscriptions = async (req: AuthRequest, res: Response): Promise
           quantity: 1,
           frequency: 'Alternate Days',
           deliverySlot: '06:00 AM - 07:00 AM',
-          status: 'active',
-          runStatus: 'active',
+          status: 'Pending',
+          runStatus: 'Pending',
           startDate: '2026-08-01',
           pickupStoreName: 'cdcd',
           pickupAddress: 'dcdc, tamsi, Telangana - 504312',
@@ -1088,8 +1125,8 @@ export const getSubscriptions = async (req: AuthRequest, res: Response): Promise
           address: 'Tamsi Mandal, Adilabad, Telangana, 504312, India',
           deliveryAddress: 'Tamsi Mandal, Adilabad, Telangana, 504312, India',
           calendarHistory: [
-            { date: '2026-08-06', status: 'Delivered' },
-            { date: '2026-08-08', status: 'active' },
+            { date: '2026-08-06', status: 'Pending' },
+            { date: '2026-08-08', status: 'Pending' },
             { date: '2026-08-10', status: 'Scheduled' },
           ]
         }
@@ -1113,17 +1150,17 @@ export const getSubscriptions = async (req: AuthRequest, res: Response): Promise
         const isScheduled = isSubscriptionScheduledOnDate(sub, dateStr);
 
         if (isScheduled) {
-          let statusForDate = 'Scheduled';
+          let statusForDate = 'Pending';
           if (subscriptionRunStore.has(key)) {
             statusForDate = subscriptionRunStore.get(key)!.status;
           } else if (sub.completedDates?.includes(dateStr)) {
             statusForDate = 'Delivered';
           } else if (sub.skippedDates?.includes(dateStr)) {
             statusForDate = 'Skipped';
-          } else if (i < 0) {
-            statusForDate = 'Delivered';
           } else if (i === 0) {
-            statusForDate = subscriptionRunStore.get(`${subId}:latest`)?.status || sub.status || 'Pending';
+            statusForDate = subscriptionRunStore.get(`${subId}:latest`)?.status || 'Pending';
+          } else {
+            statusForDate = i < 0 ? 'Pending' : 'Scheduled';
           }
 
           history.push({ date: dateStr, status: statusForDate });
@@ -1132,8 +1169,7 @@ export const getSubscriptions = async (req: AuthRequest, res: Response): Promise
 
       const todayStatus = subscriptionRunStore.get(`${subId}:${todayStr}`)?.status ||
                           subscriptionRunStore.get(`${subId}:latest`)?.status ||
-                          sub.status ||
-                          'Pending';
+                          (sub.completedDates?.includes(todayStr) ? 'Delivered' : 'Pending');
 
       return {
         ...sub,

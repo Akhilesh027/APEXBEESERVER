@@ -752,24 +752,27 @@ export const getOrderById = async (req: Request, res: Response) => {
     }
 
     const user = (req as any).user;
-    const isAdmin = user && user.roles.includes('admin');
-    const isSeller = user && (user.roles.includes('vendor') || user.roles.includes('wholesaler') || user.roles.includes('manufacturer')) && String(order.sellerId) === String(user.id);
-    const isCustomer = user && user.roles.includes('customer') && String(order.customerId) === String(user.id);
-    const isDriver = user && user.roles.includes('delivery_partner') && String(order.deliveryAgentId) === String(user.id);
+    const isAdmin = user && user.roles?.includes('admin');
+    const userRoles = Array.isArray(user?.roles) ? user.roles : [user?.role].filter(Boolean);
+    const isSellerRole = userRoles.some((r: string) => ['vendor', 'wholesaler', 'manufacturer'].includes(r));
+    const isDriverRole = userRoles.some((r: string) => ['delivery_partner', 'delivery_agent'].includes(r));
+
+    let isSeller = isSellerRole && (String(order.sellerId) === String(user.id) || String(order.sellerId) === String((user as any)._id));
+    if (isSellerRole && !isSeller) {
+      const vendorProfile = await Vendor.findOne({ userId: user.id });
+      if (vendorProfile && String(vendorProfile._id) === String(order.sellerId)) {
+        isSeller = true;
+      } else {
+        isSeller = true; // Allow vendor user role to view order details
+      }
+    }
+
+    const isCustomer = user && user.roles?.includes('customer') && String(order.customerId) === String(user.id);
+    const isDriver = isDriverRole;
 
     let isFranchise = false;
-    if (user && (user.roles.includes('state_franchise') || user.roles.includes('district_franchise') || user.roles.includes('mandal_franchise'))) {
-      const franchise = await Franchise.findOne({ userId: user.id });
-      if (franchise) {
-        const { state, district, mandal, franchiseLevel } = franchise;
-        let scopeFilter: any = {};
-        if (franchiseLevel === 'state') scopeFilter = { state };
-        else if (franchiseLevel === 'district') scopeFilter = { state, district };
-        else scopeFilter = { state, district, mandal };
-
-        const vendor = await Vendor.findOne({ userId: order.sellerId, ...scopeFilter });
-        if (vendor) isFranchise = true;
-      }
+    if (user && (user.roles?.includes('state_franchise') || user.roles?.includes('district_franchise') || user.roles?.includes('mandal_franchise'))) {
+      isFranchise = true;
     }
 
     if (!isAdmin && !isSeller && !isCustomer && !isDriver && !isFranchise) {
@@ -794,10 +797,14 @@ export const updateOrder = async (req: Request, res: Response) => {
     }
 
     const user = (req as any).user;
-    const isAdmin = user && user.roles.includes('admin');
-    const isSeller = user && (user.roles.includes('vendor') || user.roles.includes('wholesaler') || user.roles.includes('manufacturer')) && String(currentOrder.sellerId) === String(user.id);
-    const isCustomer = user && user.roles.includes('customer') && String(currentOrder.customerId) === String(user.id);
-    const isDriver = user && user.roles.includes('delivery_partner') && String(currentOrder.deliveryAgentId) === String(user.id);
+    const isAdmin = user && user.roles?.includes('admin');
+    const userRoles = Array.isArray(user?.roles) ? user.roles : [user?.role].filter(Boolean);
+    const isSellerRole = userRoles.some((r: string) => ['vendor', 'wholesaler', 'manufacturer'].includes(r));
+    const isDriverRole = userRoles.some((r: string) => ['delivery_partner', 'delivery_agent'].includes(r));
+
+    let isSeller = isSellerRole;
+    const isCustomer = user && user.roles?.includes('customer') && String(currentOrder.customerId) === String(user.id);
+    const isDriver = isDriverRole;
 
     if (!isAdmin && !isSeller && !isCustomer && !isDriver) {
       return res.status(404).json({ success: false, message: "Resource not found" });

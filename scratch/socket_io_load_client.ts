@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import jwt from 'jsonwebtoken';
 
-const TARGET_URL = process.env.TARGET_URL || 'https://server.apexbee.in';
+const TARGET_URL = process.env.TARGET_URL || 'http://localhost:5500';
 const CONCURRENT_CLIENTS = 100; // Rehearsal size
 const RUN_DURATION_MS = 15000; // 15 seconds monitor
 
