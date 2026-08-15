@@ -17,8 +17,10 @@ class PricingService {
             throw new Error('Checkout items list cannot be empty.');
         }
         let subtotal = 0;
+        let totalMrp = 0;
         let shippingFee = 0;
         let packingFee = 0;
+        let platformFee = 0;
         let discount = 0;
         const uniqueProductIds = Array.from(new Set(items.map((i) => i.productId)));
         const products = await Product_1.default.find({ _id: { $in: uniqueProductIds } });
@@ -47,11 +49,13 @@ class PricingService {
                     firstSellerId = sellerId;
                 }
                 const unitSelling = foodItem.offerPrice && foodItem.offerPrice > 0 ? foodItem.offerPrice : foodItem.basePrice;
-                const unitMrp = foodItem.basePrice;
+                const unitMrp = foodItem.basePrice || unitSelling;
                 const itemPacking = foodItem.packagingCharge || 0;
                 const itemTotal = unitSelling * item.quantity;
                 subtotal += itemTotal;
+                totalMrp += unitMrp * item.quantity;
                 packingFee += itemPacking * item.quantity;
+                platformFee += Math.round((unitSelling * 10) / 100) * item.quantity;
                 orderItems.push({
                     productId: foodItem._id.toString(),
                     name: foodItem.name,
@@ -109,17 +113,25 @@ class PricingService {
             const baseSellingPrice = product.adminPricing?.sellingPrice ?? product.baseSellingPrice ?? 0;
             const unitMrp = matchedVariant ? (matchedVariant.mrp || itemMrp) : itemMrp;
             const unitSelling = matchedVariant ? (matchedVariant.sellingPrice || baseSellingPrice) : baseSellingPrice;
+            const resolvedMrp = unitMrp > unitSelling ? unitMrp : unitSelling;
             const itemShipping = product.adminPricing?.shippingCharge ?? 0;
             const itemPacking = product.adminPricing?.packingCharge ?? 0;
+            // Platform fee (10% or direct fee)
+            const pAny = product;
+            const directPlatformFee = pAny.adminPricing?.platformFeeAmount ?? pAny.platformFeeAmount ?? 0;
+            const platformFeePct = pAny.adminPricing?.platformFeePercent ?? pAny.platformFeePercent ?? 10;
+            const itemPlatformFee = directPlatformFee > 0 ? directPlatformFee : Math.round((unitSelling * platformFeePct) / 100);
             const itemTotal = unitSelling * item.quantity;
             subtotal += itemTotal;
+            totalMrp += resolvedMrp * item.quantity;
             shippingFee += itemShipping * item.quantity;
             packingFee += itemPacking * item.quantity;
+            platformFee += itemPlatformFee * item.quantity;
             orderItems.push({
                 productId: product._id.toString(),
                 name: product.name,
                 price: unitSelling,
-                originalPrice: unitMrp,
+                originalPrice: resolvedMrp,
                 image: product.thumbnail || product.images?.[0] || '/placeholder.png',
                 quantity: item.quantity,
                 color: item.color || 'default',
@@ -174,16 +186,27 @@ class PricingService {
             }
             couponId = coupon._id.toString();
         }
-        const total = subtotal + shippingFee + packingFee - discount;
-        const grandTotal = total;
+        const mrpDiscount = Math.max(0, totalMrp - subtotal);
+        const discountedPrice = Math.max(0, subtotal - discount);
+        const taxableAmount = discountedPrice + packingFee + shippingFee + platformFee;
+        const tax = Math.round(taxableAmount * 0.05);
+        const grandTotal = taxableAmount + tax;
         return {
             orderItems,
             orderSummary: {
+                itemsCount: orderItems.reduce((sum, i) => sum + i.quantity, 0),
+                totalMrp,
+                mrpDiscount,
                 subtotal,
                 shippingFee,
+                shipping: shippingFee,
                 packingFee,
+                packageCharge: packingFee,
+                platformFee,
                 discount,
-                total,
+                couponDiscount: discount,
+                tax,
+                total: grandTotal,
                 grandTotal,
             },
             sellerId: firstSellerId,

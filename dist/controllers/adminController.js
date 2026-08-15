@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getAdminLiveFoodOrders = exports.getAdminRestaurantOrders = exports.getAdminRestaurantMenu = exports.getAdminFoodRestaurants = exports.getTreasuryMasterStats = exports.updateVendorCategoryGovernance = exports.getMetrics = exports.setFeatureFlag = exports.getFeatureFlag = exports.cleanupExpiredReservations = exports.requestServiceProviderDocument = exports.updateServiceProviderDocumentStatus = exports.createDeliveryPartner = exports.getDeliveryPartners = exports.getReconciliationStats = exports.getWallets = exports.processEntrepreneurCommissionRelease = exports.processManufacturerDrawdown = exports.processWholesalerDrawdown = exports.processVendorDrawdown = exports.updateEntrepreneurStatus = exports.updateManufacturerStatus = exports.updateWholesalerStatus = exports.updateUserStatus = exports.createTerritory = exports.getTerritories = exports.getFranchises = exports.updateServiceProviderStatus = exports.getServiceProviders = exports.getEntrepreneurs = exports.getManufacturers = exports.getWholesalers = exports.getUsers = exports.updateServiceProviderKycStatus = exports.getServiceProviderKycs = exports.updateVendorStatus = exports.updateVendorDocumentStatus = exports.getVendorProducts = exports.getVendors = exports.getDashboardStats = exports.reviewApplication = exports.rejectApplication = exports.verifyKycApplication = exports.approveApplication = exports.getApplicationById = exports.getApplications = void 0;
+exports.getAdminLiveFoodOrders = exports.getAdminRestaurantOrders = exports.getAdminRestaurantMenu = exports.getAdminFoodRestaurants = exports.getTreasuryMasterStats = exports.updateVendorCategoryGovernance = exports.getMetrics = exports.setFeatureFlag = exports.getFeatureFlag = exports.cleanupExpiredReservations = exports.requestServiceProviderDocument = exports.updateServiceProviderDocumentStatus = exports.createDeliveryPartner = exports.getDeliveryPartners = exports.getReconciliationStats = exports.getWallets = exports.processEntrepreneurCommissionRelease = exports.processManufacturerDrawdown = exports.processWholesalerDrawdown = exports.processVendorDrawdown = exports.updateEntrepreneurStatus = exports.updateManufacturerStatus = exports.updateWholesalerStatus = exports.updateUserStatus = exports.createTerritory = exports.getTerritories = exports.updateFranchiseStatus = exports.getFranchises = exports.updateServiceProviderStatus = exports.getServiceProviders = exports.getEntrepreneurs = exports.getManufacturers = exports.getWholesalers = exports.getUsers = exports.updateServiceProviderKycStatus = exports.getServiceProviderKycs = exports.updateVendorStatus = exports.updateVendorDocumentStatus = exports.getVendorProducts = exports.getVendors = exports.getDashboardStats = exports.reviewApplication = exports.rejectApplication = exports.verifyKycApplication = exports.approveApplication = exports.getApplicationById = exports.getApplications = void 0;
 exports.assignTerritoryAndMapFranchises = assignTerritoryAndMapFranchises;
 const mongoose_1 = __importDefault(require("mongoose"));
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
@@ -1859,6 +1859,48 @@ const getFranchises = async (req, res) => {
     }
 };
 exports.getFranchises = getFranchises;
+const updateFranchiseStatus = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { status, kycStatus } = req.body;
+        const franchise = await Franchise_1.Franchise.findById(id);
+        if (!franchise) {
+            res.status(404).json({ success: false, message: "Franchise profile not found" });
+            return;
+        }
+        if (status)
+            franchise.status = status;
+        if (kycStatus)
+            franchise.kycStatus = kycStatus;
+        if (status === "active" || kycStatus === "Approved") {
+            franchise.approvedAt = new Date();
+        }
+        const saved = await franchise.save();
+        const user = await User_1.User.findById(franchise.userId);
+        if (user && status === "active") {
+            user.isVerified = true;
+            const fRole = (franchise.franchiseLevel + "_franchise");
+            if (!user.roles.includes(fRole)) {
+                user.roles.push(fRole);
+            }
+            await user.save();
+        }
+        res.status(200).json({
+            success: true,
+            message: "Franchise status updated successfully",
+            franchise: saved,
+        });
+    }
+    catch (error) {
+        console.error("Update franchise status error:", error);
+        res.status(500).json({
+            success: false,
+            message: "Server error updating franchise status",
+            error: error.message,
+        });
+    }
+};
+exports.updateFranchiseStatus = updateFranchiseStatus;
 const getTerritories = async (req, res) => {
     try {
         if (req.query.clear === 'true') {

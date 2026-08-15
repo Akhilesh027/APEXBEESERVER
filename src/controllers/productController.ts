@@ -126,7 +126,7 @@ const getUploadedFiles = async (req: Request) => {
 
 const populateProduct = (query: any) => {
   return query
-    .populate('sellerId', 'name email mobile phone roles sellerProfile')
+    .populate('sellerId', 'name email mobile phone roles shopName storeName businessName storeLogo profilePicture logo sellerProfile rating reviewsCount latitude longitude location address city state zipcode')
     .populate('categoryId', 'name slug level brands attributes')
     .populate('subCategoryId', 'name slug level brands attributes')
     .populate('childCategoryId', 'name slug level brands attributes');
@@ -547,23 +547,26 @@ export const getAllProducts = async (req: Request, res: Response) => {
 
       if (pincode) {
         vendorLocationOr.push({ pincode });
+        vendorLocationOr.push({ pinCode: pincode });
+        vendorLocationOr.push({ address: { $regex: pincode, $options: 'i' } });
       }
       if (mandal) {
-        vendorLocationOr.push({ mandal: { $regex: new RegExp(`^${mandal.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}$`, 'i') } });
+        vendorLocationOr.push({ mandal: { $regex: mandal.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&'), $options: 'i' } });
+        vendorLocationOr.push({ address: { $regex: mandal.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&'), $options: 'i' } });
       }
       if (district) {
-        vendorLocationOr.push({ district: { $regex: new RegExp(`^${district.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}$`, 'i') } });
+        vendorLocationOr.push({ district: { $regex: district.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&'), $options: 'i' } });
+        vendorLocationOr.push({ city: { $regex: district.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&'), $options: 'i' } });
+        vendorLocationOr.push({ address: { $regex: district.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&'), $options: 'i' } });
       }
       if (state) {
-        vendorLocationOr.push({ state: { $regex: new RegExp(`^${state.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}$`, 'i') } });
+        vendorLocationOr.push({ state: { $regex: state.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&'), $options: 'i' } });
       }
       vendorLocationOr.push({ isGlobalDelivery: true });
       vendorLocationOr.push({ deliveryMode: 'national_courier' });
 
       const matchingVendors = await Vendor.find({
-        status: { $in: ['active', 'Approved', 'approved'] },
-        marketplaceStatus: { $in: ['Approved', 'Approved & Verified', 'active'] },
-        isMarketplaceListed: true,
+        status: { $in: ['active', 'Approved', 'approved', 'ACTIVE', 'Active'] },
         $or: vendorLocationOr
       }).select('_id userId');
 
@@ -571,8 +574,9 @@ export const getAllProducts = async (req: Request, res: Response) => {
 
       filter.$or = [
         ...(allowedSellerIds.length > 0 ? [{ sellerId: { $in: allowedSellerIds } }] : []),
-        { deliveryScope: { $in: ['pan_india', 'both'] } },
-        { isPanIndia: true }
+        { deliveryScope: { $in: ['pan_india', 'both', 'national_courier'] } },
+        { isPanIndia: true },
+        { isGlobalDelivery: true }
       ];
     }
 
@@ -764,7 +768,15 @@ export const getAllProducts = async (req: Request, res: Response) => {
       productObj.vendorLocationName = vendor?.district || vendor?.city || vendor?.state || '';
 
       // Store name & store rating override
-      productObj.brand = vendor?.businessName || productObj.brand || 'ApexBee Seller';
+      const shopNameVal = vendor?.shopName || vendor?.storeName || vendor?.storeDesign?.shopName || vendor?.storeDesign?.storeName || vendor?.businessName;
+      if (shopNameVal) {
+        productObj.shopName = shopNameVal;
+        productObj.storeName = shopNameVal;
+      }
+      if (vendor?.businessName) {
+        productObj.businessName = vendor.businessName;
+      }
+      productObj.brand = shopNameVal || vendor?.businessName || productObj.brand || 'ApexBee Seller';
       productObj.vendorRating = 4.8;
 
       return productObj;

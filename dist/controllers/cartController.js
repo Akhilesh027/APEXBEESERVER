@@ -93,13 +93,19 @@ const getCart = async (req, res) => {
                 originalPrice = variant.mrp ?? originalPrice;
                 sellingPrice = variant.sellingPrice ?? sellingPrice;
             }
-            const price = sellingPrice + packingCharge + deliveryFee;
+            const price = sellingPrice;
             return {
                 _id: item._id,
                 productId: product._id,
                 quantity: item.quantity,
                 color: item.color,
                 size: item.size,
+                selectedColor: item.color,
+                selectedSize: item.size,
+                selectedAttributes: item.selectedAttributes || {
+                    ...(item.color && item.color !== 'default' ? { color: item.color } : {}),
+                    ...(item.size && item.size !== 'default' ? { size: item.size } : {}),
+                },
                 name: product.name,
                 itemName: product.name,
                 image: product.thumbnail || (product.images && product.images[0]) || '',
@@ -109,7 +115,14 @@ const getCart = async (req, res) => {
                 salesPrice: originalPrice,
                 originalPrice: originalPrice,
                 deliveryFee: deliveryFee,
+                shippingCharge: deliveryFee,
                 packingCharge: packingCharge,
+                platformFeeAmount: product.adminPricing?.platformFeeAmount ?? 0,
+                platformFeePercent: product.adminPricing?.platformFeePercent ?? 0,
+                distributedFrom: product.adminPricing?.distributedFrom ?? 'platform_fee',
+                commissionType: product.adminPricing?.commissionType ?? product.attributes?.commissionType ?? 'vendor',
+                adminPricing: product.adminPricing,
+                product: product,
                 sellingPrice: sellingPrice,
                 stock: product.stock,
                 vendorId: product.sellerId?._id || product.sellerId,

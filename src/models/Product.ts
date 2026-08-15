@@ -5,7 +5,7 @@ export type ProductModerationStatus = 'draft' | 'pending' | 'approved' | 'reject
 export interface IProduct extends Document {
   name: string;
   slug: string;
-  description: string;
+  description?: string;
   categoryId: mongoose.Types.ObjectId;
   subcategoryId: mongoose.Types.ObjectId;
   brandId?: mongoose.Types.ObjectId;
@@ -82,7 +82,7 @@ const ProductSchema = new Schema<IProduct>(
   {
     name: { type: String, required: true, trim: true },
     slug: { type: String, required: true, lowercase: true, trim: true },
-    description: { type: String, required: true, default: '' },
+    description: { type: String, required: false, default: '' },
     categoryId: { type: Schema.Types.ObjectId, ref: 'Category', required: false },
     subcategoryId: { type: Schema.Types.ObjectId, ref: 'Subcategory', required: false },
     brandId: { type: Schema.Types.ObjectId, ref: 'Brand' },

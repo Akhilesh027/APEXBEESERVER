@@ -128,24 +128,18 @@ export class VendorMarketplaceService {
           matchedVendors.push({ ...v, distanceInKm: 1.5 });
         }
       });
-    } else if (userPin) {
-      // ── Pincode Matching ──────────────────────────────────────────
+    } else if (userPin || userCity) {
+      // ── Location (Pincode / Mandal / District / City) Matching ─────
       allVendors.forEach((v: any) => {
-        if (v.pincode === userPin || v.pinCode === userPin) {
-          matchedVendors.push({ ...v, distanceInKm: 1.2 });
-        }
-      });
-    } else if (userCity) {
-      // ── City / District Matching ──────────────────────────────────
-      allVendors.forEach((v: any) => {
-        const cityMatch = (
-          (v.district && v.district.toLowerCase().includes(userCity)) ||
-          (v.mandal && v.mandal.toLowerCase().includes(userCity)) ||
-          (v.address && v.address.toLowerCase().includes(userCity)) ||
-          (v.city && v.city.toLowerCase().includes(userCity))
-        );
-        if (cityMatch) {
-          matchedVendors.push({ ...v, distanceInKm: 2.0 });
+        const vPin = String(v.pincode || v.pinCode || "").trim();
+        const vAddr = String(v.address || "").toLowerCase();
+        const vLoc = `${v.locality || ''} ${v.mandal || ''} ${v.district || ''} ${v.city || ''}`.toLowerCase();
+
+        const matchPin = userPin && (vPin === userPin || vAddr.includes(userPin));
+        const matchCity = userCity && (vLoc.includes(userCity) || vAddr.includes(userCity));
+
+        if (matchPin || matchCity) {
+          matchedVendors.push({ ...v, distanceInKm: matchPin ? 1.2 : 2.0 });
         }
       });
     } else {

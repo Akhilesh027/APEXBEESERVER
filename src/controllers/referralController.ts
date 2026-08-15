@@ -252,7 +252,11 @@ export const getReferralSettings = async (req: Request, res: Response) => {
   try {
     let settings = await ReferralSettings.findOne({});
     if (!settings) {
-      settings = new ReferralSettings();
+      settings = new ReferralSettings({
+        firstOrderRewards: { level1: 50, level2: 0, level3: 0 },
+        enabled: true,
+        defaultReferralCode: "APEXBEE"
+      });
       await settings.save();
     }
     return res.status(200).json({ success: true, settings });

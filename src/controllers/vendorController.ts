@@ -952,7 +952,12 @@ export const searchVendors = async (req: Request, res: Response): Promise<void> 
 export const getVendorDetails = async (req: Request, res: Response): Promise<void> => {
   try {
     const { vendorId } = req.params;
-    const vendor = await Vendor.findById(vendorId);
+    let vendor = null;
+    if (mongoose.Types.ObjectId.isValid(vendorId)) {
+      vendor = await Vendor.findOne({ $or: [{ _id: vendorId }, { userId: vendorId }] });
+    } else {
+      vendor = await Vendor.findOne({ userId: vendorId });
+    }
     if (!vendor) {
       res.status(404).json({ success: false, message: "Vendor profile not found" });
       return;

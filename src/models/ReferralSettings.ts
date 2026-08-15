@@ -14,8 +14,8 @@ const ReferralSettingsSchema = new Schema<IReferralSettings>(
   {
     firstOrderRewards: {
       level1: { type: Number, default: 50 },
-      level2: { type: Number, default: 25 },
-      level3: { type: Number, default: 25 }
+      level2: { type: Number, default: 0 },
+      level3: { type: Number, default: 0 }
     },
     enabled: { type: Boolean, default: true },
     defaultReferralCode: { type: String, default: "APEXBEE" }

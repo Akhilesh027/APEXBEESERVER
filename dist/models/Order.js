@@ -141,6 +141,10 @@ const OrderSchema = new mongoose_1.Schema({
     categoryId: { type: mongoose_1.Schema.Types.Mixed },
     categoryName: { type: String, default: '' },
     orderType: { type: String, default: 'RETAIL' },
+    estimatedDeliveryMinutes: { type: Number, default: 20 },
+    acceptedAt: { type: Date, default: null },
+    estimatedDeliveryTime: { type: Date, default: null },
+    prepStatus: { type: String, default: 'pending' },
 }, { timestamps: true });
 OrderSchema.index({ orderNumber: 1 });
 OrderSchema.index({ customerId: 1 });

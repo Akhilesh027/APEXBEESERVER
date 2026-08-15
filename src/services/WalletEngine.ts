@@ -815,6 +815,9 @@ export class WalletEngine {
   static async approveWithdrawal(
     userId: string | mongoose.Types.ObjectId,
     ledgerEntryId: string | mongoose.Types.ObjectId,
+    referenceId?: string,
+    payoutMethod?: string,
+    remarks?: string,
     session?: ClientSession
   ): Promise<IWallet> {
     return this.runInTransaction(session, async (sess) => {
@@ -826,6 +829,16 @@ export class WalletEngine {
 
       const amount = entry.amount;
       const opKey = `approve_withdrawal_${ledgerEntryId}`;
+      const setUpdate: any = {
+        "ledgerEntries.$.status": "completed",
+        "ledgerEntries.$.remarks": remarks || (referenceId ? `Withdrawal approved via ${payoutMethod || 'Bank'} (Ref/UTR: ${referenceId})` : "Withdrawal request approved and processed")
+      };
+      if (referenceId) {
+        setUpdate["ledgerEntries.$.referenceId"] = referenceId;
+      }
+      if (payoutMethod) {
+        setUpdate["ledgerEntries.$.paymentMethod"] = payoutMethod;
+      }
 
       // 1. Update wallet balance atomically
       const result = await Wallet.findOneAndUpdate(
@@ -841,10 +854,7 @@ export class WalletEngine {
             totalDebits: Number(amount.toFixed(2)),
             version: 1,
           },
-          $set: {
-            "ledgerEntries.$.status": "completed",
-            "ledgerEntries.$.remarks": "Withdrawal request approved and processed"
-          }
+          $set: setUpdate
         },
         { new: true, session: sess }
       );

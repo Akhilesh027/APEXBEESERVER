@@ -177,20 +177,22 @@ class SettlementEngine {
                     }
                     if (hierarchy.level2UserId) {
                         try {
-                            const l2Amount = (settings.firstOrderRewards && settings.firstOrderRewards.level2 !== undefined && settings.firstOrderRewards.level2 !== 0)
+                            const l2Amount = (settings.firstOrderRewards && settings.firstOrderRewards.level2 !== undefined)
                                 ? settings.firstOrderRewards.level2
-                                : 25;
-                            await this.createReferralTransactionUnique({
-                                recipientUserId: hierarchy.level2UserId,
-                                referredUserId: customer._id,
-                                orderId: order._id,
-                                level: 2,
-                                amount: l2Amount,
-                                transactionType: "first_order_bonus",
-                                rewardReason: "first_order_bonus",
-                                releaseDate,
-                                status: "placed"
-                            }, session);
+                                : 0;
+                            if (l2Amount > 0) {
+                                await this.createReferralTransactionUnique({
+                                    recipientUserId: hierarchy.level2UserId,
+                                    referredUserId: customer._id,
+                                    orderId: order._id,
+                                    level: 2,
+                                    amount: l2Amount,
+                                    transactionType: "first_order_bonus",
+                                    rewardReason: "first_order_bonus",
+                                    releaseDate,
+                                    status: "placed"
+                                }, session);
+                            }
                         }
                         catch (err) {
                             console.warn("First order bonus level 2 uniqueness caught:", err.message);
@@ -198,20 +200,22 @@ class SettlementEngine {
                     }
                     if (hierarchy.level3UserId) {
                         try {
-                            const l3Amount = (settings.firstOrderRewards && settings.firstOrderRewards.level3 !== undefined && settings.firstOrderRewards.level3 !== 0)
+                            const l3Amount = (settings.firstOrderRewards && settings.firstOrderRewards.level3 !== undefined)
                                 ? settings.firstOrderRewards.level3
-                                : 25;
-                            await this.createReferralTransactionUnique({
-                                recipientUserId: hierarchy.level3UserId,
-                                referredUserId: customer._id,
-                                orderId: order._id,
-                                level: 3,
-                                amount: l3Amount,
-                                transactionType: "first_order_bonus",
-                                rewardReason: "first_order_bonus",
-                                releaseDate,
-                                status: "placed"
-                            }, session);
+                                : 0;
+                            if (l3Amount > 0) {
+                                await this.createReferralTransactionUnique({
+                                    recipientUserId: hierarchy.level3UserId,
+                                    referredUserId: customer._id,
+                                    orderId: order._id,
+                                    level: 3,
+                                    amount: l3Amount,
+                                    transactionType: "first_order_bonus",
+                                    rewardReason: "first_order_bonus",
+                                    releaseDate,
+                                    status: "placed"
+                                }, session);
+                            }
                         }
                         catch (err) {
                             console.warn("First order bonus level 3 uniqueness caught:", err.message);

@@ -101,7 +101,9 @@ export const approveWithdrawal = async (req: AuthRequest, res: Response) => {
   const session = await mongoose.startSession();
   try {
     const { id } = req.params;
-    
+    const { referenceId, utr, bankRef, payoutMethod, remarks } = req.body || {};
+    const finalRefId = referenceId || utr || bankRef;
+
     const wallet = await Wallet.findOne({ "ledgerEntries._id": id });
     if (!wallet) {
       return res.status(404).json({ success: false, message: "Withdrawal request not found" });
@@ -109,10 +111,10 @@ export const approveWithdrawal = async (req: AuthRequest, res: Response) => {
 
     let updatedWallet: any = null;
     await session.withTransaction(async () => {
-      updatedWallet = await WalletEngine.approveWithdrawal(wallet.userId, id, session);
+      updatedWallet = await WalletEngine.approveWithdrawal(wallet.userId, id, finalRefId, payoutMethod, remarks, session);
     });
 
-    return res.status(200).json({ success: true, message: "Withdrawal approved successfully", wallet: updatedWallet });
+    return res.status(200).json({ success: true, message: "Withdrawal approved successfully", referenceId: finalRefId, payoutMethod, wallet: updatedWallet });
   } catch (error: any) {
     return res.status(500).json({ success: false, message: error.message });
   } finally {

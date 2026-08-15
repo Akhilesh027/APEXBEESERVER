@@ -116,20 +116,27 @@ export const acceptFoodOrder = async (req: FoodPartnerAuthRequest, res: Response
       return;
     }
 
-    const estimatedDeliveryTime = new Date(Date.now() + (prepTime + 15) * 60 * 1000);
+    const acceptedAt = new Date();
+    const estimatedDeliveryTime = new Date(acceptedAt.getTime() + prepTime * 60 * 1000);
 
     order.orderStatus = 'accepted';
+    order.prepStatus = 'preparing';
+    order.acceptedAt = acceptedAt;
+    order.estimatedDeliveryMinutes = prepTime;
+    order.estimatedDeliveryTime = estimatedDeliveryTime;
     order.timeline = order.timeline || [];
     order.timeline.push({
       status: 'accepted',
-      timestamp: new Date(),
+      timestamp: acceptedAt,
       note: `Restaurant accepted order with preparation time ${prepTime} mins`,
     });
     order.orderSummary = {
       ...order.orderSummary,
       preparationTimeMinutes: prepTime,
-      estimatedDeliveryTime,
+      estimatedDeliveryMinutes: prepTime,
+      estimatedDeliveryTime: estimatedDeliveryTime,
     };
+    order.markModified('orderSummary');
 
     order.deliveryAgentId = undefined;
     await order.save();

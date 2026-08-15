@@ -20,8 +20,8 @@ function checkUrl(url) {
 }
 
 async function run() {
-  const r1 = await checkUrl('http://localhost:5500/health');
-  const r2 = await checkUrl('http://localhost:5500/api/health');
+  const r1 = await checkUrl('https://server.apexbee.in/health');
+  const r2 = await checkUrl('https://server.apexbee.in/api/health');
   console.log("R1:", r1);
   console.log("R2:", r2);
 }

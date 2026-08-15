@@ -644,6 +644,125 @@ export const getUserReturns = async (req: Request, res: Response) => {
   }
 };
 
+export const getActiveCustomerOrder = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.id || (req as any).user?._id || req.params.userId;
+    if (!userId) {
+      return res.status(400).json({ success: false, message: 'User ID is required' });
+    }
+
+    const activeOrder = await Order.findOne({
+      customerId: userId,
+      orderStatus: {
+        $in: [
+          'placed', 'accepted', 'preparing', 'out_for_delivery',
+          'Placed', 'Confirmed', 'Packed', 'Ready', 'Shipped', 'Out for Delivery', 'assigned'
+        ]
+      }
+    })
+      .populate('sellerId', 'businessName shopName name phone storeDesign logo')
+      .sort({ createdAt: -1 });
+
+    if (!activeOrder) {
+      return res.status(200).json({ success: true, activeOrder: null });
+    }
+
+    const sellerObj: any = activeOrder.sellerId;
+    const storeName = sellerObj?.shopName || sellerObj?.businessName || sellerObj?.name || 'ApexBee Partner';
+
+    const prepMinutes = activeOrder.estimatedDeliveryMinutes || activeOrder.orderSummary?.preparationTimeMinutes || 20;
+    const acceptedAtTime = activeOrder.acceptedAt ? new Date(activeOrder.acceptedAt).getTime() : new Date(activeOrder.createdAt).getTime();
+    const estDeliveryTime = activeOrder.estimatedDeliveryTime ? new Date(activeOrder.estimatedDeliveryTime).getTime() : acceptedAtTime + prepMinutes * 60 * 1000;
+
+    const itemsStr = (activeOrder.items || []).map((i: any) => `${i.productName || i.name || ''} ${i.categoryName || ''}`).join(' ').toLowerCase();
+    const catStr = `${activeOrder.categoryName || ''} ${activeOrder.orderType || ''} ${sellerObj?.businessName || ''} ${sellerObj?.shopName || ''}`.toLowerCase();
+    const fullText = `${itemsStr} ${catStr}`;
+
+    const isFoodOrder =
+      activeOrder.orderType === 'FOOD' ||
+      activeOrder.orderType === 'RESTAURANT' ||
+      fullText.includes('food') ||
+      fullText.includes('dining') ||
+      fullText.includes('restaurant') ||
+      fullText.includes('biryani') ||
+      fullText.includes('bakery') ||
+      fullText.includes('tiffin') ||
+      fullText.includes('kitchen') ||
+      fullText.includes('hotel') ||
+      fullText.includes('fast food');
+
+    const hasAccepted = Boolean(activeOrder.acceptedAt || ['accepted', 'preparing', 'confirmed', 'packed', 'ready', 'shipped', 'out_for_delivery'].includes(String(activeOrder.orderStatus).toLowerCase()));
+
+    return res.status(200).json({
+      success: true,
+      activeOrder: {
+        _id: activeOrder._id,
+        orderNumber: activeOrder.orderNumber,
+        items: activeOrder.items,
+        totalAmount: activeOrder.totalAmount,
+        orderStatus: activeOrder.orderStatus,
+        storeName,
+        estimatedDeliveryMinutes: prepMinutes,
+        acceptedAt: activeOrder.acceptedAt ? new Date(activeOrder.acceptedAt).toISOString() : new Date(activeOrder.createdAt).toISOString(),
+        estimatedDeliveryTime: new Date(estDeliveryTime).toISOString(),
+        prepStatus: activeOrder.prepStatus || 'preparing',
+        isFoodOrder,
+        hasAccepted,
+        createdAt: activeOrder.createdAt
+      }
+    });
+  } catch (error: any) {
+    console.error('getActiveCustomerOrder error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const acceptOrderWithPrepTime = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const prepMinutes = Math.max(5, Math.min(180, Number(req.body.prepMinutes) || Number(req.body.estimatedDeliveryMinutes) || Number(req.body.preparationTimeMinutes) || 20));
+
+    const order = await Order.findById(id);
+    if (!order) {
+      return res.status(404).json({ success: false, message: 'Order not found' });
+    }
+
+    const acceptedAt = new Date();
+    const estimatedDeliveryTime = new Date(acceptedAt.getTime() + prepMinutes * 60 * 1000);
+
+    order.orderStatus = 'preparing';
+    order.prepStatus = 'preparing';
+    order.acceptedAt = acceptedAt;
+    order.estimatedDeliveryMinutes = prepMinutes;
+    order.estimatedDeliveryTime = estimatedDeliveryTime;
+    order.orderSummary = {
+      ...order.orderSummary,
+      preparationTimeMinutes: prepMinutes,
+      estimatedDeliveryMinutes: prepMinutes,
+      estimatedDeliveryTime: estimatedDeliveryTime,
+    };
+    order.markModified('orderSummary');
+
+    order.timeline = order.timeline || [];
+    order.timeline.push({
+      status: 'preparing',
+      timestamp: acceptedAt,
+      note: `Restaurant confirmed order with ${prepMinutes} mins preparation time`,
+    });
+
+    await order.save();
+
+    return res.status(200).json({
+      success: true,
+      message: `Order accepted! Estimated delivery time set to ${prepMinutes} minutes.`,
+      order
+    });
+  } catch (error: any) {
+    console.error('acceptOrderWithPrepTime error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 export const getOrders = async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
@@ -1011,7 +1130,26 @@ export const deleteOrder = async (req: Request, res: Response) => {
 export const getOrderCountByUserId = async (req: Request, res: Response) => {
   try {
     const { userId } = req.params;
-    const count = await Order.countDocuments({ customerId: userId });
+    const { status } = req.query;
+
+    let query: any = { customerId: userId };
+    if (status === "all") {
+      // Count all orders regardless of status
+    } else {
+      // Default / active: Count only active / pending orders
+      query.orderStatus = {
+        $nin: [
+          "Delivered", "delivered", "DELIVERED",
+          "Completed", "completed", "COMPLETED",
+          "Cancelled", "cancelled", "CANCELLED",
+          "Returned", "returned", "RETURNED",
+          "Refunded", "refunded", "REFUNDED",
+          "Picked Up", "picked up", "PICKED UP"
+        ]
+      };
+    }
+
+    const count = await Order.countDocuments(query);
     return res.status(200).json({ success: true, count });
   } catch (error: any) {
     return res.status(500).json({ success: false, message: error.message });
@@ -1248,5 +1386,40 @@ export const getFirstOrderCheck = async (req: Request, res: Response) => {
     res.status(200).json({ success: true, isFirstOrder: orderCount === 0 });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const rateOrderExperience = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { orderId } = req.params;
+    const { targetType, rating, comment } = req.body; // targetType: 'store' | 'delivery'
+
+    const order: any = await Order.findById(orderId);
+    if (!order) {
+      res.status(404).json({ success: false, message: 'Order not found' });
+      return;
+    }
+
+    if (!order.ratings) order.ratings = {};
+    if (targetType === 'store') {
+      order.ratings.store = {
+        rating: Number(rating || 5),
+        comment: comment || '',
+        createdAt: new Date(),
+      };
+    } else if (targetType === 'delivery') {
+      order.ratings.delivery = {
+        rating: Number(rating || 5),
+        comment: comment || '',
+        createdAt: new Date(),
+      };
+    }
+
+    if (typeof order.markModified === 'function') order.markModified('ratings');
+    await order.save();
+    res.status(200).json({ success: true, message: `${targetType === 'store' ? 'Store' : 'Delivery partner'} review saved successfully`, ratings: order.ratings });
+  } catch (error: any) {
+    console.error('rateOrderExperience error:', error);
+    res.status(500).json({ success: false, message: 'Failed to submit review', error: error.message });
   }
 };

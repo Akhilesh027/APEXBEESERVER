@@ -14,11 +14,19 @@ const foodAvailabilityService_1 = require("../services/foodAvailabilityService")
 const TableBooking_1 = require("../models/TableBooking");
 const getCustomerRestaurantsListing = async (req, res) => {
     try {
-        const { cuisine, businessType, foodPreference, search, lat, lng } = req.query;
+        const { cuisine, businessType, foodPreference, search, lat, lng, pincode, zipcode } = req.query;
         const filter = {
             verificationStatus: { $ne: 'REJECTED' },
             accountStatus: { $ne: 'BLOCKED' },
         };
+        const activePincode = (pincode || zipcode || '').toString().trim();
+        if (activePincode) {
+            filter.$or = [
+                { pincode: activePincode },
+                { zipcode: activePincode },
+                { 'address.pincode': activePincode }
+            ];
+        }
         if (businessType)
             filter.businessType = businessType;
         if (foodPreference)
@@ -53,6 +61,7 @@ const getCustomerRestaurantsListing = async (req, res) => {
                 activeOfferSummary: offers[0] ? `${offers[0].discountValue}% OFF` : null,
                 locality: r.locality,
                 city: r.city,
+                pincode: r.pincode || r.zipcode || r.address?.pincode,
             };
         }));
         res.status(200).json({ success: true, count: results.length, restaurants: results });
@@ -234,8 +243,20 @@ const validateFoodCart = async (req, res) => {
 exports.validateFoodCart = validateFoodCart;
 const getAllFoodItems = async (req, res) => {
     try {
-        const { category, search, veg, limit = 50 } = req.query;
+        const { category, search, veg, pincode, zipcode, limit = 50 } = req.query;
+        const activePincode = (pincode || zipcode || '').toString().trim();
         const filter = { status: 'ACTIVE' };
+        if (activePincode) {
+            const matchingRestaurants = await RestaurantProfile_1.RestaurantProfile.find({
+                $or: [
+                    { pincode: activePincode },
+                    { zipcode: activePincode },
+                    { 'address.pincode': activePincode }
+                ]
+            }).select('_id');
+            const restIds = matchingRestaurants.map(r => r._id);
+            filter.restaurantId = { $in: restIds };
+        }
         if (veg === 'true' || veg === 'VEG')
             filter.foodType = 'VEG';
         if (veg === 'false' || veg === 'NON_VEG')
@@ -247,7 +268,7 @@ const getAllFoodItems = async (req, res) => {
             .sort({ createdAt: -1 });
         const results = await Promise.all(items.map(async (item) => {
             const anyItem = item;
-            const rest = await RestaurantProfile_1.RestaurantProfile.findById(item.restaurantId).select('restaurantName logo city locality');
+            const rest = await RestaurantProfile_1.RestaurantProfile.findById(item.restaurantId).select('restaurantName logo city locality pincode zipcode address');
             const price = item.basePrice || anyItem.price || anyItem.offerPrice || 199;
             const mrp = anyItem.mrp || Math.round(price * 1.25);
             return {
@@ -266,6 +287,7 @@ const getAllFoodItems = async (req, res) => {
                 restaurantId: item.restaurantId,
                 restaurantName: rest?.restaurantName || 'Verified Food Outlet',
                 locality: rest?.locality || rest?.city || 'Hyderabad',
+                pincode: rest?.pincode || rest?.zipcode || rest?.address?.pincode || activePincode,
             };
         }));
         res.status(200).json({ success: true, count: results.length, items: results });
@@ -277,12 +299,20 @@ const getAllFoodItems = async (req, res) => {
 exports.getAllFoodItems = getAllFoodItems;
 const getDiningVenues = async (req, res) => {
     try {
-        const { search, cuisine } = req.query;
+        const { search, cuisine, pincode, zipcode } = req.query;
         const filter = {
             verificationStatus: { $ne: 'REJECTED' },
             accountStatus: { $ne: 'BLOCKED' },
             diningEnabled: { $ne: false },
         };
+        const activePincode = (pincode || zipcode || '').toString().trim();
+        if (activePincode) {
+            filter.$or = [
+                { pincode: activePincode },
+                { zipcode: activePincode },
+                { 'address.pincode': activePincode }
+            ];
+        }
         if (search) {
             filter.restaurantName = { $regex: String(search), $options: 'i' };
         }

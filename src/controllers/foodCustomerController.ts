@@ -13,12 +13,21 @@ import { TableBooking } from '../models/TableBooking';
 
 export const getCustomerRestaurantsListing = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { cuisine, businessType, foodPreference, search, lat, lng } = req.query;
+    const { cuisine, businessType, foodPreference, search, lat, lng, pincode, zipcode } = req.query;
 
     const filter: any = {
       verificationStatus: { $ne: 'REJECTED' },
       accountStatus: { $ne: 'BLOCKED' },
     };
+
+    const activePincode = (pincode || zipcode || '').toString().trim();
+    if (activePincode) {
+      filter.$or = [
+        { pincode: activePincode },
+        { zipcode: activePincode },
+        { 'address.pincode': activePincode }
+      ];
+    }
 
     if (businessType) filter.businessType = businessType;
     if (foodPreference) filter.foodPreference = foodPreference;
@@ -54,6 +63,7 @@ export const getCustomerRestaurantsListing = async (req: Request, res: Response)
           activeOfferSummary: offers[0] ? `${offers[0].discountValue}% OFF` : null,
           locality: r.locality,
           city: r.city,
+          pincode: r.pincode || (r as any).zipcode || (r as any).address?.pincode,
         };
       })
     );
@@ -259,9 +269,23 @@ export const validateFoodCart = async (req: Request, res: Response): Promise<voi
 
 export const getAllFoodItems = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { category, search, veg, limit = 50 } = req.query;
+    const { category, search, veg, pincode, zipcode, limit = 50 } = req.query;
 
+    const activePincode = (pincode || zipcode || '').toString().trim();
     const filter: any = { status: 'ACTIVE' };
+
+    if (activePincode) {
+      const matchingRestaurants = await RestaurantProfile.find({
+        $or: [
+          { pincode: activePincode },
+          { zipcode: activePincode },
+          { 'address.pincode': activePincode }
+        ]
+      }).select('_id');
+      const restIds = matchingRestaurants.map(r => r._id);
+      filter.restaurantId = { $in: restIds };
+    }
+
     if (veg === 'true' || veg === 'VEG') filter.foodType = 'VEG';
     if (veg === 'false' || veg === 'NON_VEG') filter.foodType = 'NON_VEG';
     if (search) filter.name = { $regex: String(search), $options: 'i' };
@@ -273,7 +297,7 @@ export const getAllFoodItems = async (req: Request, res: Response): Promise<void
     const results = await Promise.all(
       items.map(async (item) => {
         const anyItem = item as any;
-        const rest = await RestaurantProfile.findById(item.restaurantId).select('restaurantName logo city locality');
+        const rest = await RestaurantProfile.findById(item.restaurantId).select('restaurantName logo city locality pincode zipcode address');
         const price = item.basePrice || anyItem.price || anyItem.offerPrice || 199;
         const mrp = anyItem.mrp || Math.round(price * 1.25);
         return {
@@ -292,6 +316,7 @@ export const getAllFoodItems = async (req: Request, res: Response): Promise<void
           restaurantId: item.restaurantId,
           restaurantName: rest?.restaurantName || 'Verified Food Outlet',
           locality: rest?.locality || rest?.city || 'Hyderabad',
+          pincode: rest?.pincode || (rest as any)?.zipcode || (rest as any)?.address?.pincode || activePincode,
         };
       })
     );
@@ -304,13 +329,22 @@ export const getAllFoodItems = async (req: Request, res: Response): Promise<void
 
 export const getDiningVenues = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { search, cuisine } = req.query;
+    const { search, cuisine, pincode, zipcode } = req.query;
 
     const filter: any = {
       verificationStatus: { $ne: 'REJECTED' },
       accountStatus: { $ne: 'BLOCKED' },
       diningEnabled: { $ne: false },
     };
+
+    const activePincode = (pincode || zipcode || '').toString().trim();
+    if (activePincode) {
+      filter.$or = [
+        { pincode: activePincode },
+        { zipcode: activePincode },
+        { 'address.pincode': activePincode }
+      ];
+    }
 
     if (search) {
       filter.restaurantName = { $regex: String(search), $options: 'i' };

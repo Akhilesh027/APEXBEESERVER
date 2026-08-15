@@ -900,7 +900,13 @@ exports.searchVendors = searchVendors;
 const getVendorDetails = async (req, res) => {
     try {
         const { vendorId } = req.params;
-        const vendor = await Vendor_1.Vendor.findById(vendorId);
+        let vendor = null;
+        if (mongoose_1.default.Types.ObjectId.isValid(vendorId)) {
+            vendor = await Vendor_1.Vendor.findOne({ $or: [{ _id: vendorId }, { userId: vendorId }] });
+        }
+        else {
+            vendor = await Vendor_1.Vendor.findOne({ userId: vendorId });
+        }
         if (!vendor) {
             res.status(404).json({ success: false, message: "Vendor profile not found" });
             return;

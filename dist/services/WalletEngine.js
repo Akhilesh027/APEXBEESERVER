@@ -630,7 +630,7 @@ class WalletEngine {
     /**
      * Approve a pending withdrawal request
      */
-    static async approveWithdrawal(userId, ledgerEntryId, session) {
+    static async approveWithdrawal(userId, ledgerEntryId, referenceId, payoutMethod, remarks, session) {
         return this.runInTransaction(session, async (sess) => {
             const walletBefore = await this.getOrCreateWallet(userId, sess);
             const entry = walletBefore.ledgerEntries.find(e => String(e._id) === String(ledgerEntryId));
@@ -640,6 +640,16 @@ class WalletEngine {
                 throw new Error('Withdrawal is not pending');
             const amount = entry.amount;
             const opKey = `approve_withdrawal_${ledgerEntryId}`;
+            const setUpdate = {
+                "ledgerEntries.$.status": "completed",
+                "ledgerEntries.$.remarks": remarks || (referenceId ? `Withdrawal approved via ${payoutMethod || 'Bank'} (Ref/UTR: ${referenceId})` : "Withdrawal request approved and processed")
+            };
+            if (referenceId) {
+                setUpdate["ledgerEntries.$.referenceId"] = referenceId;
+            }
+            if (payoutMethod) {
+                setUpdate["ledgerEntries.$.paymentMethod"] = payoutMethod;
+            }
             // 1. Update wallet balance atomically
             const result = await Wallet_1.Wallet.findOneAndUpdate({
                 userId,
@@ -652,10 +662,7 @@ class WalletEngine {
                     totalDebits: Number(amount.toFixed(2)),
                     version: 1,
                 },
-                $set: {
-                    "ledgerEntries.$.status": "completed",
-                    "ledgerEntries.$.remarks": "Withdrawal request approved and processed"
-                }
+                $set: setUpdate
             }, { new: true, session: sess });
             if (!result)
                 throw new Error('Withdrawal request already processed or not found');

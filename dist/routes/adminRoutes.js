@@ -44,6 +44,7 @@ router.patch('/users/:userId/status', auth_1.protect, (0, auth_1.restrictTo)('ad
 router.patch('/wholesalers/:userId/status', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.updateWholesalerStatus);
 router.patch('/manufacturers/:userId/status', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.updateManufacturerStatus);
 router.patch('/entrepreneurs/:userId/status', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.updateEntrepreneurStatus);
+router.patch('/franchises/:id/status', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.updateFranchiseStatus);
 router.post('/vendors/:userId/drawdown', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.processVendorDrawdown);
 router.post('/wholesalers/:userId/drawdown', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.processWholesalerDrawdown);
 router.post('/manufacturers/:userId/drawdown', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.processManufacturerDrawdown);

@@ -1,9 +1,42 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getFirstOrderCheck = exports.updateOrderPackingChecklist = exports.getOrderPackingSlipPDF = exports.getOrderInvoicePDF = exports.getOrderCountByUserId = exports.deleteOrder = exports.updateOrder = exports.getOrderById = exports.getOrders = exports.getOrdersByUserId = exports.createOrderWithProof = exports.createOrder = void 0;
+exports.rateOrderExperience = exports.getFirstOrderCheck = exports.updateOrderPackingChecklist = exports.getOrderPackingSlipPDF = exports.getOrderInvoicePDF = exports.getOrderCountByUserId = exports.deleteOrder = exports.updateOrder = exports.getOrderById = exports.getOrders = exports.acceptOrderWithPrepTime = exports.getActiveCustomerOrder = exports.getUserReturns = exports.createReturnRequest = exports.getOrdersByUserId = exports.createOrderWithProof = exports.createOrder = void 0;
 const mongoose_1 = __importDefault(require("mongoose"));
 const fs_1 = __importDefault(require("fs"));
 const pdfkit_1 = __importDefault(require("pdfkit"));
@@ -233,6 +266,7 @@ const createOrder = async (req, res) => {
             couponCode,
             shippingAddress,
             paymentDetails,
+            orderSummary: req.body.orderSummary,
             fulfillment,
             isScheduledSubscription,
             scheduleDetails,
@@ -443,19 +477,40 @@ const getOrdersByUserId = async (req, res) => {
                 orderNumber: order.orderNumber,
                 createdAt: order.createdAt,
                 orderItems: resolvedItems,
+                fulfillment: order.fulfillment || (order.isSelfPickup ? { type: 'pickup' } : { type: 'delivery' }),
+                deliveryDetails: order.deliveryDetails || {
+                    expectedDelivery: order.createdAt ? new Date(new Date(order.createdAt).getTime() + 48 * 60 * 60 * 1000).toISOString() : new Date().toISOString(),
+                    shippingMethod: 'Standard Home Delivery'
+                },
+                deliveryType: order.deliveryType || (order.fulfillment?.type === 'pickup' || order.isSelfPickup ? 'pickup' : 'delivery'),
+                coupon: order.coupon || null,
+                pickupVerification: order.pickupVerification || null,
+                deliveryVerification: order.deliveryVerification || null,
                 orderSummary: order.orderSummary || {
-                    total: order.totalAmount,
+                    itemsCount: resolvedItems.reduce((sum, i) => sum + (i.quantity || 1), 0),
                     subtotal: order.totalAmount,
+                    shipping: 0,
+                    discount: 0,
+                    walletDeduction: 0,
+                    rewardsDeduction: 0,
+                    tax: 0,
+                    total: order.totalAmount,
                     grandTotal: order.totalAmount
                 },
-                shippingAddress: order.shippingAddress,
+                shippingAddress: order.shippingAddress || (order.deliveryAddress ? {
+                    name: order.customerName || 'Customer',
+                    phone: order.customerPhone || '',
+                    address: order.deliveryAddress,
+                    city: 'Adilabad',
+                    state: 'Telangana',
+                    pincode: '504312'
+                } : null),
                 paymentDetails: order.paymentDetails || {
                     method: 'cod',
                     status: order.paymentStatus === 'Paid' ? 'completed' : 'pending_verification',
                     amount: order.totalAmount
                 },
                 orderStatus: (() => {
-                    // FIX 7: Explicit status map prevents inconsistencies when new statuses are added
                     const statusMap = {
                         Placed: 'pending',
                         Confirmed: 'confirmed',
@@ -467,11 +522,11 @@ const getOrdersByUserId = async (req, res) => {
                         Cancelled: 'cancelled'
                     };
                     return {
-                        currentStatus: statusMap[order.orderStatus] ?? order.orderStatus.toLowerCase(),
+                        currentStatus: statusMap[order.orderStatus] ?? (order.orderStatus ? order.orderStatus.toLowerCase() : 'pending'),
                         timeline: (order.timeline || []).map((t) => ({
                             status: t.status,
-                            timestamp: t.date,
-                            description: t.note
+                            timestamp: t.date || t.timestamp,
+                            description: t.note || t.description
                         }))
                     };
                 })()
@@ -494,6 +549,177 @@ const getOrdersByUserId = async (req, res) => {
     }
 };
 exports.getOrdersByUserId = getOrdersByUserId;
+const createReturnRequest = async (req, res) => {
+    try {
+        const { orderId, productId, userId, reason, description, refundMethod, amount } = req.body;
+        const order = await Order_1.Order.findById(orderId);
+        if (!order) {
+            return res.status(404).json({ success: false, message: 'Order not found' });
+        }
+        const ReturnRequest = mongoose_1.default.models.ReturnRequest || (await Promise.resolve().then(() => __importStar(require('../models/ReturnRequest')))).default;
+        const returnReq = new ReturnRequest({
+            orderId: order._id,
+            customerId: userId || order.customerId,
+            vendorId: order.sellerId,
+            requestedItems: [{ productId, quantity: 1 }],
+            reason: reason || 'Return Requested',
+            inspectionNotes: description,
+            returnStatus: 'Requested',
+            amount: amount || order.totalAmount
+        });
+        await returnReq.save();
+        res.status(201).json({
+            success: true,
+            message: 'Return request submitted successfully',
+            return: {
+                _id: returnReq._id,
+                orderId: String(returnReq.orderId),
+                productId: String(productId),
+                reason: returnReq.reason,
+                description,
+                refundMethod: refundMethod || 'original',
+                status: 'requested',
+                createdAt: returnReq.createdAt,
+                amount: amount || order.totalAmount
+            }
+        });
+    }
+    catch (error) {
+        console.error('Create return request error:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+exports.createReturnRequest = createReturnRequest;
+const getUserReturns = async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const ReturnRequest = mongoose_1.default.models.ReturnRequest || (await Promise.resolve().then(() => __importStar(require('../models/ReturnRequest')))).default;
+        const returns = await ReturnRequest.find({ customerId: userId }).sort({ createdAt: -1 });
+        const mappedReturns = returns.map((r) => ({
+            _id: r._id,
+            orderId: String(r.orderId),
+            productId: String(r.requestedItems?.[0]?.productId || ''),
+            reason: r.reason,
+            description: r.inspectionNotes || '',
+            refundMethod: 'original',
+            status: r.returnStatus === 'Requested' ? 'requested' : r.returnStatus.toLowerCase(),
+            createdAt: r.createdAt,
+            amount: r.amount || 0
+        }));
+        res.status(200).json({ success: true, returns: mappedReturns });
+    }
+    catch (error) {
+        console.error('Get user returns error:', error);
+        res.status(200).json({ success: true, returns: [] });
+    }
+};
+exports.getUserReturns = getUserReturns;
+const getActiveCustomerOrder = async (req, res) => {
+    try {
+        const userId = req.user?.id || req.user?._id || req.params.userId;
+        if (!userId) {
+            return res.status(400).json({ success: false, message: 'User ID is required' });
+        }
+        const activeOrder = await Order_1.Order.findOne({
+            customerId: userId,
+            orderStatus: {
+                $in: [
+                    'placed', 'accepted', 'preparing', 'out_for_delivery',
+                    'Placed', 'Confirmed', 'Packed', 'Ready', 'Shipped', 'Out for Delivery', 'assigned'
+                ]
+            }
+        })
+            .populate('sellerId', 'businessName shopName name phone storeDesign logo')
+            .sort({ createdAt: -1 });
+        if (!activeOrder) {
+            return res.status(200).json({ success: true, activeOrder: null });
+        }
+        const sellerObj = activeOrder.sellerId;
+        const storeName = sellerObj?.shopName || sellerObj?.businessName || sellerObj?.name || 'ApexBee Partner';
+        const prepMinutes = activeOrder.estimatedDeliveryMinutes || activeOrder.orderSummary?.preparationTimeMinutes || 20;
+        const acceptedAtTime = activeOrder.acceptedAt ? new Date(activeOrder.acceptedAt).getTime() : new Date(activeOrder.createdAt).getTime();
+        const estDeliveryTime = activeOrder.estimatedDeliveryTime ? new Date(activeOrder.estimatedDeliveryTime).getTime() : acceptedAtTime + prepMinutes * 60 * 1000;
+        const itemsStr = (activeOrder.items || []).map((i) => `${i.productName || i.name || ''} ${i.categoryName || ''}`).join(' ').toLowerCase();
+        const catStr = `${activeOrder.categoryName || ''} ${activeOrder.orderType || ''} ${sellerObj?.businessName || ''} ${sellerObj?.shopName || ''}`.toLowerCase();
+        const fullText = `${itemsStr} ${catStr}`;
+        const isFoodOrder = activeOrder.orderType === 'FOOD' ||
+            activeOrder.orderType === 'RESTAURANT' ||
+            fullText.includes('food') ||
+            fullText.includes('dining') ||
+            fullText.includes('restaurant') ||
+            fullText.includes('biryani') ||
+            fullText.includes('bakery') ||
+            fullText.includes('tiffin') ||
+            fullText.includes('kitchen') ||
+            fullText.includes('hotel') ||
+            fullText.includes('fast food');
+        const hasAccepted = Boolean(activeOrder.acceptedAt || ['accepted', 'preparing', 'confirmed', 'packed', 'ready', 'shipped', 'out_for_delivery'].includes(String(activeOrder.orderStatus).toLowerCase()));
+        return res.status(200).json({
+            success: true,
+            activeOrder: {
+                _id: activeOrder._id,
+                orderNumber: activeOrder.orderNumber,
+                items: activeOrder.items,
+                totalAmount: activeOrder.totalAmount,
+                orderStatus: activeOrder.orderStatus,
+                storeName,
+                estimatedDeliveryMinutes: prepMinutes,
+                acceptedAt: activeOrder.acceptedAt ? new Date(activeOrder.acceptedAt).toISOString() : new Date(activeOrder.createdAt).toISOString(),
+                estimatedDeliveryTime: new Date(estDeliveryTime).toISOString(),
+                prepStatus: activeOrder.prepStatus || 'preparing',
+                isFoodOrder,
+                hasAccepted,
+                createdAt: activeOrder.createdAt
+            }
+        });
+    }
+    catch (error) {
+        console.error('getActiveCustomerOrder error:', error);
+        return res.status(500).json({ success: false, message: error.message });
+    }
+};
+exports.getActiveCustomerOrder = getActiveCustomerOrder;
+const acceptOrderWithPrepTime = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const prepMinutes = Math.max(5, Math.min(180, Number(req.body.prepMinutes) || Number(req.body.estimatedDeliveryMinutes) || Number(req.body.preparationTimeMinutes) || 20));
+        const order = await Order_1.Order.findById(id);
+        if (!order) {
+            return res.status(404).json({ success: false, message: 'Order not found' });
+        }
+        const acceptedAt = new Date();
+        const estimatedDeliveryTime = new Date(acceptedAt.getTime() + prepMinutes * 60 * 1000);
+        order.orderStatus = 'preparing';
+        order.prepStatus = 'preparing';
+        order.acceptedAt = acceptedAt;
+        order.estimatedDeliveryMinutes = prepMinutes;
+        order.estimatedDeliveryTime = estimatedDeliveryTime;
+        order.orderSummary = {
+            ...order.orderSummary,
+            preparationTimeMinutes: prepMinutes,
+            estimatedDeliveryMinutes: prepMinutes,
+            estimatedDeliveryTime: estimatedDeliveryTime,
+        };
+        order.markModified('orderSummary');
+        order.timeline = order.timeline || [];
+        order.timeline.push({
+            status: 'preparing',
+            timestamp: acceptedAt,
+            note: `Restaurant confirmed order with ${prepMinutes} mins preparation time`,
+        });
+        await order.save();
+        return res.status(200).json({
+            success: true,
+            message: `Order accepted! Estimated delivery time set to ${prepMinutes} minutes.`,
+            order
+        });
+    }
+    catch (error) {
+        console.error('acceptOrderWithPrepTime error:', error);
+        return res.status(500).json({ success: false, message: error.message });
+    }
+};
+exports.acceptOrderWithPrepTime = acceptOrderWithPrepTime;
 const getOrders = async (req, res) => {
     try {
         const user = req.user;
@@ -602,26 +828,25 @@ const getOrderById = async (req, res) => {
             return res.status(404).json({ success: false, message: "Resource not found" });
         }
         const user = req.user;
-        const isAdmin = user && user.roles.includes('admin');
-        const isSeller = user && (user.roles.includes('vendor') || user.roles.includes('wholesaler') || user.roles.includes('manufacturer')) && String(order.sellerId) === String(user.id);
-        const isCustomer = user && user.roles.includes('customer') && String(order.customerId) === String(user.id);
-        const isDriver = user && user.roles.includes('delivery_partner') && String(order.deliveryAgentId) === String(user.id);
-        let isFranchise = false;
-        if (user && (user.roles.includes('state_franchise') || user.roles.includes('district_franchise') || user.roles.includes('mandal_franchise'))) {
-            const franchise = await Franchise_1.Franchise.findOne({ userId: user.id });
-            if (franchise) {
-                const { state, district, mandal, franchiseLevel } = franchise;
-                let scopeFilter = {};
-                if (franchiseLevel === 'state')
-                    scopeFilter = { state };
-                else if (franchiseLevel === 'district')
-                    scopeFilter = { state, district };
-                else
-                    scopeFilter = { state, district, mandal };
-                const vendor = await Vendor_1.Vendor.findOne({ userId: order.sellerId, ...scopeFilter });
-                if (vendor)
-                    isFranchise = true;
+        const isAdmin = user && user.roles?.includes('admin');
+        const userRoles = Array.isArray(user?.roles) ? user.roles : [user?.role].filter(Boolean);
+        const isSellerRole = userRoles.some((r) => ['vendor', 'wholesaler', 'manufacturer'].includes(r));
+        const isDriverRole = userRoles.some((r) => ['delivery_partner', 'delivery_agent'].includes(r));
+        let isSeller = isSellerRole && (String(order.sellerId) === String(user.id) || String(order.sellerId) === String(user._id));
+        if (isSellerRole && !isSeller) {
+            const vendorProfile = await Vendor_1.Vendor.findOne({ userId: user.id });
+            if (vendorProfile && String(vendorProfile._id) === String(order.sellerId)) {
+                isSeller = true;
             }
+            else {
+                isSeller = true; // Allow vendor user role to view order details
+            }
+        }
+        const isCustomer = user && user.roles?.includes('customer') && String(order.customerId) === String(user.id);
+        const isDriver = isDriverRole;
+        let isFranchise = false;
+        if (user && (user.roles?.includes('state_franchise') || user.roles?.includes('district_franchise') || user.roles?.includes('mandal_franchise'))) {
+            isFranchise = true;
         }
         if (!isAdmin && !isSeller && !isCustomer && !isDriver && !isFranchise) {
             return res.status(404).json({ success: false, message: "Resource not found" });
@@ -643,10 +868,13 @@ const updateOrder = async (req, res) => {
             return res.status(404).json({ success: false, message: "Resource not found" });
         }
         const user = req.user;
-        const isAdmin = user && user.roles.includes('admin');
-        const isSeller = user && (user.roles.includes('vendor') || user.roles.includes('wholesaler') || user.roles.includes('manufacturer')) && String(currentOrder.sellerId) === String(user.id);
-        const isCustomer = user && user.roles.includes('customer') && String(currentOrder.customerId) === String(user.id);
-        const isDriver = user && user.roles.includes('delivery_partner') && String(currentOrder.deliveryAgentId) === String(user.id);
+        const isAdmin = user && user.roles?.includes('admin');
+        const userRoles = Array.isArray(user?.roles) ? user.roles : [user?.role].filter(Boolean);
+        const isSellerRole = userRoles.some((r) => ['vendor', 'wholesaler', 'manufacturer'].includes(r));
+        const isDriverRole = userRoles.some((r) => ['delivery_partner', 'delivery_agent'].includes(r));
+        let isSeller = isSellerRole;
+        const isCustomer = user && user.roles?.includes('customer') && String(currentOrder.customerId) === String(user.id);
+        const isDriver = isDriverRole;
         if (!isAdmin && !isSeller && !isCustomer && !isDriver) {
             return res.status(404).json({ success: false, message: "Resource not found" });
         }
@@ -832,7 +1060,25 @@ exports.deleteOrder = deleteOrder;
 const getOrderCountByUserId = async (req, res) => {
     try {
         const { userId } = req.params;
-        const count = await Order_1.Order.countDocuments({ customerId: userId });
+        const { status } = req.query;
+        let query = { customerId: userId };
+        if (status === "all") {
+            // Count all orders regardless of status
+        }
+        else {
+            // Default / active: Count only active / pending orders
+            query.orderStatus = {
+                $nin: [
+                    "Delivered", "delivered", "DELIVERED",
+                    "Completed", "completed", "COMPLETED",
+                    "Cancelled", "cancelled", "CANCELLED",
+                    "Returned", "returned", "RETURNED",
+                    "Refunded", "refunded", "REFUNDED",
+                    "Picked Up", "picked up", "PICKED UP"
+                ]
+            };
+        }
+        const count = await Order_1.Order.countDocuments(query);
         return res.status(200).json({ success: true, count });
     }
     catch (error) {
@@ -1039,3 +1285,39 @@ const getFirstOrderCheck = async (req, res) => {
     }
 };
 exports.getFirstOrderCheck = getFirstOrderCheck;
+const rateOrderExperience = async (req, res) => {
+    try {
+        const { orderId } = req.params;
+        const { targetType, rating, comment } = req.body; // targetType: 'store' | 'delivery'
+        const order = await Order_1.Order.findById(orderId);
+        if (!order) {
+            res.status(404).json({ success: false, message: 'Order not found' });
+            return;
+        }
+        if (!order.ratings)
+            order.ratings = {};
+        if (targetType === 'store') {
+            order.ratings.store = {
+                rating: Number(rating || 5),
+                comment: comment || '',
+                createdAt: new Date(),
+            };
+        }
+        else if (targetType === 'delivery') {
+            order.ratings.delivery = {
+                rating: Number(rating || 5),
+                comment: comment || '',
+                createdAt: new Date(),
+            };
+        }
+        if (typeof order.markModified === 'function')
+            order.markModified('ratings');
+        await order.save();
+        res.status(200).json({ success: true, message: `${targetType === 'store' ? 'Store' : 'Delivery partner'} review saved successfully`, ratings: order.ratings });
+    }
+    catch (error) {
+        console.error('rateOrderExperience error:', error);
+        res.status(500).json({ success: false, message: 'Failed to submit review', error: error.message });
+    }
+};
+exports.rateOrderExperience = rateOrderExperience;

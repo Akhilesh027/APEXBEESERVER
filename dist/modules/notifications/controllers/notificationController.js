@@ -21,17 +21,18 @@ const getUserNotifications = async (req, res) => {
             res.status(401).json({ success: false, message: 'Unauthorized' });
             return;
         }
-        if (req.params.userId && req.params.userId !== req.user.id && !req.user.roles.includes('admin')) {
-            res.status(404).json({ success: false, message: 'Resource not found' });
-            return;
-        }
-        const userId = req.user.id;
+        const userId = req.params.userId || req.user.id;
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 20;
         const category = req.query.category;
         const readStatus = req.query.readStatus; // 'unread', 'read', 'all'
+        const targetIds = [req.user.id, userId];
+        if (mongoose_1.default.Types.ObjectId.isValid(req.user.id))
+            targetIds.push(new mongoose_1.default.Types.ObjectId(req.user.id));
+        if (mongoose_1.default.Types.ObjectId.isValid(userId))
+            targetIds.push(new mongoose_1.default.Types.ObjectId(userId));
         const query = {
-            recipientId: new mongoose_1.default.Types.ObjectId(userId),
+            recipientId: { $in: targetIds },
             status: { $ne: 'deleted' }
         };
         if (category) {

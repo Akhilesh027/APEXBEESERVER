@@ -78,6 +78,10 @@ export interface IOrder extends Document {
   categoryId?: mongoose.Types.ObjectId | string;
   categoryName?: string;
   orderType?: string;
+  estimatedDeliveryMinutes?: number;
+  acceptedAt?: Date | null;
+  estimatedDeliveryTime?: Date | null;
+  prepStatus?: string;
 }
 
 const OrderItemSchema = new Schema<IOrderItem>({
@@ -188,6 +192,10 @@ const OrderSchema = new Schema<IOrder>(
     categoryId: { type: Schema.Types.Mixed },
     categoryName: { type: String, default: '' },
     orderType: { type: String, default: 'RETAIL' },
+    estimatedDeliveryMinutes: { type: Number, default: 20 },
+    acceptedAt: { type: Date, default: null },
+    estimatedDeliveryTime: { type: Date, default: null },
+    prepStatus: { type: String, default: 'pending' },
   },
   { timestamps: true }
 );

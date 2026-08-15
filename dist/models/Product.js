@@ -38,7 +38,7 @@ const mongoose_1 = __importStar(require("mongoose"));
 const ProductSchema = new mongoose_1.Schema({
     name: { type: String, required: true, trim: true },
     slug: { type: String, required: true, lowercase: true, trim: true },
-    description: { type: String, required: true, default: '' },
+    description: { type: String, required: false, default: '' },
     categoryId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Category', required: false },
     subcategoryId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Subcategory', required: false },
     brandId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Brand' },
