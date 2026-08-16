@@ -15,7 +15,6 @@ import { seedNotificationTemplates } from './modules/notifications/config/seedTe
 import { connectDB } from './config/db';
 import { seedDatabase } from './config/seed';
 import { seedBannerDefaults } from './seeds/seedBanners';
-import { seedVendor50Products } from './seeds/seedVendorProducts';
 import { InventoryService } from './services/inventoryService';
 import { BusinessApplication } from './models/BusinessApplication';
 import { Vendor } from './models/Vendor';
@@ -177,125 +176,6 @@ app.use('/api/community', communityRoutes);
 app.use('/api', academyRoutes);
 app.use('/api', biRoutes);
 app.use('/api', subscriptionRoutes);
-
-app.get('/api/v1/seed-50-vendor-products', async (req, res) => {
-  try {
-    console.log('[Seed Endpoint] Executing seedVendor50Products clean v4...');
-    const result = await seedVendor50Products();
-    res.json({ success: true, result });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-app.get('/api/v1/seed-subscription-engine', async (req, res) => {
-  try {
-    console.log('[Seed Endpoint] Executing seedThreeTierSubscriptionSystem...');
-    const { seedThreeTierSubscriptionSystem } = await import('./seeds/seedThreeTierSubscriptionSystem');
-    const { seedSubscriptionData } = await import('./seeds/seedSubscriptionData');
-    await seedThreeTierSubscriptionSystem();
-    await seedSubscriptionData();
-    res.json({ success: true, message: 'Subscription engine seeded successfully!' });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-app.get('/api/v1/verify-subscription-db', async (req, res) => {
-  try {
-    const { Vendor } = await import('./models/Vendor');
-    const { SubscriptionPlanProfile } = await import('./modules/subscription/models/SubscriptionPlanProfile');
-    const { PricingAndQuoteService } = await import('./modules/subscription/services/PricingAndQuoteService');
-    const { SubscriptionOrder } = await import('./modules/subscription/models/SubscriptionOrder');
-    const { PaymentWebhookService } = await import('./modules/subscription/services/PaymentWebhookService');
-    const { VendorSubscription } = await import('./modules/subscription/models/VendorSubscription');
-    const { SubscriptionPayment } = await import('./modules/subscription/models/SubscriptionPayment');
-    const { SubscriptionInvoice } = await import('./modules/subscription/models/SubscriptionInvoice');
-
-    let vendor = await Vendor.findOne();
-    if (!vendor) throw new Error('No vendor found to test');
-
-    const planProfile = await SubscriptionPlanProfile.findOne({ tierCode: 'APEXBEE_BUSINESS' }) || await SubscriptionPlanProfile.findOne();
-    if (!planProfile) throw new Error('No plan profile found');
-
-    const quote = await PricingAndQuoteService.createQuote({
-      vendorId: vendor._id.toString(),
-      productId: planProfile._id.toString(),
-      billingCycle: 'YEARLY'
-    });
-
-    const order = await SubscriptionOrder.create({
-      orderNumber: `ORD-TEST-${Date.now()}`,
-      vendorId: vendor._id,
-      quoteId: (quote as any)._id || quote.id,
-      orderType: 'NEW_SUBSCRIPTION',
-      items: [{ productId: quote.productId, priceId: quote.priceId, billingCycle: quote.billingCycle, quantity: 1 }],
-      subtotal: quote.subtotal,
-      discountAmount: quote.totalDiscountAmount,
-      taxableAmount: quote.taxableAmount,
-      gstAmount: quote.gstAmount,
-      finalPayableAmount: quote.finalPayableAmount,
-      status: 'CREATED',
-      expiresAt: new Date(Date.now() + 30 * 60 * 1000)
-    });
-
-    const payResult = await PaymentWebhookService.processPaymentSuccess({
-      gateway: 'razorpay',
-      gatewayOrderId: `pay_ord_${Date.now()}`,
-      gatewayPaymentId: `pay_trx_${Date.now()}`,
-      gatewaySignature: 'valid_sig',
-      orderId: order._id.toString(),
-      vendorId: vendor._id.toString(),
-      amount: order.finalPayableAmount,
-      paymentMethod: 'UPI'
-    });
-
-    const dbSub = await VendorSubscription.findOne({ vendorId: vendor._id });
-    const dbPayment = await SubscriptionPayment.findOne({ orderId: order._id });
-    const dbInvoice = await SubscriptionInvoice.findOne({ orderId: order._id });
-
-    res.json({
-      success: true,
-      message: 'Subscription DB workflow validated & verified in MongoDB database!',
-      verification: {
-        vendorName: vendor.businessName,
-        planSubscribed: planProfile.displayName,
-        subscriptionStatus: dbSub?.status,
-        periodStart: dbSub?.currentPeriodStart,
-        periodEnd: dbSub?.currentPeriodEnd,
-        paymentStatus: dbPayment?.status,
-        paymentAmount: dbPayment?.amount,
-        invoiceNumber: dbInvoice?.invoiceNumber,
-        invoiceStatus: dbInvoice?.status,
-        pdfUrl: dbInvoice?.pdfUrl
-      }
-    });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-app.get('/api/debug/vendor-info', async (req, res) => {
-  try {
-    const email = (req.query.email as string) || 'akhil@gmail.com';
-    const emailRegex = new RegExp(email, 'i');
-    const { Vendor: VendorModel } = await import('./models/Vendor');
-    const { VendorSubscription } = await import('./modules/subscription/models/VendorSubscription');
-
-    const users = await User.find({ $or: [{ email: emailRegex }, { name: emailRegex }] });
-    const vendors = await VendorModel.find({ $or: [{ email: emailRegex }, { ownerName: emailRegex }, { businessName: emailRegex }] });
-    const vIds = vendors.map(v => v._id);
-    const subscriptions = await VendorSubscription.find({ vendorId: { $in: vIds } });
-
-    const payload = { success: true, searchEmail: email, users, vendors, subscriptions };
-    const fs = await import('fs');
-    fs.writeFileSync('c:/Users/akhil/.gemini/antigravity/scratch/Apexbee/vendor_info_result.json', JSON.stringify(payload, null, 2));
-
-    res.json(payload);
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
 
 // Health check endpoint
 app.get('/health', (req, res) => {

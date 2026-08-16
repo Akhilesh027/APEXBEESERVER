@@ -1,37 +1,4 @@
 "use strict";
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -51,7 +18,6 @@ const notificationQueue_1 = require("./modules/notifications/services/notificati
 const notificationListeners_1 = require("./modules/notifications/events/notificationListeners");
 const db_1 = require("./config/db");
 const seedBanners_1 = require("./seeds/seedBanners");
-const seedVendorProducts_1 = require("./seeds/seedVendorProducts");
 const inventoryService_1 = require("./services/inventoryService");
 const BusinessApplication_1 = require("./models/BusinessApplication");
 const Vendor_1 = require("./models/Vendor");
@@ -199,117 +165,6 @@ app.use('/api/community', communityRoutes_1.default);
 app.use('/api', academyRoutes_1.default);
 app.use('/api', biRoutes_1.default);
 app.use('/api', subscriptionRoutes_1.default);
-app.get('/api/v1/seed-50-vendor-products', async (req, res) => {
-    try {
-        console.log('[Seed Endpoint] Executing seedVendor50Products clean v4...');
-        const result = await (0, seedVendorProducts_1.seedVendor50Products)();
-        res.json({ success: true, result });
-    }
-    catch (err) {
-        res.status(500).json({ success: false, error: err.message });
-    }
-});
-app.get('/api/v1/seed-subscription-engine', async (req, res) => {
-    try {
-        console.log('[Seed Endpoint] Executing seedThreeTierSubscriptionSystem...');
-        const { seedThreeTierSubscriptionSystem } = await Promise.resolve().then(() => __importStar(require('./seeds/seedThreeTierSubscriptionSystem')));
-        const { seedSubscriptionData } = await Promise.resolve().then(() => __importStar(require('./seeds/seedSubscriptionData')));
-        await seedThreeTierSubscriptionSystem();
-        await seedSubscriptionData();
-        res.json({ success: true, message: 'Subscription engine seeded successfully!' });
-    }
-    catch (err) {
-        res.status(500).json({ success: false, error: err.message });
-    }
-});
-app.get('/api/v1/verify-subscription-db', async (req, res) => {
-    try {
-        const { Vendor } = await Promise.resolve().then(() => __importStar(require('./models/Vendor')));
-        const { SubscriptionPlanProfile } = await Promise.resolve().then(() => __importStar(require('./modules/subscription/models/SubscriptionPlanProfile')));
-        const { PricingAndQuoteService } = await Promise.resolve().then(() => __importStar(require('./modules/subscription/services/PricingAndQuoteService')));
-        const { SubscriptionOrder } = await Promise.resolve().then(() => __importStar(require('./modules/subscription/models/SubscriptionOrder')));
-        const { PaymentWebhookService } = await Promise.resolve().then(() => __importStar(require('./modules/subscription/services/PaymentWebhookService')));
-        const { VendorSubscription } = await Promise.resolve().then(() => __importStar(require('./modules/subscription/models/VendorSubscription')));
-        const { SubscriptionPayment } = await Promise.resolve().then(() => __importStar(require('./modules/subscription/models/SubscriptionPayment')));
-        const { SubscriptionInvoice } = await Promise.resolve().then(() => __importStar(require('./modules/subscription/models/SubscriptionInvoice')));
-        let vendor = await Vendor.findOne();
-        if (!vendor)
-            throw new Error('No vendor found to test');
-        const planProfile = await SubscriptionPlanProfile.findOne({ tierCode: 'APEXBEE_BUSINESS' }) || await SubscriptionPlanProfile.findOne();
-        if (!planProfile)
-            throw new Error('No plan profile found');
-        const quote = await PricingAndQuoteService.createQuote({
-            vendorId: vendor._id.toString(),
-            productId: planProfile._id.toString(),
-            billingCycle: 'YEARLY'
-        });
-        const order = await SubscriptionOrder.create({
-            orderNumber: `ORD-TEST-${Date.now()}`,
-            vendorId: vendor._id,
-            quoteId: quote._id || quote.id,
-            orderType: 'NEW_SUBSCRIPTION',
-            items: [{ productId: quote.productId, priceId: quote.priceId, billingCycle: quote.billingCycle, quantity: 1 }],
-            subtotal: quote.subtotal,
-            discountAmount: quote.totalDiscountAmount,
-            taxableAmount: quote.taxableAmount,
-            gstAmount: quote.gstAmount,
-            finalPayableAmount: quote.finalPayableAmount,
-            status: 'CREATED',
-            expiresAt: new Date(Date.now() + 30 * 60 * 1000)
-        });
-        const payResult = await PaymentWebhookService.processPaymentSuccess({
-            gateway: 'razorpay',
-            gatewayOrderId: `pay_ord_${Date.now()}`,
-            gatewayPaymentId: `pay_trx_${Date.now()}`,
-            gatewaySignature: 'valid_sig',
-            orderId: order._id.toString(),
-            vendorId: vendor._id.toString(),
-            amount: order.finalPayableAmount,
-            paymentMethod: 'UPI'
-        });
-        const dbSub = await VendorSubscription.findOne({ vendorId: vendor._id });
-        const dbPayment = await SubscriptionPayment.findOne({ orderId: order._id });
-        const dbInvoice = await SubscriptionInvoice.findOne({ orderId: order._id });
-        res.json({
-            success: true,
-            message: 'Subscription DB workflow validated & verified in MongoDB database!',
-            verification: {
-                vendorName: vendor.businessName,
-                planSubscribed: planProfile.displayName,
-                subscriptionStatus: dbSub?.status,
-                periodStart: dbSub?.currentPeriodStart,
-                periodEnd: dbSub?.currentPeriodEnd,
-                paymentStatus: dbPayment?.status,
-                paymentAmount: dbPayment?.amount,
-                invoiceNumber: dbInvoice?.invoiceNumber,
-                invoiceStatus: dbInvoice?.status,
-                pdfUrl: dbInvoice?.pdfUrl
-            }
-        });
-    }
-    catch (err) {
-        res.status(500).json({ success: false, error: err.message });
-    }
-});
-app.get('/api/debug/vendor-info', async (req, res) => {
-    try {
-        const email = req.query.email || 'akhil@gmail.com';
-        const emailRegex = new RegExp(email, 'i');
-        const { Vendor: VendorModel } = await Promise.resolve().then(() => __importStar(require('./models/Vendor')));
-        const { VendorSubscription } = await Promise.resolve().then(() => __importStar(require('./modules/subscription/models/VendorSubscription')));
-        const users = await User_1.User.find({ $or: [{ email: emailRegex }, { name: emailRegex }] });
-        const vendors = await VendorModel.find({ $or: [{ email: emailRegex }, { ownerName: emailRegex }, { businessName: emailRegex }] });
-        const vIds = vendors.map(v => v._id);
-        const subscriptions = await VendorSubscription.find({ vendorId: { $in: vIds } });
-        const payload = { success: true, searchEmail: email, users, vendors, subscriptions };
-        const fs = await Promise.resolve().then(() => __importStar(require('fs')));
-        fs.writeFileSync('c:/Users/akhil/.gemini/antigravity/scratch/Apexbee/vendor_info_result.json', JSON.stringify(payload, null, 2));
-        res.json(payload);
-    }
-    catch (err) {
-        res.status(500).json({ success: false, error: err.message });
-    }
-});
 // Health check endpoint
 app.get('/health', (req, res) => {
     const dbStatus = mongoose_1.default.connection.readyState;
