@@ -232,7 +232,7 @@ export const createTerritory = async (req: Request, res: Response) => {
       currentFranchisee: franchise
         ? {
             franchiseId: franchise._id,
-            name: franchise.businessName || franchise.ownerName || franchise.name,
+            name: franchise.businessName || franchise.ownerName || "",
             phone: franchise.mobile || "",
             email: franchise.email || "",
             assignedAt: new Date(),
@@ -357,7 +357,7 @@ export const updateTerritory = async (req: Request, res: Response) => {
       if (fDoc) {
         existingTerritory.currentFranchisee = {
           franchiseId: fDoc._id,
-          name: fDoc.businessName || fDoc.ownerName || fDoc.name,
+          name: fDoc.businessName || fDoc.ownerName || "",
           phone: fDoc.mobile || "",
           email: fDoc.email || "",
           assignedAt: new Date(),
@@ -470,6 +470,14 @@ export const assignTerritory = async (req: Request, res: Response) => {
     }
 
     territory.franchiseId = franchise._id as any;
+    territory.franchiseStatus = "ACTIVE";
+    territory.currentFranchisee = {
+      franchiseId: franchise._id,
+      name: franchise.businessName || franchise.ownerName || "",
+      phone: franchise.mobile || "",
+      email: franchise.email || "",
+      assignedAt: new Date(),
+    };
     await territory.save();
 
     await Franchise.findByIdAndUpdate(franchiseId, {
@@ -534,6 +542,8 @@ export const removeTerritoryAssignment = async (
     }
 
     territory.franchiseId = null as any;
+    territory.franchiseStatus = "VACANT";
+    territory.currentFranchisee = undefined;
     await territory.save();
 
     res.json({
