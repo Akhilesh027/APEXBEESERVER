@@ -70,6 +70,9 @@ import subscriptionRoutes from './modules/subscription/routes/subscriptionRoutes
 // Initialize express app
 const app = express();
 
+// Trust reverse proxy (Nginx, Cloudflare, AWS ALB, Render, Vercel)
+app.set('trust proxy', 1);
+
 app.use(correlationMiddleware);
 
 // Set COOP header for Google Auth popups

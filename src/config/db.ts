@@ -121,15 +121,15 @@ export const connectDB = async (): Promise<void> => {
 
   const match = mongoURI.match(/\/([^/?]+)(\?|$)/);
   const dbName = match ? match[1] : 'default';
-  
+
   console.log(`[Database] NODE_ENV: ${env.NODE_ENV}`);
   console.log(`[Database] Attempting connection to DB: ${dbName}`);
 
   // Prevent non-prod environments from using prod databases
   if (env.NODE_ENV !== 'production') {
-    const isProdDb = dbName.toLowerCase().includes('prod') || 
-                     mongoURI.toLowerCase().includes('production') ||
-                     mongoURI.toLowerCase().includes('prod-');
+    const isProdDb = dbName.toLowerCase().includes('prod') ||
+      mongoURI.toLowerCase().includes('production') ||
+      mongoURI.toLowerCase().includes('prod-');
     if (isProdDb && process.env.ALLOW_PROD_DB_IN_DEV !== 'true') {
       console.error(`[SECURITY ERROR] Attempted to connect to production database "${dbName}" in non-production mode (${env.NODE_ENV}). Connection aborted.`);
       process.exit(1);

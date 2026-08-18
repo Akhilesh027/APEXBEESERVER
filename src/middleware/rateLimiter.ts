@@ -28,7 +28,12 @@ export const createRateLimiter = (options: RateLimiterOptions) => {
         const userId = user.id || user._id;
         limitKey = `rl:${options.keyPrefix}:user:${userId}`;
       } else {
-        const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+        const forwarded = req.headers['x-forwarded-for'];
+        let ip = req.ip;
+        if (forwarded) {
+          ip = typeof forwarded === 'string' ? forwarded.split(',')[0].trim() : forwarded[0];
+        }
+        ip = ip || req.socket?.remoteAddress || 'unknown';
         limitKey = `rl:${options.keyPrefix}:ip:${String(ip)}`;
       }
 
@@ -58,25 +63,25 @@ export const createRateLimiter = (options: RateLimiterOptions) => {
   };
 };
 
-// 1. IP rate limiter: 60 requests per minute
+// 1. IP rate limiter: 300 requests per minute (allows multiple devices on the same Wi-Fi NAT)
 export const ipRateLimiter = createRateLimiter({
   windowMs: 60 * 1000,
-  max: 60,
+  max: 300,
   keyPrefix: 'ip_general',
 });
 
-// 2. User rate limiter: 200 requests per minute
+// 2. User rate limiter: 500 requests per minute
 export const userRateLimiter = createRateLimiter({
   windowMs: 60 * 1000,
-  max: 200,
+  max: 500,
   keyPrefix: 'user_general',
   useUserContext: true,
 });
 
-// 3. Critical endpoints rate limiter: 5 requests per minute
+// 3. Critical endpoints rate limiter: 10 requests per minute
 export const criticalRateLimiter = createRateLimiter({
   windowMs: 60 * 1000,
-  max: 5,
+  max: 10,
   keyPrefix: 'critical',
 });
 

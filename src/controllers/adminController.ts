@@ -170,8 +170,8 @@ const remapExistingBusinessesForNewFranchise = async (franchise: any) => {
     franchiseLevel === "state"
       ? { stateFranchiseId: _id }
       : franchiseLevel === "district"
-      ? { districtFranchiseId: _id }
-      : { mandalFranchiseId: _id };
+        ? { districtFranchiseId: _id }
+        : { mandalFranchiseId: _id };
 
   await TerritoryMapping.updateMany(query, { $set: updateField });
 
@@ -492,27 +492,27 @@ export const getApplications = async (
       appObj.dependencies = {
         stateFranchise: stateFranchise
           ? {
-              _id: stateFranchise._id,
-              businessName: stateFranchise.businessName,
-              ownerName: stateFranchise.ownerName,
-              franchiseCode: stateFranchise.franchiseCode,
-            }
+            _id: stateFranchise._id,
+            businessName: stateFranchise.businessName,
+            ownerName: stateFranchise.ownerName,
+            franchiseCode: stateFranchise.franchiseCode,
+          }
           : null,
         districtFranchise: districtFranchise
           ? {
-              _id: districtFranchise._id,
-              businessName: districtFranchise.businessName,
-              ownerName: districtFranchise.ownerName,
-              franchiseCode: districtFranchise.franchiseCode,
-            }
+            _id: districtFranchise._id,
+            businessName: districtFranchise.businessName,
+            ownerName: districtFranchise.ownerName,
+            franchiseCode: districtFranchise.franchiseCode,
+          }
           : null,
         mandalFranchise: mandalFranchise
           ? {
-              _id: mandalFranchise._id,
-              businessName: mandalFranchise.businessName,
-              ownerName: mandalFranchise.ownerName,
-              franchiseCode: mandalFranchise.franchiseCode,
-            }
+            _id: mandalFranchise._id,
+            businessName: mandalFranchise.businessName,
+            ownerName: mandalFranchise.ownerName,
+            franchiseCode: mandalFranchise.franchiseCode,
+          }
           : null,
       };
 
@@ -556,47 +556,47 @@ export const getApplicationById = async (
 
     const districtFranchise = app.district
       ? await Franchise.findOne({
-          franchiseLevel: "district",
-          state: app.state,
-          district: app.district,
-          status: "active",
-        })
+        franchiseLevel: "district",
+        state: app.state,
+        district: app.district,
+        status: "active",
+      })
       : null;
 
     const mandalFranchise = app.mandal
       ? await Franchise.findOne({
-          franchiseLevel: "mandal",
-          state: app.state,
-          district: app.district,
-          mandal: app.mandal,
-          status: "active",
-        })
+        franchiseLevel: "mandal",
+        state: app.state,
+        district: app.district,
+        mandal: app.mandal,
+        status: "active",
+      })
       : null;
 
     appObj.dependencies = {
       stateFranchise: stateFranchise
         ? {
-            _id: stateFranchise._id,
-            businessName: stateFranchise.businessName,
-            ownerName: stateFranchise.ownerName,
-            franchiseCode: stateFranchise.franchiseCode,
-          }
+          _id: stateFranchise._id,
+          businessName: stateFranchise.businessName,
+          ownerName: stateFranchise.ownerName,
+          franchiseCode: stateFranchise.franchiseCode,
+        }
         : null,
       districtFranchise: districtFranchise
         ? {
-            _id: districtFranchise._id,
-            businessName: districtFranchise.businessName,
-            ownerName: districtFranchise.ownerName,
-            franchiseCode: districtFranchise.franchiseCode,
-          }
+          _id: districtFranchise._id,
+          businessName: districtFranchise.businessName,
+          ownerName: districtFranchise.ownerName,
+          franchiseCode: districtFranchise.franchiseCode,
+        }
         : null,
       mandalFranchise: mandalFranchise
         ? {
-            _id: mandalFranchise._id,
-            businessName: mandalFranchise.businessName,
-            ownerName: mandalFranchise.ownerName,
-            franchiseCode: mandalFranchise.franchiseCode,
-          }
+          _id: mandalFranchise._id,
+          businessName: mandalFranchise.businessName,
+          ownerName: mandalFranchise.ownerName,
+          franchiseCode: mandalFranchise.franchiseCode,
+        }
         : null,
     };
 
@@ -828,8 +828,8 @@ export const verifyKycApplication = async (
       const vendorSubCategories = Array.isArray((app as any).approvedSubcategories) && (app as any).approvedSubcategories.length > 0
         ? (app as any).approvedSubcategories
         : (app as any).subCategory
-        ? String((app as any).subCategory).split(',').map((s: string) => s.trim()).filter(Boolean)
-        : [];
+          ? String((app as any).subCategory).split(',').map((s: string) => s.trim()).filter(Boolean)
+          : [];
 
       const updateObj: any = {
         $set: {
@@ -1252,7 +1252,7 @@ export const verifyKycApplication = async (
       const referral = await Referral.findOne({ referredUserId: user._id, status: { $in: ["registered", "applied"] } });
       if (referral) {
         referral.status = "approved";
-        
+
         let rewardRoleKey: string = targetRole;
         if (targetRole === "franchise") {
           const level = app.franchiseLevel || "";
@@ -1291,7 +1291,7 @@ export const verifyKycApplication = async (
           try {
             await session.withTransaction(async () => {
               const label = rewardRoleKey.replace("_", " ").toUpperCase();
-              
+
               await WalletEngine.credit(
                 referral.referrerUserId,
                 amount,
@@ -1371,9 +1371,8 @@ export const rejectApplication = async (
     await createNotificationCompat({
       userId: app.userId,
       title: "Application Rejected",
-      message: `Your application for ${app.applicationType} has been rejected. Remarks: ${
-        adminRemarks || "None"
-      }`,
+      message: `Your application for ${app.applicationType} has been rejected. Remarks: ${adminRemarks || "None"
+        }`,
       type: "error",
     });
 
@@ -1614,7 +1613,7 @@ export const getDashboardStats = async (
     const platformNetRevenue = settlementFeeFromDocs > 0 ? settlementFeeFromDocs : Number((platformGMV * 0.1).toFixed(2));
     const settlementLiability = totalAvailable || 0;
     const riskAlerts = (await Order.countDocuments({ orderStatus: "Payment Rejected" })) +
-                       (await BusinessApplication.countDocuments({ status: "rejected" }));
+      (await BusinessApplication.countDocuments({ status: "rejected" }));
     const coverageRate = Math.min(100, Math.round((uniqueMandals.length / 50) * 100));
 
     const platformKpis = {
@@ -1831,7 +1830,7 @@ export const updateVendorStatus = async (
     if (status !== undefined) vendor.status = status;
     if (marketplaceStatus !== undefined) vendor.marketplaceStatus = marketplaceStatus;
     if (verifiedBadge !== undefined) vendor.verifiedBadge = !!verifiedBadge;
-    
+
     const saved = await vendor.save();
 
     await createNotificationCompat({
@@ -1969,9 +1968,8 @@ export const updateServiceProviderKycStatus = async (
       message:
         verificationStatus === "Approved"
           ? "Congratulations! Your service provider KYC has been verified and approved."
-          : `Your service provider KYC was rejected. Remarks: ${
-              remarks || "Please re-upload valid documents."
-            }`,
+          : `Your service provider KYC was rejected. Remarks: ${remarks || "Please re-upload valid documents."
+          }`,
       type: verificationStatus === "Approved" ? "success" : "error",
     });
 
@@ -2239,20 +2237,20 @@ export const createTerritory = async (req: Request, res: Response) => {
       (pincode
         ? "Pincode"
         : mandal
-        ? "Mandal"
-        : district
-        ? "District"
-        : "State");
+          ? "Mandal"
+          : district
+            ? "District"
+            : "State");
 
     const finalName =
       name ||
       (finalLevel === "State"
         ? state
         : finalLevel === "District"
-        ? district
-        : finalLevel === "Mandal"
-        ? mandal
-        : pincode);
+          ? district
+          : finalLevel === "Mandal"
+            ? mandal
+            : pincode);
 
     if (!finalLevel || !finalName) {
       return res.status(400).json({
@@ -2607,7 +2605,7 @@ const handleDrawdown = async (userId: string, amount: number, category: string, 
         throw new Error("Insufficient balance");
       }
       savedWallet = await WalletEngine.drawdown(userId, deductAmount, roleLabel, session);
-      
+
       await createNotificationCompat([{
         userId,
         title: `Payout Initiated: ₹${deductAmount} 💰`,
@@ -2873,7 +2871,7 @@ export const updateServiceProviderDocumentStatus = async (
     let docUpdated = false;
 
     kyc.documents = kyc.documents.map((doc: any) => {
-      const matches = doc.id === docId || 
+      const matches = doc.id === docId ||
         (docId === "aadhaarFront" && doc.id === "DOC-AADHAAR-F") ||
         (docId === "aadhaarBack" && doc.id === "DOC-AADHAAR-B") ||
         (docId === "panCard" && doc.id === "DOC-PAN") ||
@@ -2881,7 +2879,7 @@ export const updateServiceProviderDocumentStatus = async (
         (docId === "professionalCertificate" && doc.id === "DOC-PROF-CERT") ||
         (docId === "gstCertificate" && doc.id === "DOC-GST-CERT") ||
         (docId === "businessRegistration" && doc.id === "DOC-BIZ-REG");
-      
+
       if (matches) {
         docUpdated = true;
         return {
