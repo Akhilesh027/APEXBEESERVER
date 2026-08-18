@@ -40,7 +40,10 @@ export const createTerritory = async (req: Request, res: Response) => {
       state,
       district,
       mandal,
+      village,
       pincode,
+      codeNumber,
+      ftid: customFtid,
       status,
       density,
       targetCoverage,
@@ -54,15 +57,25 @@ export const createTerritory = async (req: Request, res: Response) => {
       });
     }
 
-    if (!["State", "District", "Mandal", "Pincode"].includes(level)) {
+    if (!["State", "District", "Mandal", "Village", "Pincode"].includes(level)) {
       return res.status(400).json({
         success: false,
         message: "Invalid territory level",
       });
     }
 
+    const paddedNumber = String(codeNumber || "1").padStart(3, "0");
     let parent: any = null;
+    let parentFtid = "";
+    let ftid = customFtid ? String(customFtid).trim().toUpperCase() : "";
     let name = state.trim();
+
+    if (level === "State") {
+      name = state.trim();
+      if (!ftid) {
+        ftid = `APX-SF-${paddedNumber}`;
+      }
+    }
 
     if (level === "District") {
       if (!district) {
@@ -85,6 +98,11 @@ export const createTerritory = async (req: Request, res: Response) => {
       }
 
       name = district.trim();
+      parentFtid = parent.ftid || "APX-SF-001";
+      const sfNum = parentFtid.replace("APX-SF-", "").replace("APX-SF", "");
+      if (!ftid) {
+        ftid = `APX-SF${sfNum}-DF-${paddedNumber}`;
+      }
     }
 
     if (level === "Mandal") {
@@ -109,6 +127,42 @@ export const createTerritory = async (req: Request, res: Response) => {
       }
 
       name = mandal.trim();
+      parentFtid = parent.ftid || "APX-SF001-DF-001";
+      // e.g. APX-SF001-DF-001 -> SF001-DF001
+      const parentParts = parentFtid.replace("APX-", "").replace(/-/g, "");
+      if (!ftid) {
+        ftid = `APX-${parentParts}-MF-${paddedNumber}`;
+      }
+    }
+
+    if (level === "Village") {
+      if (!district || !mandal || (!village && !name)) {
+        return res.status(400).json({
+          success: false,
+          message: "District, mandal and village name are required",
+        });
+      }
+
+      parent = await Territory.findOne({
+        level: "Mandal",
+        state: state.trim(),
+        district: district.trim(),
+        mandal: mandal.trim(),
+      });
+
+      if (!parent) {
+        return res.status(400).json({
+          success: false,
+          message: "Parent mandal not found. Create mandal first.",
+        });
+      }
+
+      name = (village || name).trim();
+      parentFtid = parent.ftid || "APX-SF001-DF001-MF-001";
+      const parentParts = parentFtid.replace("APX-", "").replace(/-/g, "");
+      if (!ftid) {
+        ftid = `APX-${parentParts}-VF-${paddedNumber}`;
+      }
     }
 
     if (level === "Pincode") {
@@ -134,6 +188,11 @@ export const createTerritory = async (req: Request, res: Response) => {
       }
 
       name = String(pincode).trim();
+      parentFtid = parent.ftid || "APX-SF001-DF001-MF-001";
+      const parentParts = parentFtid.replace("APX-", "").replace(/-/g, "");
+      if (!ftid) {
+        ftid = `APX-${parentParts}-PIN-${paddedNumber}`;
+      }
     }
 
     let franchise = null;
@@ -157,14 +216,28 @@ export const createTerritory = async (req: Request, res: Response) => {
     }
 
     const territory = await Territory.create({
+      ftid,
+      codeNumber: paddedNumber,
       level,
       name,
       state: state.trim(),
       district: level !== "State" ? district.trim() : "",
-      mandal: level === "Mandal" || level === "Pincode" ? mandal.trim() : "",
+      mandal: level === "Mandal" || level === "Village" || level === "Pincode" ? mandal.trim() : "",
+      village: level === "Village" ? name : "",
       pincode: level === "Pincode" ? String(pincode).trim() : "",
       parentId: parent?._id || null,
+      parentFtid,
       franchiseId: franchiseId || null,
+      franchiseStatus: franchiseId ? "ACTIVE" : "VACANT",
+      currentFranchisee: franchise
+        ? {
+            franchiseId: franchise._id,
+            name: franchise.businessName || franchise.ownerName || franchise.name,
+            phone: franchise.mobile || "",
+            email: franchise.email || "",
+            assignedAt: new Date(),
+          }
+        : undefined,
       status: status || "Active",
       density: density || "Medium",
       targetCoverage: targetCoverage || "100%",
@@ -187,7 +260,7 @@ export const createTerritory = async (req: Request, res: Response) => {
     if (error.code === 11000) {
       return res.status(409).json({
         success: false,
-        message: "Territory already exists",
+        message: "Territory or FTID already exists",
       });
     }
 
@@ -219,12 +292,16 @@ export const updateTerritory = async (req: Request, res: Response) => {
     }
 
     const {
+      ftid,
+      codeNumber,
       name,
       state,
       district,
       mandal,
+      village,
       pincode,
       status,
+      franchiseStatus,
       density,
       targetCoverage,
       franchiseId,
@@ -260,15 +337,36 @@ export const updateTerritory = async (req: Request, res: Response) => {
       }
     }
 
+    if (ftid !== undefined && ftid !== "") existingTerritory.ftid = String(ftid).trim().toUpperCase();
+    if (codeNumber !== undefined && codeNumber !== "") existingTerritory.codeNumber = String(codeNumber).trim().padStart(3, "0");
     if (name !== undefined && name !== "") existingTerritory.name = name.trim();
     if (state !== undefined && state !== "") existingTerritory.state = state.trim();
     if (district !== undefined) existingTerritory.district = district.trim();
     if (mandal !== undefined) existingTerritory.mandal = mandal.trim();
+    if (village !== undefined) existingTerritory.village = village.trim();
     if (pincode !== undefined) existingTerritory.pincode = String(pincode).trim();
     if (status !== undefined) existingTerritory.status = status;
+    if (franchiseStatus !== undefined) existingTerritory.franchiseStatus = franchiseStatus;
     if (density !== undefined) existingTerritory.density = density;
     if (targetCoverage !== undefined) existingTerritory.targetCoverage = targetCoverage.trim();
     existingTerritory.franchiseId = newFranchiseId as any;
+
+    if (newFranchiseId) {
+      existingTerritory.franchiseStatus = "ACTIVE";
+      const fDoc = await Franchise.findById(newFranchiseId);
+      if (fDoc) {
+        existingTerritory.currentFranchisee = {
+          franchiseId: fDoc._id,
+          name: fDoc.businessName || fDoc.ownerName || fDoc.name,
+          phone: fDoc.mobile || "",
+          email: fDoc.email || "",
+          assignedAt: new Date(),
+        };
+      }
+    } else if (franchiseId === "" || franchiseId === null) {
+      existingTerritory.franchiseStatus = "VACANT";
+      existingTerritory.currentFranchisee = undefined;
+    }
 
     await existingTerritory.save();
 
@@ -289,7 +387,7 @@ export const updateTerritory = async (req: Request, res: Response) => {
     }
 
     const updatedTerritory = await Territory.findById(territoryId)
-      .populate("parentId", "name level state district mandal pincode")
+      .populate("parentId", "name level state district mandal village pincode ftid")
       .populate(
         "franchiseId",
         "businessName ownerName email mobile franchiseCode franchiseLevel state district mandal"
@@ -301,6 +399,13 @@ export const updateTerritory = async (req: Request, res: Response) => {
       territory: updatedTerritory,
     });
   } catch (error: any) {
+    if (error.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: "Territory or FTID already exists",
+      });
+    }
+
     res.status(500).json({
       success: false,
       message: error.message,
