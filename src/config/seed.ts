@@ -8,7 +8,9 @@ import { WalletEngine } from "../services/WalletEngine";
 export const seedDatabase = async () => {
   try {
     // 1. Seed Super Admin User if not present
-    let adminUser = await User.findOne({ email: "admin@apexbee.in" });
+    let adminUser = await User.findOne({
+      $or: [{ email: "admin@apexbee.in" }, { phone: "9999999999" }]
+    });
     if (!adminUser) {
       const salt = await bcrypt.genSalt(10);
       const passwordHash = await bcrypt.hash("admin123", salt);
@@ -23,6 +25,19 @@ export const seedDatabase = async () => {
         isVerified: true
       });
       console.log("[Seeder] Seeded default Super Admin: admin@apexbee.in");
+    } else {
+      let changed = false;
+      if (adminUser.email !== "admin@apexbee.in") {
+        adminUser.email = "admin@apexbee.in";
+        changed = true;
+      }
+      if (!adminUser.roles.includes("admin")) {
+        adminUser.roles.push("admin");
+        changed = true;
+      }
+      if (changed) {
+        await adminUser.save();
+      }
     }
 
     // 2. Seed Default ReferralSettings if not present
