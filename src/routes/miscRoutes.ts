@@ -20,10 +20,18 @@ import {
   getSupportTickets,
   replySupportTicket,
   createTrainingVideo,
-  getTrainingVideos
+  getTrainingVideos,
+  triggerLocationSeed,
+  updatePanIndiaProducts
 } from "../controllers/miscController";
 
 const router = Router();
+
+// Test Seeding & Product Scope Routes
+router.get("/seed-location-test", triggerLocationSeed);
+router.post("/seed-location-test", triggerLocationSeed);
+router.get("/update-pan-india", updatePanIndiaProducts);
+router.post("/update-pan-india", updatePanIndiaProducts);
 
 // Courses
 router.get("/courses", getCourses);

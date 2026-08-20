@@ -36,9 +36,22 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.Territory = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
 const TerritorySchema = new mongoose_1.Schema({
+    ftid: {
+        type: String,
+        required: true,
+        unique: true,
+        trim: true,
+        uppercase: true,
+        index: true,
+    },
+    codeNumber: {
+        type: String,
+        default: "001",
+        trim: true,
+    },
     level: {
         type: String,
-        enum: ["State", "District", "Mandal", "Pincode"],
+        enum: ["State", "District", "Mandal", "Village", "Pincode"],
         required: true,
         index: true,
     },
@@ -62,6 +75,11 @@ const TerritorySchema = new mongoose_1.Schema({
         default: "",
         index: true,
     },
+    village: {
+        type: String,
+        default: "",
+        index: true,
+    },
     pincode: {
         type: String,
         default: "",
@@ -72,6 +90,12 @@ const TerritorySchema = new mongoose_1.Schema({
         ref: "Territory",
         default: null,
         index: true,
+    },
+    parentFtid: {
+        type: String,
+        default: "",
+        trim: true,
+        uppercase: true,
     },
     managerId: {
         type: mongoose_1.Schema.Types.ObjectId,
@@ -90,6 +114,11 @@ const TerritorySchema = new mongoose_1.Schema({
         enum: ["Active", "Inactive"],
         default: "Active",
     },
+    franchiseStatus: {
+        type: String,
+        enum: ["ACTIVE", "VACANT", "SUSPENDED"],
+        default: "VACANT",
+    },
     density: {
         type: String,
         enum: ["High", "Medium", "Low"],
@@ -99,6 +128,24 @@ const TerritorySchema = new mongoose_1.Schema({
         type: String,
         default: "100%",
     },
+    currentFranchisee: {
+        masterUserId: { type: String, default: "" },
+        franchiseId: { type: mongoose_1.Schema.Types.ObjectId, ref: "Franchise", default: null },
+        name: { type: String, default: "" },
+        phone: { type: String, default: "" },
+        email: { type: String, default: "" },
+        assignedAt: { type: Date, default: null },
+    },
+    franchiseHistory: [
+        {
+            masterUserId: { type: String, default: "" },
+            franchiseId: { type: mongoose_1.Schema.Types.ObjectId, ref: "Franchise", default: null },
+            name: { type: String, default: "" },
+            startDate: { type: Date, default: Date.now },
+            endDate: { type: Date, default: null },
+            reasonForExit: { type: String, default: "" },
+        },
+    ],
 }, {
     timestamps: true,
 });
@@ -108,8 +155,10 @@ TerritorySchema.index({
     state: 1,
     district: 1,
     mandal: 1,
+    village: 1,
     pincode: 1,
 }, {
     unique: true,
+    sparse: true,
 });
 exports.Territory = mongoose_1.default.model("Territory", TerritorySchema);

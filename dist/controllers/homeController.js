@@ -222,7 +222,9 @@ const getHomeDashboard = async (req, res) => {
             const isPan = p.isPanIndia || p.deliveryScope === 'pan_india' || p.deliveryScope === 'both';
             if (isPan)
                 return true;
-            if (p.calculatedDistanceKm !== null && p.calculatedDistanceKm <= 20)
+            if (pincode && p.vendorPincode && String(pincode).trim() === String(p.vendorPincode).trim())
+                return true;
+            if (lat && lng && p.calculatedDistanceKm !== null && p.calculatedDistanceKm <= 20)
                 return true;
             if (!lat && !lng && !pincode)
                 return true; // If customer has no location configured

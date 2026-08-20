@@ -4,6 +4,11 @@ const express_1 = require("express");
 const auth_1 = require("../middleware/auth");
 const miscController_1 = require("../controllers/miscController");
 const router = (0, express_1.Router)();
+// Test Seeding & Product Scope Routes
+router.get("/seed-location-test", miscController_1.triggerLocationSeed);
+router.post("/seed-location-test", miscController_1.triggerLocationSeed);
+router.get("/update-pan-india", miscController_1.updatePanIndiaProducts);
+router.post("/update-pan-india", miscController_1.updatePanIndiaProducts);
 // Courses
 router.get("/courses", miscController_1.getCourses);
 router.post("/courses", miscController_1.createCourse);

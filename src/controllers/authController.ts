@@ -51,7 +51,7 @@ export const sendOtp = async (req: Request, res: Response): Promise<void> => {
     const redis = getRedisClient();
     const redisKey = `otp:${key}`;
     await redis.set(redisKey, generatedOtp, 'EX', 300);
-    
+
     console.log(`OTP generated for: ${key}`);
     res.status(200).json({ success: true, message: 'OTP sent successfully' });
   } catch (error: any) {
@@ -73,7 +73,7 @@ export const verifyOtp = async (req: Request, res: Response): Promise<void> => {
     const redisKey = `otp:${key}`;
     const savedOtp = await redis.get(redisKey);
     const isDevFallback = process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'staging' && otp === '1234';
-    
+
     if (savedOtp === otp || isDevFallback) {
       const verifiedKey = `verified:${key}`;
       await redis.set(verifiedKey, 'true', 'EX', 600);
@@ -290,7 +290,7 @@ const parseUserAgent = (ua?: string) => {
   else if (ua.includes('Safari')) browser = 'Safari';
   else if (ua.includes('Edge')) browser = 'Edge';
   else if (ua.includes('MSIE') || ua.includes('Trident')) browser = 'Internet Explorer';
-  
+
   let device = 'Desktop';
   if (ua.includes('Mobi') || ua.includes('Android') || ua.includes('iPhone')) {
     device = ua.includes('iPhone') ? 'iPhone' : ua.includes('Android') ? 'Android Mobile' : 'Mobile';

@@ -16,6 +16,7 @@
     "seed:services": "ts-node src/seeds/seedServicesTaxonomy.ts",
     "seed:academy": "ts-node src/seeds/seedAcademyTaxonomyRunner.ts",
     "seed:catalogue:core": "ts-node src/seeds/seedCoreTaxonomies.ts",
+    "seed:location-test": "ts-node src/seeds/seedLocationTestProducts.ts",
     "categories:clear": "ts-node src/seeds/clearCategories.ts"
   },
   "dependencies": {

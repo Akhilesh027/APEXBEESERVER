@@ -1,6 +1,39 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getTrainingVideos = exports.createTrainingVideo = exports.replySupportTicket = exports.getSupportTickets = exports.createSupportTicket = exports.updateCoupon = exports.deleteCoupon = exports.validateCoupon = exports.getCoupons = exports.createCoupon = exports.deleteCampaign = exports.updateCampaign = exports.getCampaigns = exports.createCampaign = exports.updateServiceRequest = exports.getServiceRequests = exports.createServiceRequest = exports.updateCourse = exports.getCourses = exports.createCourse = void 0;
+exports.updatePanIndiaProducts = exports.triggerLocationSeed = exports.getTrainingVideos = exports.createTrainingVideo = exports.replySupportTicket = exports.getSupportTickets = exports.createSupportTicket = exports.updateCoupon = exports.deleteCoupon = exports.validateCoupon = exports.getCoupons = exports.createCoupon = exports.deleteCampaign = exports.updateCampaign = exports.getCampaigns = exports.createCampaign = exports.updateServiceRequest = exports.getServiceRequests = exports.createServiceRequest = exports.updateCourse = exports.getCourses = exports.createCourse = void 0;
 const Course_1 = require("../models/Course");
 const ServiceRequest_1 = require("../models/ServiceRequest");
 const Campaign_1 = require("../models/Campaign");
@@ -374,3 +407,85 @@ const getTrainingVideos = async (req, res) => {
     }
 };
 exports.getTrainingVideos = getTrainingVideos;
+// --- Test Location Seeding ---
+const triggerLocationSeed = async (req, res) => {
+    try {
+        const { seedLocationTestCategoriesAndProducts } = await Promise.resolve().then(() => __importStar(require('../seeds/seedLocationTestProducts')));
+        const { seedLocationStoresAndRestaurants } = await Promise.resolve().then(() => __importStar(require('../seeds/seedLocationStoresAndRestaurants')));
+        const prodResult = await seedLocationTestCategoriesAndProducts();
+        const foodAndStoresResult = await seedLocationStoresAndRestaurants();
+        return res.status(200).json({
+            success: true,
+            message: 'Location test categories, stores, restaurants, and food items successfully seeded to DB!',
+            data: {
+                products: prodResult,
+                storesAndRestaurants: foodAndStoresResult
+            }
+        });
+    }
+    catch (error) {
+        console.error('triggerLocationSeed error:', error);
+        return res.status(200).json({ success: false, message: error.message, stack: error.stack });
+    }
+};
+exports.triggerLocationSeed = triggerLocationSeed;
+// --- Update Selected Products to PAN-India Delivery ---
+const updatePanIndiaProducts = async (req, res) => {
+    try {
+        const Product = (await Promise.resolve().then(() => __importStar(require('../models/Product')))).default;
+        const StoreProduct = (await Promise.resolve().then(() => __importStar(require('../models/StoreProduct')))).default;
+        const { Vendor } = await Promise.resolve().then(() => __importStar(require('../models/Vendor')));
+        const panIndiaSlugs = [
+            'rustic-ceramic-planter-bowl-local-test',
+            'artisan-macrame-wall-hanging-local-test',
+            'handwoven-jute-table-runner-local-test',
+            'glazed-ceramic-coffee-mug-ochre-local-test',
+            'terracotta-chai-kulhad-6pack-local-test',
+            'adilabad-farm-fresh-red-chillies-250g',
+            'fresh-stone-ground-wheat-atta-5kg'
+        ];
+        const results = [];
+        // 1. Sync PAN-India flags
+        for (const slug of panIndiaSlugs) {
+            const prod = await Product.findOneAndUpdate({ slug }, {
+                $set: {
+                    deliveryScope: 'both',
+                    isPanIndia: true,
+                    isLocalDelivery: true
+                }
+            }, { new: true });
+            if (prod) {
+                await StoreProduct.updateMany({ productId: prod._id }, {
+                    $set: {
+                        deliveryScope: 'both',
+                        isPanIndia: true,
+                        isLocalDelivery: true
+                    }
+                });
+                results.push({ name: prod.name, slug: prod.slug, deliveryScope: prod.deliveryScope, isPanIndia: prod.isPanIndia });
+            }
+        }
+        // 2. Sync vendorPincode on ALL products from Vendor records
+        const allProducts = await Product.find({});
+        for (const prod of allProducts) {
+            const sellerId = prod.sellerId || prod.createdBy;
+            if (sellerId) {
+                const vendor = await Vendor.findOne({ $or: [{ _id: sellerId }, { userId: sellerId }] });
+                if (vendor?.pincode) {
+                    prod.vendorPincode = vendor.pincode;
+                    await prod.save();
+                }
+            }
+        }
+        return res.status(200).json({
+            success: true,
+            message: `Updated ${results.length} products to PAN-India + Local delivery and synced vendor pincodes!`,
+            updatedProducts: results
+        });
+    }
+    catch (error) {
+        console.error('updatePanIndiaProducts error:', error);
+        return res.status(500).json({ success: false, message: error.message });
+    }
+};
+exports.updatePanIndiaProducts = updatePanIndiaProducts;

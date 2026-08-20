@@ -126,7 +126,7 @@ const getUploadedFiles = async (req: Request) => {
 
 const populateProduct = (query: any) => {
   return query
-    .populate('sellerId', 'name email mobile phone roles shopName storeName businessName storeLogo profilePicture logo sellerProfile rating reviewsCount latitude longitude location address city state zipcode')
+    .populate('sellerId', 'name email mobile phone roles shopName storeName businessName storeLogo profilePicture logo sellerProfile rating reviewsCount latitude longitude location address city state zipcode pincode pinCode mandal district')
     .populate('categoryId', 'name slug level brands attributes')
     .populate('subCategoryId', 'name slug level brands attributes')
     .populate('childCategoryId', 'name slug level brands attributes');
@@ -424,6 +424,7 @@ export const createProduct = async (req: Request, res: Response) => {
       product = await Product.create({
         sellerId,
         sellerType: sellerType || 'vendor',
+        vendorPincode: vendor?.pincode || req.body.vendorPincode || '',
 
         name: name.trim(),
         slug,
@@ -535,93 +536,118 @@ export const getAllProducts = async (req: Request, res: Response) => {
     const district = req.query.district ? String(req.query.district).trim() : '';
     const mandal = req.query.mandal ? String(req.query.mandal).trim() : '';
 
-    const filter: any = {};
+    const andConditions: any[] = [];
     const pageNum = Math.max(1, Number(page) || 1);
     const limitNum = (status === 'all' || Number(limit) >= 100)
       ? Math.min(10000, Math.max(1, Number(limit) || 1000))
       : Math.min(100, Math.max(1, Number(limit) || 20));
 
-    // Enforce Hyperlocal vs Pan-India Product Visibility based on Customer Location (when sellerId is not specified)
-    if (!sellerId && (state || district || mandal || pincode || (lat && lng))) {
-      const vendorLocationOr: any[] = [];
+    // 1. Enforce Hyperlocal vs Pan-India Product Visibility based on Customer Location (when sellerId is not specified)
+    if (!sellerId && (district || mandal || pincode || (lat && lng))) {
+      let matchingVendors: any[] = [];
 
-      if (pincode) {
-        vendorLocationOr.push({ pincode });
-        vendorLocationOr.push({ pinCode: pincode });
-        vendorLocationOr.push({ address: { $regex: pincode, $options: 'i' } });
-      }
-      if (mandal) {
-        vendorLocationOr.push({ mandal: { $regex: mandal.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&'), $options: 'i' } });
-        vendorLocationOr.push({ address: { $regex: mandal.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&'), $options: 'i' } });
-      }
-      if (district) {
-        vendorLocationOr.push({ district: { $regex: district.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&'), $options: 'i' } });
-        vendorLocationOr.push({ city: { $regex: district.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&'), $options: 'i' } });
-        vendorLocationOr.push({ address: { $regex: district.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&'), $options: 'i' } });
-      }
-      if (state) {
-        vendorLocationOr.push({ state: { $regex: state.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&'), $options: 'i' } });
-      }
-      vendorLocationOr.push({ isGlobalDelivery: true });
-      vendorLocationOr.push({ deliveryMode: 'national_courier' });
+      if (lat && lng) {
+        // Fetch active vendors and filter by coordinate distance <= deliveryRadiusKm (or max 20km)
+        const allActiveVendors = await Vendor.find({
+          status: { $in: ['active', 'Approved', 'approved', 'ACTIVE', 'Active'] }
+        }).select('_id userId location pincode mandal district deliveryRadiusKm');
 
-      const matchingVendors = await Vendor.find({
-        status: { $in: ['active', 'Approved', 'approved', 'ACTIVE', 'Active'] },
-        $or: vendorLocationOr
-      }).select('_id userId');
+        matchingVendors = allActiveVendors.filter(v => {
+          const vLng = v.location?.coordinates?.[0];
+          const vLat = v.location?.coordinates?.[1];
+          if (typeof vLat === 'number' && typeof vLng === 'number' && vLat !== 0 && vLng !== 0) {
+            const dist = calculateDistance(lat, lng, vLat, vLng);
+            const maxRadius = v.deliveryRadiusKm || 20;
+            return dist <= maxRadius;
+          }
+          if (pincode && v.pincode && String(v.pincode).trim() === String(pincode).trim()) return true;
+          if (mandal && v.mandal && v.mandal.toLowerCase() === mandal.toLowerCase()) return true;
+          return false;
+        });
+      } else {
+        const vendorLocationOr: any[] = [];
+        if (pincode) {
+          vendorLocationOr.push({ pincode: String(pincode).trim() });
+          vendorLocationOr.push({ pinCode: String(pincode).trim() });
+          vendorLocationOr.push({ address: { $regex: String(pincode).trim(), $options: 'i' } });
+        }
+        if (mandal) {
+          const cleanMandal = mandal.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+          vendorLocationOr.push({ mandal: { $regex: `^${cleanMandal}$`, $options: 'i' } });
+        }
+        if (district && !pincode && !mandal) {
+          const cleanDistrict = district.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+          vendorLocationOr.push({ district: { $regex: `^${cleanDistrict}$`, $options: 'i' } });
+          vendorLocationOr.push({ city: { $regex: `^${cleanDistrict}$`, $options: 'i' } });
+        }
+
+        if (vendorLocationOr.length > 0) {
+          matchingVendors = await Vendor.find({
+            status: { $in: ['active', 'Approved', 'approved', 'ACTIVE', 'Active'] },
+            $or: vendorLocationOr
+          }).select('_id userId');
+        }
+      }
 
       const allowedSellerIds = matchingVendors.flatMap(v => [v._id, v.userId]).filter(Boolean);
 
-      filter.$or = [
-        ...(allowedSellerIds.length > 0 ? [{ sellerId: { $in: allowedSellerIds } }] : []),
-        { deliveryScope: { $in: ['pan_india', 'both', 'national_courier'] } },
-        { isPanIndia: true },
-        { isGlobalDelivery: true }
-      ];
+      andConditions.push({
+        $or: [
+          ...(allowedSellerIds.length > 0 ? [{ sellerId: { $in: allowedSellerIds } }] : []),
+          { deliveryScope: { $in: ['pan_india', 'both', 'national_courier'] } },
+          { isPanIndia: true },
+          { isGlobalDelivery: true }
+        ]
+      });
     }
 
+    // 2. Specific seller query
     if (sellerId) {
       const vendor = await Vendor.findOne({ $or: [{ userId: sellerId }, { _id: sellerId }] });
       if (vendor) {
-        filter.$or = [
-          { sellerId: sellerId },
-          { sellerId: vendor._id },
-          { sellerId: vendor.userId },
-          { createdBy: sellerId },
-          { createdBy: vendor.userId }
-        ];
+        andConditions.push({
+          $or: [
+            { sellerId: sellerId },
+            { sellerId: vendor._id },
+            { sellerId: vendor.userId },
+            { createdBy: sellerId },
+            { createdBy: vendor.userId }
+          ]
+        });
       } else {
-        filter.sellerId = sellerId;
+        andConditions.push({ sellerId: sellerId });
       }
     }
     if (sellerType) {
-      filter.sellerType = sellerType;
+      andConditions.push({ sellerType: sellerType });
     }
-    // Strict Live Product Enforcement for Customer User Panel
-    // Status & Active filtering
+
+    // 3. Status & Active filtering
     const liveStatuses = ['Live', 'Active', 'Approved', 'approved', 'active', 'published'];
     if (status === 'all') {
       // Admin query for all products: do not restrict by status or active state
     } else {
       if (status && status !== 'draft' && status !== 'pending' && status !== 'rejected') {
-        filter.status = { $in: liveStatuses };
+        andConditions.push({ status: { $in: liveStatuses } });
       } else if (!status && !sellerId) {
-        filter.status = { $in: liveStatuses };
+        andConditions.push({ status: { $in: liveStatuses } });
       } else if (status) {
-        filter.status = status;
+        andConditions.push({ status: status });
       }
 
       if (isActive !== undefined) {
-        filter.isActive = isActive === 'true';
+        andConditions.push({ isActive: isActive === 'true' });
       } else if (!sellerId) {
-        filter.isActive = true;
+        andConditions.push({ isActive: true });
       }
 
       if (!sellerId) {
-        filter.isArchived = { $ne: true };
-        filter.moderationStatus = { $ne: 'rejected' };
+        andConditions.push({ isArchived: { $ne: true } });
+        andConditions.push({ moderationStatus: { $ne: 'rejected' } });
       }
     }
+
+    // 4. Category filtering
     if (category || categoryId) {
       const catParam = String(categoryId || category).trim();
       const cleanParam = catParam.replace(/[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDC00-\uDFFF]/g, '').trim();
@@ -647,22 +673,28 @@ export const getAllProducts = async (req: Request, res: Response) => {
         const grandChildCats = await Category.find({ parentId: { $in: childCatIds } }).select('_id');
         const allCatIds = [foundCategory._id, ...childCatIds, ...grandChildCats.map((c) => c._id)];
 
-        filter.$or = [
-          { categoryId: { $in: allCatIds } },
-          { subCategoryId: { $in: allCatIds } },
-          { subcategoryId: { $in: allCatIds } },
-          { childCategoryId: { $in: allCatIds } }
-        ];
+        andConditions.push({
+          $or: [
+            { categoryId: { $in: allCatIds } },
+            { subCategoryId: { $in: allCatIds } },
+            { subcategoryId: { $in: allCatIds } },
+            { childCategoryId: { $in: allCatIds } }
+          ]
+        });
       } else {
         const regex = new RegExp(cleanParam.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&'), 'i');
-        filter.$or = [
-          { category: regex },
-          { subcategory: regex },
-          { name: regex },
-          { brand: regex }
-        ];
+        andConditions.push({
+          $or: [
+            { category: regex },
+            { subcategory: regex },
+            { name: regex },
+            { brand: regex }
+          ]
+        });
       }
     }
+
+    const filter = andConditions.length > 0 ? { $and: andConditions } : {};
 
     let authUser: any = undefined;
     if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
@@ -689,7 +721,7 @@ export const getAllProducts = async (req: Request, res: Response) => {
 
     const rawProducts = await populateProduct(query.select(selectString));
 
-    const sellerIds = rawProducts.map((p: any) => p.sellerId?._id || p.sellerId).filter(Boolean);
+    const sellerIds = rawProducts.flatMap((p: any) => [p.sellerId?._id, p.sellerId, p.createdBy]).filter(Boolean);
     const vendors = await Vendor.find({ $or: [{ userId: { $in: sellerIds } }, { _id: { $in: sellerIds } }] });
     const vendorMap = new Map();
     vendors.forEach((v: any) => {
@@ -700,7 +732,8 @@ export const getAllProducts = async (req: Request, res: Response) => {
     const products = rawProducts.map((p: any) => {
       const productObj = p.toObject ? p.toObject() : p;
       const sellerIdStr = (p.sellerId?._id || p.sellerId || '').toString();
-      const vendor = vendorMap.get(sellerIdStr);
+      const createdByStr = (p.createdBy?._id || p.createdBy || '').toString();
+      const vendor = vendorMap.get(sellerIdStr) || vendorMap.get(createdByStr);
 
       let distanceKm: number | null = null;
       let duration = 15;
@@ -765,7 +798,27 @@ export const getAllProducts = async (req: Request, res: Response) => {
       productObj.deliveryTimeLabel = deliveryTimeLabel;
       productObj.isCourierShipping = isCourierShipping;
       productObj.deliveryMode = vendor?.deliveryMode || 'self_delivery';
-      productObj.vendorLocationName = vendor?.district || vendor?.city || vendor?.state || '';
+      productObj.vendorLocationName = vendor?.district || vendor?.state || '';
+      
+      const vPin = vendor?.pincode || (p.sellerId && typeof p.sellerId === 'object' ? (p.sellerId.pincode || p.sellerId.pinCode) : '') || '';
+      productObj.vendorPincode = vPin;
+      productObj.shopPincode = vPin;
+      productObj.storePincode = vPin;
+      productObj.vendorMandal = vendor?.mandal || '';
+      productObj.vendorDistrict = vendor?.district || '';
+      productObj.vendorState = vendor?.state || '';
+      productObj.vendorCoordinates = vendor?.location?.coordinates || null;
+
+      productObj.sellerId = {
+        ...(typeof productObj.sellerId === 'object' ? productObj.sellerId : {}),
+        _id: vendor?._id || (typeof productObj.sellerId === 'object' ? productObj.sellerId?._id : productObj.sellerId),
+        name: vendor?.businessName || vendor?.ownerName || (typeof productObj.sellerId === 'object' ? productObj.sellerId?.name : 'ApexBee Seller'),
+        businessName: vendor?.businessName,
+        pincode: vPin,
+        pinCode: vPin,
+        location: vendor?.location || (typeof productObj.sellerId === 'object' ? productObj.sellerId?.location : null),
+        district: vendor?.district || (typeof productObj.sellerId === 'object' ? productObj.sellerId?.district : '')
+      };
 
       // Store name & store rating override
       const shopNameVal = vendor?.shopName || vendor?.storeName || vendor?.storeDesign?.shopName || vendor?.storeDesign?.storeName || vendor?.businessName;
@@ -861,6 +914,29 @@ export const getProductById = async (req: Request, res: Response) => {
     }
 
     const productObj = product.toObject();
+    const sellerIdVal = product.sellerId?._id || product.sellerId || product.createdBy;
+    const vendor = await Vendor.findOne({ $or: [{ _id: sellerIdVal }, { userId: sellerIdVal }] });
+    const vPin = vendor?.pincode || (product.sellerId && typeof product.sellerId === 'object' ? ((product.sellerId as any).pincode || (product.sellerId as any).pinCode) : '') || '';
+    
+    productObj.vendorPincode = vPin;
+    productObj.shopPincode = vPin;
+    productObj.storePincode = vPin;
+    productObj.vendorMandal = vendor?.mandal || '';
+    productObj.vendorDistrict = vendor?.district || '';
+    productObj.vendorState = vendor?.state || '';
+    productObj.vendorLocationName = vendor?.district || vendor?.state || '';
+
+    productObj.sellerId = {
+      ...(typeof productObj.sellerId === 'object' ? productObj.sellerId : {}),
+      _id: vendor?._id || (typeof productObj.sellerId === 'object' ? productObj.sellerId?._id : productObj.sellerId),
+      name: vendor?.businessName || vendor?.ownerName || (typeof productObj.sellerId === 'object' ? productObj.sellerId?.name : 'ApexBee Seller'),
+      businessName: vendor?.businessName,
+      pincode: vPin,
+      pinCode: vPin,
+      location: vendor?.location || (typeof productObj.sellerId === 'object' ? productObj.sellerId?.location : null),
+      district: vendor?.district || (typeof productObj.sellerId === 'object' ? productObj.sellerId?.district : '')
+    };
+
     if (!isOwner && !isAdmin) {
       delete productObj.adminPricing;
       delete productObj.commissionShares;
@@ -1436,6 +1512,147 @@ export const quickApproveVendorEdit = async (req: Request, res: Response) => {
     res.status(500).json({
       message: 'Failed to approve vendor edit',
       error: error.message,
+    });
+  }
+};
+
+export const bulkApproveProducts = async (req: Request, res: Response) => {
+  try {
+    const { productIds, remarks } = req.body;
+
+    if (!productIds || !Array.isArray(productIds) || productIds.length === 0) {
+      res.status(400).json({ success: false, message: 'productIds array is required' });
+      return;
+    }
+
+    const cleanIds = productIds.map((id: string) => id.replace(/^(prod_|food_)/, ''));
+
+    // 1. Fetch products to update their adminPricing if price changed
+    const products = await Product.find({ _id: { $in: cleanIds } });
+    const now = new Date();
+
+    for (const prod of products) {
+      prod.status = 'Live';
+      prod.isActive = true;
+      prod.isVendorEdit = false;
+      prod.adminPricingApproved = true;
+      prod.sellerPricingAccepted = true;
+      prod.moderationStatus = 'approved' as any;
+      prod.approvedByAdminAt = now;
+      prod.sellerAcceptedAt = now;
+      prod.liveAt = now;
+      prod.vendorEditedAt = undefined;
+      prod.preEditSnapshot = undefined;
+
+      // Sync admin pricing with new selling price if not yet synced
+      const prodPrice = prod.baseSellingPrice || (prod as any).price || 0;
+      const prodMrp = prod.baseMrp || prodPrice;
+
+      if (!prod.adminPricing) {
+        prod.adminPricing = {
+          mrp: prodMrp,
+          sellingPrice: prodPrice,
+          platformFeePercent: 10,
+          platformFeeAmount: Math.round((prodPrice * 10) / 100),
+          vendorCommissionPercent: 0,
+          vendorCommissionAmount: 0,
+          distributedFrom: 'platform_fee',
+          distributionPool: Math.round((prodPrice * 10) / 100),
+          finalSellerAmount: prodPrice,
+          shippingCharge: 0,
+          packingCharge: 0,
+          remarks: remarks || 'Bulk Approved by Admin',
+          commissionShares: []
+        };
+      } else {
+        // If price was modified by vendor, sync sellingPrice in adminPricing
+        if (prodPrice && prod.adminPricing.sellingPrice !== prodPrice) {
+          prod.adminPricing.sellingPrice = prodPrice;
+          prod.adminPricing.mrp = Math.max(prod.adminPricing.mrp || 0, prodMrp);
+          const pFee = prod.adminPricing.platformFeePercent || 10;
+          prod.adminPricing.platformFeeAmount = Math.round((prodPrice * pFee) / 100);
+          prod.adminPricing.distributionPool = prod.adminPricing.platformFeeAmount;
+        }
+      }
+
+      await prod.save();
+    }
+
+    // 2. Also update FoodMenuItem if any food items are passed
+    try {
+      await FoodMenuItem.updateMany(
+        { _id: { $in: cleanIds } },
+        {
+          $set: {
+            approvalStatus: 'PUBLISHED_LIVE',
+            isAvailable: true,
+            approvedAt: now
+          }
+        }
+      );
+    } catch (err: any) {
+      console.warn('Bulk food item approval note:', err.message);
+    }
+
+    res.json({
+      success: true,
+      message: `Successfully approved ${cleanIds.length} products to Live status.`,
+      count: cleanIds.length
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to bulk approve products',
+      error: error.message
+    });
+  }
+};
+
+export const bulkRejectProducts = async (req: Request, res: Response) => {
+  try {
+    const { productIds, reason } = req.body;
+
+    if (!productIds || !Array.isArray(productIds) || productIds.length === 0) {
+      res.status(400).json({ success: false, message: 'productIds array is required' });
+      return;
+    }
+
+    const cleanIds = productIds.map((id: string) => id.replace(/^(prod_|food_)/, ''));
+
+    await Product.updateMany(
+      { _id: { $in: cleanIds } },
+      {
+        $set: {
+          status: 'Rejected',
+          isActive: false,
+          moderationStatus: 'rejected_by_admin',
+          rejectionReason: reason || 'Rejected by Admin in Bulk Review'
+        }
+      }
+    );
+
+    try {
+      await FoodMenuItem.updateMany(
+        { _id: { $in: cleanIds } },
+        {
+          $set: {
+            approvalStatus: 'REJECTED_BY_ADMIN',
+            rejectionReason: reason || 'Rejected by Admin'
+          }
+        }
+      );
+    } catch (err: any) {}
+
+    res.json({
+      success: true,
+      message: `Successfully rejected ${cleanIds.length} products.`,
+      count: cleanIds.length
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to bulk reject products',
+      error: error.message
     });
   }
 };

@@ -54,6 +54,7 @@ const WalletEngine_1 = require("../services/WalletEngine");
 const Order_1 = require("../models/Order");
 const CommissionSettlement_1 = require("../models/CommissionSettlement");
 const ReferralTransaction_1 = require("../models/ReferralTransaction");
+const SettlementEngine_1 = require("../services/SettlementEngine");
 const Product_1 = __importDefault(require("../models/Product"));
 const getTargetRole = (app) => {
     const type = String(app.applicationType || app.roleId || "").toLowerCase().trim();
@@ -2314,6 +2315,47 @@ const getWallets = async (req, res) => {
             const rawUserId = w.userId;
             if (!rawUserId)
                 continue;
+            const rawIdStr = rawUserId.toString();
+            // Explicit identification for System Wallets
+            if (rawIdStr === SettlementEngine_1.SettlementEngine.COMPANY_ID.toString()) {
+                walletObj.userId = {
+                    _id: SettlementEngine_1.SettlementEngine.COMPANY_ID,
+                    name: "Apexbee Company System Wallet",
+                    email: "company-wallet@apexbee.com",
+                    role: "company",
+                    roles: ["company", "admin"]
+                };
+                walletObj.ownerName = "Apexbee Company System Wallet";
+                walletObj.type = "Company";
+                resolvedWallets.push(walletObj);
+                continue;
+            }
+            if (rawIdStr === SettlementEngine_1.SettlementEngine.WISHLINK_ID.toString()) {
+                walletObj.userId = {
+                    _id: SettlementEngine_1.SettlementEngine.WISHLINK_ID,
+                    name: "WishLink Pool Wallet",
+                    email: "wishlink-pool@apexbee.com",
+                    role: "company",
+                    roles: ["wishlink_pool", "admin"]
+                };
+                walletObj.ownerName = "WishLink Pool Wallet";
+                walletObj.type = "Company";
+                resolvedWallets.push(walletObj);
+                continue;
+            }
+            if (rawIdStr === SettlementEngine_1.SettlementEngine.REFERRAL_POOL_ID.toString()) {
+                walletObj.userId = {
+                    _id: SettlementEngine_1.SettlementEngine.REFERRAL_POOL_ID,
+                    name: "Referral Pool Wallet",
+                    email: "referral-pool@apexbee.com",
+                    role: "company",
+                    roles: ["referral_pool", "admin"]
+                };
+                walletObj.ownerName = "Referral Pool Wallet";
+                walletObj.type = "Company";
+                resolvedWallets.push(walletObj);
+                continue;
+            }
             const user = await mongoose_1.default.model("User").findById(rawUserId, "name email roles");
             if (!user) {
                 // Find if this wallet belongs to a Franchise
@@ -2363,23 +2405,28 @@ const getReconciliationStats = async (req, res) => {
             { $group: { _id: null, total: { $sum: "$amount" } } }
         ]);
         const totalFranchiseEarnings = franchiseEarningsAgg[0]?.total || 0;
-        // 4. Total Referral Earnings (released referral transactions)
+        // 4. Total Referral Earnings for independent users (excluding fallback to Company)
         const referralEarningsAgg = await ReferralTransaction_1.ReferralTransaction.aggregate([
-            { $match: { status: 'released' } },
+            { $match: { recipientUserId: { $ne: SettlementEngine_1.SettlementEngine.COMPANY_ID }, status: 'released' } },
             { $group: { _id: null, total: { $sum: "$amount" } } }
         ]);
         const totalReferralEarnings = referralEarningsAgg[0]?.total || 0;
-        // 5. Total Company Platform Fees (calculated per-product from vendor settlements)
+        // 5. Total Company Platform & Fallback Earnings (released company settlements + unreferred fallbacks)
         const platformFeeAgg = await CommissionSettlement_1.CommissionSettlement.aggregate([
             { $match: { settlementType: 'vendor' } },
             { $group: { _id: null, total: { $sum: "$totalPlatformFee" } } }
         ]);
         const totalPlatformFees = platformFeeAgg[0]?.total || 0;
-        const companyEarningsAgg = await CommissionSettlement_1.CommissionSettlement.aggregate([
+        const companySettlementsAgg = await CommissionSettlement_1.CommissionSettlement.aggregate([
             { $match: { settlementType: 'company', status: 'released' } },
             { $group: { _id: null, total: { $sum: "$amount" } } }
         ]);
-        const totalCompanyEarnings = (companyEarningsAgg[0]?.total || 0) || totalPlatformFees;
+        const companyReferralsAgg = await ReferralTransaction_1.ReferralTransaction.aggregate([
+            { $match: { recipientUserId: SettlementEngine_1.SettlementEngine.COMPANY_ID, status: 'released' } },
+            { $group: { _id: null, total: { $sum: "$amount" } } }
+        ]);
+        const releasedCompanyTotal = (companySettlementsAgg[0]?.total || 0) + (companyReferralsAgg[0]?.total || 0);
+        const totalCompanyEarnings = releasedCompanyTotal || totalPlatformFees;
         // 6. Total Pending Releases (pending settlements + pending referral transactions)
         const pendingSettlementsAgg = await CommissionSettlement_1.CommissionSettlement.aggregate([
             { $match: { status: 'pending' } },
@@ -2775,10 +2822,10 @@ const getTreasuryMasterStats = async (req, res) => {
             const orderSettlements = settlements.filter((s) => String(s.orderId) === String(o._id));
             const vendorS = orderSettlements.find((s) => s.settlementType === 'vendor');
             const franchiseS = orderSettlements.filter((s) => s.settlementType === 'franchise');
-            const companyS = orderSettlements.find((s) => s.settlementType === 'company');
+            const companyS = orderSettlements.filter((s) => s.settlementType === 'company');
             let vendorShare = vendorS ? vendorS.amount : 0;
             let franchiseFee = franchiseS.reduce((sum, s) => sum + (s.amount || 0), 0);
-            let platformComm = companyS ? companyS.amount : 0;
+            let platformComm = companyS.reduce((sum, s) => sum + (s.amount || 0), 0);
             if (orderSettlements.length === 0) {
                 vendorShare = o.vendorPayoutAmount ?? Math.max(0, gross - Math.round(gross * 0.10));
                 platformComm = o.platformCommissionAmount ?? (gross - vendorShare);

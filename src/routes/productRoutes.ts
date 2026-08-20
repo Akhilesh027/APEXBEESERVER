@@ -11,6 +11,8 @@ import {
   sellerNegotiatePricing,
   rejectProduct,
   quickApproveVendorEdit,
+  bulkApproveProducts,
+  bulkRejectProducts,
   bulkUpdateProducts,
   getProductsByVendor,
   duplicateProduct,
@@ -53,7 +55,9 @@ router.post('/bulk-update', protect, restrictTo('vendor', 'wholesaler', 'manufac
 router.get('/inventory/movements', protect, getInventoryMovements);
 router.post('/inventory/movements', protect, createInventoryMovement);
 
-// Admin-only pricing actions
+// Admin-only pricing & approval actions
+router.post('/admin/bulk-approve', protect, restrictTo('admin'), bulkApproveProducts);
+router.post('/admin/bulk-reject', protect, restrictTo('admin'), bulkRejectProducts);
 router.patch('/:id/admin-pricing', protect, restrictTo('admin'), configureAdminPricing);
 router.patch('/:id/quick-approve-edit', protect, restrictTo('admin'), quickApproveVendorEdit);
 router.patch('/:id/reject', protect, restrictTo('admin'), rejectProduct);

@@ -37,16 +37,63 @@ exports.Banner = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
 const BannerSchema = new mongoose_1.Schema({
     title: { type: String, required: true },
-    description: { type: String, required: true },
-    imageUrl: { type: String, default: "" },
+    subtitle: { type: String, default: "" },
+    description: { type: String, default: "" },
+    imageUrl: { type: String, required: true },
+    mobileImageUrl: { type: String, default: "" },
+    placement: {
+        type: String,
+        enum: [
+            'home_hero',
+            'time_of_day',
+            'home_strip',
+            'food_hero',
+            'services_hero',
+            'stores_hero',
+            'category_hero',
+            'cart_strip',
+            'popup_modal',
+            'custom'
+        ],
+        default: 'home_hero',
+        index: true
+    },
+    size: {
+        type: String,
+        enum: ['big', 'medium', 'small', 'strip', 'popup'],
+        default: 'big'
+    },
+    targetCategory: { type: String, default: "all", index: true },
     type: {
         type: String,
         enum: ['morning', 'afternoon', 'evening', 'night', 'festival', 'promo'],
         default: 'promo'
     },
-    isActive: { type: Boolean, default: true },
+    timeOfDaySlot: {
+        type: String,
+        enum: ['all', 'morning', 'afternoon', 'evening', 'night', 'festival'],
+        default: 'all'
+    },
+    tag: { type: String, default: "" },
     discount: { type: String, default: "" },
-    link: { type: String, default: "" },
-    countdownHours: { type: Number, default: 0 }
+    couponCode: { type: String, default: "" },
+    buttonText: { type: String, default: "Explore Now" },
+    link: { type: String, default: "/" },
+    order: { type: Number, default: 0 },
+    isActive: { type: Boolean, default: true, index: true },
+    startDate: { type: Date },
+    endDate: { type: Date },
+    countdownHours: { type: Number, default: 0 },
+    targetDevice: {
+        type: String,
+        enum: ['all', 'mobile', 'desktop'],
+        default: 'all'
+    },
+    targetPincodes: [{ type: String }],
+    clicks: { type: Number, default: 0 },
+    impressions: { type: Number, default: 0 },
+    bgGradient: { type: String, default: "from-amber-600 via-orange-600 to-rose-700" }
 }, { timestamps: true });
+// Helpful index for fast frontend retrieval
+BannerSchema.index({ placement: 1, isActive: 1, order: 1, createdAt: -1 });
 exports.Banner = mongoose_1.default.model("Banner", BannerSchema);

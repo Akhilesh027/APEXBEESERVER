@@ -14,18 +14,35 @@ const foodAvailabilityService_1 = require("../services/foodAvailabilityService")
 const TableBooking_1 = require("../models/TableBooking");
 const getCustomerRestaurantsListing = async (req, res) => {
     try {
-        const { cuisine, businessType, foodPreference, search, lat, lng, pincode, zipcode } = req.query;
+        const { cuisine, businessType, foodPreference, search, lat, lng, pincode, zipcode, mandal, district, city } = req.query;
         const filter = {
             verificationStatus: { $ne: 'REJECTED' },
             accountStatus: { $ne: 'BLOCKED' },
         };
+        const userLat = lat !== undefined && lat !== null && !isNaN(Number(lat)) ? Number(lat) : null;
+        const userLng = lng !== undefined && lng !== null && !isNaN(Number(lng)) ? Number(lng) : null;
         const activePincode = (pincode || zipcode || '').toString().trim();
-        if (activePincode) {
-            filter.$or = [
-                { pincode: activePincode },
-                { zipcode: activePincode },
-                { 'address.pincode': activePincode }
-            ];
+        const activeMandal = (mandal || '').toString().trim();
+        const activeDistrict = (district || city || '').toString().trim();
+        if (!userLat && !userLng && (activePincode || activeMandal || activeDistrict)) {
+            const locOr = [];
+            if (activePincode) {
+                locOr.push({ pincode: activePincode });
+                locOr.push({ zipcode: activePincode });
+                locOr.push({ 'address.pincode': activePincode });
+                locOr.push({ address: { $regex: activePincode, $options: 'i' } });
+            }
+            if (activeMandal) {
+                locOr.push({ locality: { $regex: activeMandal, $options: 'i' } });
+                locOr.push({ address: { $regex: activeMandal, $options: 'i' } });
+            }
+            if (activeDistrict && !activePincode && !activeMandal) {
+                locOr.push({ city: { $regex: activeDistrict, $options: 'i' } });
+                locOr.push({ district: { $regex: activeDistrict, $options: 'i' } });
+            }
+            if (locOr.length > 0) {
+                filter.$or = locOr;
+            }
         }
         if (businessType)
             filter.businessType = businessType;
@@ -35,7 +52,29 @@ const getCustomerRestaurantsListing = async (req, res) => {
             filter.cuisines = { $in: [String(cuisine)] };
         if (search)
             filter.restaurantName = { $regex: String(search), $options: 'i' };
-        const restaurants = await RestaurantProfile_1.RestaurantProfile.find(filter).sort({ rating: -1, createdAt: -1 });
+        let restaurants = await RestaurantProfile_1.RestaurantProfile.find(filter).sort({ rating: -1, createdAt: -1 });
+        if (userLat !== null && userLng !== null) {
+            restaurants = restaurants.filter(r => {
+                const rLng = r.location?.coordinates?.[0];
+                const rLat = r.location?.coordinates?.[1];
+                if (typeof rLat === 'number' && typeof rLng === 'number' && rLat !== 0 && rLng !== 0) {
+                    const R = 6371;
+                    const dLat = ((rLat - userLat) * Math.PI) / 180;
+                    const dLon = ((rLng - userLng) * Math.PI) / 180;
+                    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                        Math.cos((userLat * Math.PI) / 180) * Math.cos((rLat * Math.PI) / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+                    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+                    const dist = Math.round(R * c * 10) / 10;
+                    r._calculatedDist = dist;
+                    return dist <= 25;
+                }
+                if (activePincode && r.pincode === activePincode) {
+                    r._calculatedDist = 1.2;
+                    return true;
+                }
+                return false;
+            });
+        }
         const results = await Promise.all(restaurants.map(async (r) => {
             const hours = await RestaurantOperatingHours_1.RestaurantOperatingHours.findOne({ restaurantId: r._id });
             const openCheck = foodAvailabilityService_1.FoodAvailabilityService.isRestaurantOpen(r, hours);
@@ -54,6 +93,7 @@ const getCustomerRestaurantsListing = async (req, res) => {
                 rating: r.rating,
                 averagePreparationMinutes: r.averagePreparationMinutes,
                 minimumOrderValue: r.minimumOrderValue,
+                distanceInKm: r._calculatedDist || (activePincode && r.pincode === activePincode ? 1.2 : 2.5),
                 isOpen: openCheck.isOpen,
                 openReason: openCheck.reason,
                 busyMode: r.busyMode,

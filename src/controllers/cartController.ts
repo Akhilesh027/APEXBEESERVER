@@ -26,7 +26,7 @@ export const getCart = async (req: Request, res: Response) => {
         // Try Product collection first
         let product: any = await Product.findById(rawId)
           .populate({ path: 'categoryId', select: 'name' })
-          .populate({ path: 'sellerId', select: 'name sellerProfile' });
+          .populate({ path: 'sellerId', select: 'name sellerProfile businessName location pincode pinCode' });
 
         // If not found in Product, check FoodMenuItem collection
         if (!product) {
@@ -34,6 +34,7 @@ export const getCart = async (req: Request, res: Response) => {
           if (foodItem) {
             const restaurant: any = foodItem.restaurantId || {};
             const price = foodItem.offerPrice && foodItem.offerPrice > 0 ? foodItem.offerPrice : foodItem.basePrice;
+            const rPin = restaurant.pincode || restaurant.pinCode || restaurant.location?.pincode;
             return {
               _id: item._id,
               productId: foodItem._id,
@@ -54,6 +55,11 @@ export const getCart = async (req: Request, res: Response) => {
               stock: foodItem.soldOut ? 0 : 99,
               vendorId: restaurant._id || restaurant.id,
               vendorName: restaurant.restaurantName || restaurant.name || 'Food Partner',
+              vendorPincode: rPin,
+              shopPincode: rPin,
+              storePincode: rPin,
+              deliveryScope: 'local',
+              isPanIndia: false,
               categoryName: 'Food & Dining',
               returnPolicy: 'Non-returnable Food Item',
               allowPickup: true,
@@ -87,6 +93,7 @@ export const getCart = async (req: Request, res: Response) => {
 
         const categoryName = product.categoryId?.name || 'Marketplace';
         const vendorName = product.sellerId?.sellerProfile?.businessName || product.sellerId?.name || 'ApexBee Seller';
+        const vPin = product.sellerId?.pincode || product.sellerId?.pinCode || product.vendorPincode || product.pincode;
 
         // Base charges from adminPricing
         const deliveryFee = product.adminPricing?.shippingCharge ?? 0;
@@ -136,6 +143,12 @@ export const getCart = async (req: Request, res: Response) => {
           stock: product.stock,
           vendorId: product.sellerId?._id || product.sellerId,
           vendorName: vendorName,
+          vendorPincode: vPin,
+          shopPincode: vPin,
+          storePincode: vPin,
+          deliveryScope: product.deliveryScope || (product.isPanIndia ? 'both' : 'local'),
+          isPanIndia: product.isPanIndia || product.deliveryScope === 'pan_india' || product.deliveryScope === 'both',
+          sellerId: product.sellerId,
           categoryName: categoryName,
           returnPolicy: '7-day Easy Return',
           allowPickup: product.attributes?.allowPickup ?? false,

@@ -30,7 +30,9 @@ router.delete('/:id', auth_1.protect, (0, auth_1.restrictTo)('vendor', 'wholesal
 router.post('/bulk-update', auth_1.protect, (0, auth_1.restrictTo)('vendor', 'wholesaler', 'manufacturer', 'admin'), productController_1.bulkUpdateProducts);
 router.get('/inventory/movements', auth_1.protect, productController_1.getInventoryMovements);
 router.post('/inventory/movements', auth_1.protect, productController_1.createInventoryMovement);
-// Admin-only pricing actions
+// Admin-only pricing & approval actions
+router.post('/admin/bulk-approve', auth_1.protect, (0, auth_1.restrictTo)('admin'), productController_1.bulkApproveProducts);
+router.post('/admin/bulk-reject', auth_1.protect, (0, auth_1.restrictTo)('admin'), productController_1.bulkRejectProducts);
 router.patch('/:id/admin-pricing', auth_1.protect, (0, auth_1.restrictTo)('admin'), productController_1.configureAdminPricing);
 router.patch('/:id/quick-approve-edit', auth_1.protect, (0, auth_1.restrictTo)('admin'), productController_1.quickApproveVendorEdit);
 router.patch('/:id/reject', auth_1.protect, (0, auth_1.restrictTo)('admin'), productController_1.rejectProduct);

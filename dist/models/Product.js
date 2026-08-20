@@ -79,6 +79,7 @@ const ProductSchema = new mongoose_1.Schema({
     deliveryScope: { type: String, enum: ['local', 'pan_india', 'both'], default: 'local' },
     isLocalDelivery: { type: Boolean, default: true },
     isPanIndia: { type: Boolean, default: false },
+    vendorPincode: { type: String },
     adminPricingApproved: { type: Boolean, default: false },
     sellerPricingAccepted: { type: Boolean, default: false },
     approvedByAdminAt: { type: Date },

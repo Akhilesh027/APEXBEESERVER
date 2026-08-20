@@ -55,6 +55,7 @@ import { WalletEngine } from '../services/WalletEngine';
 import { Order } from "../models/Order";
 import { CommissionSettlement } from "../models/CommissionSettlement";
 import { ReferralTransaction } from "../models/ReferralTransaction";
+import { SettlementEngine } from "../services/SettlementEngine";
 import Product from "../models/Product";
 
 const getTargetRole = (app: any): RoleType => {
@@ -2665,6 +2666,49 @@ export const getWallets = async (req: Request, res: Response) => {
       const rawUserId = w.userId;
       if (!rawUserId) continue;
 
+      const rawIdStr = rawUserId.toString();
+
+      // Explicit identification for System Wallets
+      if (rawIdStr === SettlementEngine.COMPANY_ID.toString()) {
+        (walletObj as any).userId = {
+          _id: SettlementEngine.COMPANY_ID,
+          name: "Apexbee Company System Wallet",
+          email: "company-wallet@apexbee.com",
+          role: "company",
+          roles: ["company", "admin"]
+        };
+        (walletObj as any).ownerName = "Apexbee Company System Wallet";
+        (walletObj as any).type = "Company";
+        resolvedWallets.push(walletObj);
+        continue;
+      }
+      if (rawIdStr === SettlementEngine.WISHLINK_ID.toString()) {
+        (walletObj as any).userId = {
+          _id: SettlementEngine.WISHLINK_ID,
+          name: "WishLink Pool Wallet",
+          email: "wishlink-pool@apexbee.com",
+          role: "company",
+          roles: ["wishlink_pool", "admin"]
+        };
+        (walletObj as any).ownerName = "WishLink Pool Wallet";
+        (walletObj as any).type = "Company";
+        resolvedWallets.push(walletObj);
+        continue;
+      }
+      if (rawIdStr === SettlementEngine.REFERRAL_POOL_ID.toString()) {
+        (walletObj as any).userId = {
+          _id: SettlementEngine.REFERRAL_POOL_ID,
+          name: "Referral Pool Wallet",
+          email: "referral-pool@apexbee.com",
+          role: "company",
+          roles: ["referral_pool", "admin"]
+        };
+        (walletObj as any).ownerName = "Referral Pool Wallet";
+        (walletObj as any).type = "Company";
+        resolvedWallets.push(walletObj);
+        continue;
+      }
+
       const user = await mongoose.model("User").findById(rawUserId, "name email roles");
       if (!user) {
         // Find if this wallet belongs to a Franchise
@@ -2715,25 +2759,31 @@ export const getReconciliationStats = async (req: Request, res: Response) => {
     ]);
     const totalFranchiseEarnings = franchiseEarningsAgg[0]?.total || 0;
 
-    // 4. Total Referral Earnings (released referral transactions)
+    // 4. Total Referral Earnings for independent users (excluding fallback to Company)
     const referralEarningsAgg = await ReferralTransaction.aggregate([
-      { $match: { status: 'released' } },
+      { $match: { recipientUserId: { $ne: SettlementEngine.COMPANY_ID }, status: 'released' } },
       { $group: { _id: null, total: { $sum: "$amount" } } }
     ]);
     const totalReferralEarnings = referralEarningsAgg[0]?.total || 0;
 
-    // 5. Total Company Platform Fees (calculated per-product from vendor settlements)
+    // 5. Total Company Platform & Fallback Earnings (released company settlements + unreferred fallbacks)
     const platformFeeAgg = await CommissionSettlement.aggregate([
       { $match: { settlementType: 'vendor' } },
       { $group: { _id: null, total: { $sum: "$totalPlatformFee" } } }
     ]);
     const totalPlatformFees = platformFeeAgg[0]?.total || 0;
 
-    const companyEarningsAgg = await CommissionSettlement.aggregate([
+    const companySettlementsAgg = await CommissionSettlement.aggregate([
       { $match: { settlementType: 'company', status: 'released' } },
       { $group: { _id: null, total: { $sum: "$amount" } } }
     ]);
-    const totalCompanyEarnings = (companyEarningsAgg[0]?.total || 0) || totalPlatformFees;
+    const companyReferralsAgg = await ReferralTransaction.aggregate([
+      { $match: { recipientUserId: SettlementEngine.COMPANY_ID, status: 'released' } },
+      { $group: { _id: null, total: { $sum: "$amount" } } }
+    ]);
+
+    const releasedCompanyTotal = (companySettlementsAgg[0]?.total || 0) + (companyReferralsAgg[0]?.total || 0);
+    const totalCompanyEarnings = releasedCompanyTotal || totalPlatformFees;
 
     // 6. Total Pending Releases (pending settlements + pending referral transactions)
     const pendingSettlementsAgg = await CommissionSettlement.aggregate([
@@ -3161,11 +3211,11 @@ export const getTreasuryMasterStats = async (req: Request, res: Response) => {
 
       const vendorS = orderSettlements.find((s: any) => s.settlementType === 'vendor');
       const franchiseS = orderSettlements.filter((s: any) => s.settlementType === 'franchise');
-      const companyS = orderSettlements.find((s: any) => s.settlementType === 'company');
+      const companyS = orderSettlements.filter((s: any) => s.settlementType === 'company');
 
       let vendorShare = vendorS ? vendorS.amount : 0;
       let franchiseFee = franchiseS.reduce((sum: number, s: any) => sum + (s.amount || 0), 0);
-      let platformComm = companyS ? companyS.amount : 0;
+      let platformComm = companyS.reduce((sum: number, s: any) => sum + (s.amount || 0), 0);
 
       if (orderSettlements.length === 0) {
         vendorShare = o.vendorPayoutAmount ?? Math.max(0, gross - Math.round(gross * 0.10));

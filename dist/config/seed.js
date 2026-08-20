@@ -20,6 +20,7 @@ const mongoose_1 = __importDefault(require("mongoose"));
 const Banner_1 = require("../models/Banner");
 const Restaurant_1 = require("../models/Restaurant");
 const ServiceProvider_1 = require("../models/ServiceProvider");
+const Vendor_1 = require("../models/Vendor");
 const seedCategories = async () => {
     const catCount = await Category_1.default.countDocuments({});
     if (catCount > 0) {
@@ -609,6 +610,67 @@ const seedBannersRestaurantsAndServices = async () => {
         else {
             console.log("[Seeder] ServiceProviders already exist.");
         }
+        // 4. Ensure all Vendor Test Accounts have active status & passwords
+        const vendorLogins = [
+            { email: 'ramesh.hyd.vendor@testapexbee.com', name: 'Ramesh Reddy', phone: '9848011001', pass: 'TestVendor@123', business: 'Apex Madhapur Fresh & Artisan Hub', pin: '500081' },
+            { email: 'suresh.gachi.vendor@testapexbee.com', name: 'Suresh Kumar', phone: '9848011002', pass: 'TestVendor@123', business: 'Gachibowli Organic Store & Bakes', pin: '500032' },
+            { email: 'ananya.blr.vendor@testapexbee.com', name: 'Ananya Sharma', phone: '9848011003', pass: 'TestVendor@123', business: 'Koramangala Artisan Market & Farmcraft', pin: '560034' },
+            { email: 'karthik.blr.vendor@testapexbee.com', name: 'Karthik Rao', phone: '9848011004', pass: 'TestVendor@123', business: 'Indiranagar Gourmet & Crafts', pin: '560038' },
+            { email: 'farhan.mum.vendor@testapexbee.com', name: 'Farhan Merchant', phone: '9848011005', pass: 'TestVendor@123', business: 'Bandra Artisan Goods & Farm Collective', pin: '400050' },
+            { email: 'tamsi.store@apexbee.test', name: 'Ramesh Patel (Tamsi Bazaar)', phone: '9848050431', pass: 'TestVendor@123', business: 'Adilabad Tamsi Super Bazaar & Dairy', pin: '504312' },
+            { email: 'vendor@gmail.com', name: 'ApexBee Prime Vendor Store', phone: '9876543210', pass: 'vendor123', business: 'ApexBee Prime Vendor Store', pin: '500081' },
+            { email: 'vendor@apexmarket.in', name: 'ApexBee Local Store Manager', phone: '8888888888', pass: 'vendor123', business: 'ApexBee Local Superstore', pin: '524001' },
+            { email: 'dev@gmail.com', name: 'Apex Devotional Essentials', phone: '9848011009', pass: 'vendor123', business: 'Apex Devotional Store', pin: '500081' }
+        ];
+        for (const v of vendorLogins) {
+            let u = await User_1.User.findOne({ email: v.email }).select('+passwordHash');
+            const hash = await bcryptjs_1.default.hash(v.pass, 10);
+            if (!u) {
+                u = await User_1.User.create({
+                    name: v.name,
+                    email: v.email,
+                    phone: v.phone,
+                    mobile: v.phone,
+                    passwordHash: hash,
+                    roles: ['vendor', 'customer'],
+                    status: 'active',
+                    isVerified: true
+                });
+            }
+            else {
+                u.passwordHash = hash;
+                u.status = 'active';
+                u.isVerified = true;
+                if (!u.roles.includes('vendor'))
+                    u.roles.push('vendor');
+                if (!u.roles.includes('customer'))
+                    u.roles.push('customer');
+                await u.save();
+            }
+            const existingVendor = await Vendor_1.Vendor.findOne({ $or: [{ userId: u._id }, { email: v.email }] });
+            if (!existingVendor) {
+                await Vendor_1.Vendor.create({
+                    userId: u._id,
+                    businessName: v.business,
+                    ownerName: v.name,
+                    email: v.email,
+                    phone: v.phone,
+                    mobile: v.phone,
+                    pincode: v.pin,
+                    status: 'active',
+                    marketplaceStatus: 'Approved',
+                    isMarketplaceListed: true,
+                    location: { type: 'Point', coordinates: [78.4867, 17.3850] }
+                });
+            }
+            else {
+                existingVendor.status = 'active';
+                existingVendor.marketplaceStatus = 'Approved';
+                existingVendor.isMarketplaceListed = true;
+                await existingVendor.save();
+            }
+        }
+        console.log("[Seeder] Ensured all Vendor test logins are active and verified.");
     }
     catch (err) {
         console.error("[Seeder] Failed to seed banners/restaurants/services:", err);

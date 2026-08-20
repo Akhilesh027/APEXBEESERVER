@@ -143,90 +143,94 @@ export class SettlementEngine {
       if (session) queryFirstOrderTx = queryFirstOrderTx.session(session);
       const existingFirstOrderTx = await queryFirstOrderTx;
 
-      if (!existingFirstOrderTx && customer.referralHierarchy) {
+      if (!existingFirstOrderTx) {
         let querySettings = ReferralSettings.findOne({});
         if (session) querySettings = querySettings.session(session);
         const settings = await querySettings || new ReferralSettings();
         
         if (settings.enabled) {
           const hierarchy = customer.referralHierarchy;
+          const l1Recipient = (hierarchy && hierarchy.level1UserId) ? hierarchy.level1UserId : this.COMPANY_ID;
+          const l2Recipient = (hierarchy && hierarchy.level2UserId) ? hierarchy.level2UserId : this.COMPANY_ID;
+          const l3Recipient = (hierarchy && hierarchy.level3UserId) ? hierarchy.level3UserId : this.COMPANY_ID;
           
-          if (hierarchy.level1UserId) {
-            try {
-              const l1Amount = (settings.firstOrderRewards && settings.firstOrderRewards.level1 !== undefined && settings.firstOrderRewards.level1 !== 0)
-                ? settings.firstOrderRewards.level1
-                : 50;
+          const l1Amount = (settings.firstOrderRewards && settings.firstOrderRewards.level1 !== undefined && settings.firstOrderRewards.level1 !== 0)
+            ? settings.firstOrderRewards.level1
+            : 50;
 
+          if (l1Amount > 0) {
+            try {
+              const isFallback = l1Recipient.toString() === this.COMPANY_ID.toString();
               await this.createReferralTransactionUnique({
-                recipientUserId: hierarchy.level1UserId,
+                recipientUserId: l1Recipient,
                 referredUserId: customer._id,
                 orderId: order._id,
                 level: 1,
                 amount: l1Amount,
                 transactionType: "first_order_bonus",
-                rewardReason: "first_order_bonus",
+                rewardReason: isFallback ? "first_order_bonus (unreferred fallback)" : "first_order_bonus",
                 releaseDate,
                 status: "placed"
               }, session);
 
-              let queryL1 = User.findByIdAndUpdate(hierarchy.level1UserId, { $inc: { successfulReferrals: 1 } });
-              if (session) queryL1 = queryL1.session(session);
-              await queryL1;
+              if (hierarchy && hierarchy.level1UserId) {
+                let queryL1 = User.findByIdAndUpdate(hierarchy.level1UserId, { $inc: { successfulReferrals: 1 } });
+                if (session) queryL1 = queryL1.session(session);
+                await queryL1;
+              }
             } catch (err: any) {
               console.warn("First order bonus level 1 uniqueness caught:", err.message);
             }
           }
 
-          if (hierarchy.level2UserId) {
-            try {
-              const l2Amount = (settings.firstOrderRewards && settings.firstOrderRewards.level2 !== undefined)
-                ? settings.firstOrderRewards.level2
-                : 0;
+          const l2Amount = (settings.firstOrderRewards && settings.firstOrderRewards.level2 !== undefined)
+            ? settings.firstOrderRewards.level2
+            : 0;
 
-              if (l2Amount > 0) {
-                await this.createReferralTransactionUnique({
-                  recipientUserId: hierarchy.level2UserId,
-                  referredUserId: customer._id,
-                  orderId: order._id,
-                  level: 2,
-                  amount: l2Amount,
-                  transactionType: "first_order_bonus",
-                  rewardReason: "first_order_bonus",
-                  releaseDate,
-                  status: "placed"
-                }, session);
-              }
+          if (l2Amount > 0) {
+            try {
+              const isFallback = l2Recipient.toString() === this.COMPANY_ID.toString();
+              await this.createReferralTransactionUnique({
+                recipientUserId: l2Recipient,
+                referredUserId: customer._id,
+                orderId: order._id,
+                level: 2,
+                amount: l2Amount,
+                transactionType: "first_order_bonus",
+                rewardReason: isFallback ? "first_order_bonus (unreferred fallback)" : "first_order_bonus",
+                releaseDate,
+                status: "placed"
+              }, session);
             } catch (err: any) {
               console.warn("First order bonus level 2 uniqueness caught:", err.message);
             }
           }
 
-          if (hierarchy.level3UserId) {
-            try {
-              const l3Amount = (settings.firstOrderRewards && settings.firstOrderRewards.level3 !== undefined)
-                ? settings.firstOrderRewards.level3
-                : 0;
+          const l3Amount = (settings.firstOrderRewards && settings.firstOrderRewards.level3 !== undefined)
+            ? settings.firstOrderRewards.level3
+            : 0;
 
-              if (l3Amount > 0) {
-                await this.createReferralTransactionUnique({
-                  recipientUserId: hierarchy.level3UserId,
-                  referredUserId: customer._id,
-                  orderId: order._id,
-                  level: 3,
-                  amount: l3Amount,
-                  transactionType: "first_order_bonus",
-                  rewardReason: "first_order_bonus",
-                  releaseDate,
-                  status: "placed"
-                }, session);
-              }
+          if (l3Amount > 0) {
+            try {
+              const isFallback = l3Recipient.toString() === this.COMPANY_ID.toString();
+              await this.createReferralTransactionUnique({
+                recipientUserId: l3Recipient,
+                referredUserId: customer._id,
+                orderId: order._id,
+                level: 3,
+                amount: l3Amount,
+                transactionType: "first_order_bonus",
+                rewardReason: isFallback ? "first_order_bonus (unreferred fallback)" : "first_order_bonus",
+                releaseDate,
+                status: "placed"
+              }, session);
             } catch (err: any) {
               console.warn("First order bonus level 3 uniqueness caught:", err.message);
             }
           }
 
           // Product-defined First Purchase commission
-          if (hierarchy.level1UserId && order.items && order.items.length > 0) {
+          if (order.items && order.items.length > 0) {
             try {
               let totalProductFirstPurchaseAmount = 0;
               let hasAnyProductFirstPurchaseConfig = false;
@@ -251,14 +255,16 @@ export class SettlementEngine {
               }
 
               if (hasAnyProductFirstPurchaseConfig && totalProductFirstPurchaseAmount > 0) {
+                const fpRecipient = (hierarchy && hierarchy.level1UserId) ? hierarchy.level1UserId : this.COMPANY_ID;
+                const isFallback = fpRecipient.toString() === this.COMPANY_ID.toString();
                 await this.createReferralTransactionUnique({
-                  recipientUserId: hierarchy.level1UserId,
+                  recipientUserId: fpRecipient,
                   referredUserId: customer._id,
                   orderId: order._id,
                   level: 1,
                   amount: totalProductFirstPurchaseAmount,
                   transactionType: "first_purchase_product_commission",
-                  rewardReason: "first_purchase_product_commission",
+                  rewardReason: isFallback ? "first_purchase_product_commission (unreferred fallback)" : "first_purchase_product_commission",
                   releaseDate,
                   status: "placed"
                 }, session);
@@ -322,31 +328,29 @@ export class SettlementEngine {
           return sh.amount ? (sh.amount * qty) : ((distributionPool * sh.percent) / 100);
         };
 
-        if (customer.referralHierarchy) {
-          const hierarchy = customer.referralHierarchy;
-          const uplines = [
-            { id: hierarchy.level1UserId, amount: getShareAmount("level1"), level: 1 },
-            { id: hierarchy.level2UserId, amount: getShareAmount("level2"), level: 2 },
-            { id: hierarchy.level3UserId, amount: getShareAmount("level3"), level: 3 }
-          ];
+        const hierarchy = customer.referralHierarchy;
+        const uplines = [
+          { id: hierarchy?.level1UserId || this.COMPANY_ID, amount: getShareAmount("level1"), level: 1, isFallback: !hierarchy?.level1UserId },
+          { id: hierarchy?.level2UserId || this.COMPANY_ID, amount: getShareAmount("level2"), level: 2, isFallback: !hierarchy?.level2UserId },
+          { id: hierarchy?.level3UserId || this.COMPANY_ID, amount: getShareAmount("level3"), level: 3, isFallback: !hierarchy?.level3UserId }
+        ];
 
-          for (const upline of uplines) {
-            if (upline.id && upline.amount > 0) {
-              try {
-                await this.createReferralTransactionUnique({
-                  recipientUserId: upline.id,
-                  referredUserId: customer._id,
-                  orderId: order._id,
-                  level: upline.level,
-                  amount: upline.amount,
-                  transactionType: "product_commission",
-                  rewardReason: "product_commission",
-                  releaseDate,
-                  status: "placed"
-                }, session);
-              } catch (err: any) {
-                console.warn("Product commission uniqueness caught:", err.message);
-              }
+        for (const upline of uplines) {
+          if (upline.id && upline.amount > 0) {
+            try {
+              await this.createReferralTransactionUnique({
+                recipientUserId: upline.id,
+                referredUserId: customer._id,
+                orderId: order._id,
+                level: upline.level,
+                amount: upline.amount,
+                transactionType: "product_commission",
+                rewardReason: upline.isFallback ? `product_commission (Level ${upline.level} unreferred fallback)` : "product_commission",
+                releaseDate,
+                status: "placed"
+              }, session);
+            } catch (err: any) {
+              console.warn("Product commission uniqueness caught:", err.message);
             }
           }
         }
@@ -384,7 +388,7 @@ export class SettlementEngine {
         }
 
         // 2. Franchise & Company splits
-        if (rel && (distributionPool > 0 || totalPlatformFee > 0)) {
+        if (distributionPool > 0 || totalPlatformFee > 0) {
           const statePercent = (shares.find((s: any) => s.type === "state" && s.isActive !== false)?.percent || 0);
           const districtPercent = (shares.find((s: any) => s.type === "district" && s.isActive !== false)?.percent || 0);
           const mandalPercent = (shares.find((s: any) => s.type === "mandal" && s.isActive !== false)?.percent || 0);
@@ -412,25 +416,26 @@ export class SettlementEngine {
           const wishLinkCommission = getSplitAmount("wishlink", wishLinkPercent);
           const referralPoolCommission = getSplitAmount("referralPool", referralPoolPercent);
           const companyCommission = getSplitAmount("company", companyPercent);
-          // Resolve actual User IDs for the recipients
-          const stateFranchise = rel.stateFranchiseId ? await mongoose.model("Franchise").findById(rel.stateFranchiseId).session(session || null) : null;
-          const districtFranchise = rel.districtFranchiseId ? await mongoose.model("Franchise").findById(rel.districtFranchiseId).session(session || null) : null;
-          const mandalFranchise = rel.mandalFranchiseId ? await mongoose.model("Franchise").findById(rel.mandalFranchiseId).session(session || null) : null;
-          const entrepreneur = rel.entrepreneurId ? await mongoose.model("Entrepreneur").findById(rel.entrepreneurId).session(session || null) : null;
 
-          const stateUserId = stateFranchise ? stateFranchise.userId : null;
-          const districtUserId = districtFranchise ? districtFranchise.userId : null;
-          const mandalUserId = mandalFranchise ? mandalFranchise.userId : null;
-          const entrepreneurUserId = entrepreneur ? entrepreneur.userId : null;
+          // Resolve actual User IDs for the recipients or fallback to Company System Wallet
+          const stateFranchise = rel?.stateFranchiseId ? await mongoose.model("Franchise").findById(rel.stateFranchiseId).session(session || null) : null;
+          const districtFranchise = rel?.districtFranchiseId ? await mongoose.model("Franchise").findById(rel.districtFranchiseId).session(session || null) : null;
+          const mandalFranchise = rel?.mandalFranchiseId ? await mongoose.model("Franchise").findById(rel.mandalFranchiseId).session(session || null) : null;
+          const entrepreneur = rel?.entrepreneurId ? await mongoose.model("Entrepreneur").findById(rel.entrepreneurId).session(session || null) : null;
 
-          const splits = [
-            { recipientUserId: stateUserId, amount: stateCommission, type: 'franchise' as const, fieldName: 'stateFranchiseId' },
-            { recipientUserId: districtUserId, amount: districtCommission, type: 'franchise' as const, fieldName: 'districtFranchiseId' },
-            { recipientUserId: mandalUserId, amount: mandalCommission, type: 'franchise' as const, fieldName: 'mandalFranchiseId' },
-            { recipientUserId: entrepreneurUserId, amount: entrepreneurCommission, type: 'entrepreneur' as const, fieldName: 'entrepreneurId' },
-            { recipientUserId: this.WISHLINK_ID, amount: wishLinkCommission, type: 'wishlink' as const, fieldName: 'wishLinkCommission' },
-            { recipientUserId: this.REFERRAL_POOL_ID, amount: referralPoolCommission, type: 'referralPool' as const, fieldName: 'referralPoolCommission' },
-            { recipientUserId: this.COMPANY_ID, amount: companyCommission, type: 'company' as const, fieldName: 'companyCommission' }
+          const stateUserId = stateFranchise ? stateFranchise.userId : this.COMPANY_ID;
+          const districtUserId = districtFranchise ? districtFranchise.userId : this.COMPANY_ID;
+          const mandalUserId = mandalFranchise ? mandalFranchise.userId : this.COMPANY_ID;
+          const entrepreneurUserId = entrepreneur ? entrepreneur.userId : this.COMPANY_ID;
+
+          const splits: Array<{ recipientUserId: any; amount: number; type: string; fieldName: string }> = [
+            { recipientUserId: stateUserId, amount: stateCommission, type: stateUserId.toString() === this.COMPANY_ID.toString() ? 'company' : 'franchise', fieldName: 'stateFranchiseId' },
+            { recipientUserId: districtUserId, amount: districtCommission, type: districtUserId.toString() === this.COMPANY_ID.toString() ? 'company' : 'franchise', fieldName: 'districtFranchiseId' },
+            { recipientUserId: mandalUserId, amount: mandalCommission, type: mandalUserId.toString() === this.COMPANY_ID.toString() ? 'company' : 'franchise', fieldName: 'mandalFranchiseId' },
+            { recipientUserId: entrepreneurUserId, amount: entrepreneurCommission, type: entrepreneurUserId.toString() === this.COMPANY_ID.toString() ? 'company' : 'entrepreneur', fieldName: 'entrepreneurId' },
+            { recipientUserId: this.WISHLINK_ID, amount: wishLinkCommission, type: 'wishlink', fieldName: 'wishLinkCommission' },
+            { recipientUserId: this.REFERRAL_POOL_ID, amount: referralPoolCommission, type: 'referralPool', fieldName: 'referralPoolCommission' },
+            { recipientUserId: this.COMPANY_ID, amount: companyCommission, type: 'company', fieldName: 'companyCommission' }
           ];
 
           for (const sp of splits) {
@@ -439,10 +444,10 @@ export class SettlementEngine {
                 const legacyFields: any = {
                   vendorId: product.sellerId,
                   totalPlatformFee,
-                  stateFranchiseId: stateUserId,
-                  districtFranchiseId: districtUserId,
-                  mandalFranchiseId: mandalUserId,
-                  entrepreneurId: entrepreneurUserId
+                  stateFranchiseId: stateFranchise ? stateFranchise.userId : null,
+                  districtFranchiseId: districtFranchise ? districtFranchise.userId : null,
+                  mandalFranchiseId: mandalFranchise ? mandalFranchise.userId : null,
+                  entrepreneurId: entrepreneur ? entrepreneur.userId : null
                 };
                 
                 await this.createCommissionSettlementUnique({

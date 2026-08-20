@@ -135,7 +135,7 @@ export const createUserAddress = async (req: Request, res: Response): Promise<vo
           : 'home';
 
     let addr;
-    if (id) {
+    if (id && mongoose.Types.ObjectId.isValid(String(id))) {
       // It is an edit/update!
       addr = await Address.findOne({ _id: id, userId });
       if (addr) {
@@ -165,10 +165,10 @@ export const createUserAddress = async (req: Request, res: Response): Promise<vo
       const count = await Address.countDocuments({ userId });
       addr = new Address({
         userId,
-        name,
+        name: name || 'Customer',
         recipientName: name || 'Customer',
         phone,
-        address,
+        address: address || 'Address Line 1',
         addressLine1: address || 'Address Line 1',
         city,
         state,
@@ -202,6 +202,11 @@ export const updateUserAddress = async (req: Request, res: Response): Promise<vo
   try {
     const { userId, addressId } = req.params;
     const { name, phone, address, city, state, pincode, type, isDefault } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(addressId)) {
+      res.status(400).json({ message: 'Invalid address ID' });
+      return;
+    }
 
     if (isDefault) {
       await Address.updateMany({ userId }, { isDefault: false });
@@ -252,6 +257,10 @@ export const updateUserAddress = async (req: Request, res: Response): Promise<vo
 export const setDefaultAddress = async (req: Request, res: Response): Promise<void> => {
   try {
     const { userId, addressId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(addressId)) {
+      res.status(400).json({ message: 'Invalid address ID' });
+      return;
+    }
     await Address.updateMany({ userId }, { isDefault: false });
     const addr = await Address.findOneAndUpdate({ _id: addressId, userId }, { isDefault: true }, { new: true });
     if (!addr) {
@@ -270,6 +279,10 @@ export const setDefaultAddress = async (req: Request, res: Response): Promise<vo
 export const deleteUserAddress = async (req: Request, res: Response): Promise<void> => {
   try {
     const { userId, addressId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(addressId)) {
+      res.status(400).json({ message: 'Invalid address ID' });
+      return;
+    }
     const deleted = await Address.findOneAndDelete({ _id: addressId, userId });
     if (!deleted) {
       res.status(404).json({ message: 'Address not found' });

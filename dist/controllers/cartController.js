@@ -25,13 +25,14 @@ const getCart = async (req, res) => {
             // Try Product collection first
             let product = await Product_1.default.findById(rawId)
                 .populate({ path: 'categoryId', select: 'name' })
-                .populate({ path: 'sellerId', select: 'name sellerProfile' });
+                .populate({ path: 'sellerId', select: 'name sellerProfile businessName location pincode pinCode' });
             // If not found in Product, check FoodMenuItem collection
             if (!product) {
                 const foodItem = await FoodMenuItem_1.default.findById(rawId).populate('restaurantId');
                 if (foodItem) {
                     const restaurant = foodItem.restaurantId || {};
                     const price = foodItem.offerPrice && foodItem.offerPrice > 0 ? foodItem.offerPrice : foodItem.basePrice;
+                    const rPin = restaurant.pincode || restaurant.pinCode || restaurant.location?.pincode;
                     return {
                         _id: item._id,
                         productId: foodItem._id,
@@ -52,6 +53,11 @@ const getCart = async (req, res) => {
                         stock: foodItem.soldOut ? 0 : 99,
                         vendorId: restaurant._id || restaurant.id,
                         vendorName: restaurant.restaurantName || restaurant.name || 'Food Partner',
+                        vendorPincode: rPin,
+                        shopPincode: rPin,
+                        storePincode: rPin,
+                        deliveryScope: 'local',
+                        isPanIndia: false,
                         categoryName: 'Food & Dining',
                         returnPolicy: 'Non-returnable Food Item',
                         allowPickup: true,
@@ -83,6 +89,7 @@ const getCart = async (req, res) => {
             });
             const categoryName = product.categoryId?.name || 'Marketplace';
             const vendorName = product.sellerId?.sellerProfile?.businessName || product.sellerId?.name || 'ApexBee Seller';
+            const vPin = product.sellerId?.pincode || product.sellerId?.pinCode || product.vendorPincode || product.pincode;
             // Base charges from adminPricing
             const deliveryFee = product.adminPricing?.shippingCharge ?? 0;
             const packingCharge = product.adminPricing?.packingCharge ?? 0;
@@ -127,6 +134,12 @@ const getCart = async (req, res) => {
                 stock: product.stock,
                 vendorId: product.sellerId?._id || product.sellerId,
                 vendorName: vendorName,
+                vendorPincode: vPin,
+                shopPincode: vPin,
+                storePincode: vPin,
+                deliveryScope: product.deliveryScope || (product.isPanIndia ? 'both' : 'local'),
+                isPanIndia: product.isPanIndia || product.deliveryScope === 'pan_india' || product.deliveryScope === 'both',
+                sellerId: product.sellerId,
                 categoryName: categoryName,
                 returnPolicy: '7-day Easy Return',
                 allowPickup: product.attributes?.allowPickup ?? false,

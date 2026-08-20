@@ -41,6 +41,7 @@ export interface IProduct extends Document {
   deliveryScope?: 'local' | 'pan_india' | 'both';
   isLocalDelivery?: boolean;
   isPanIndia?: boolean;
+  vendorPincode?: string;
   adminPricingApproved?: boolean;
   sellerPricingAccepted?: boolean;
   approvedByAdminAt?: Date;
@@ -123,6 +124,7 @@ const ProductSchema = new Schema<IProduct>(
     deliveryScope: { type: String, enum: ['local', 'pan_india', 'both'], default: 'local' },
     isLocalDelivery: { type: Boolean, default: true },
     isPanIndia: { type: Boolean, default: false },
+    vendorPincode: { type: String },
     adminPricingApproved: { type: Boolean, default: false },
     sellerPricingAccepted: { type: Boolean, default: false },
     approvedByAdminAt: { type: Date },

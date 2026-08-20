@@ -259,6 +259,40 @@ const createOrder = async (req, res) => {
     if (!orderItems || orderItems.length === 0) {
         return res.status(400).json({ success: false, message: 'Order items are required' });
     }
+    const customerPin = String(shippingAddress?.pincode || req.body.userPincode || '').trim();
+    // 1. Enforce Undeliverable Local-Only Rejection
+    if (customerPin && (req.body.fulfillmentType || 'delivery') === 'delivery') {
+        const undeliverableItem = orderItems.find((item) => {
+            const isPan = item.isPanIndia || item.deliveryScope === 'pan_india' || item.deliveryScope === 'both';
+            if (isPan)
+                return false; // PAN-India products are courier-deliverable
+            const vendorPin = String(item.vendorPincode || item.shopPincode || item.storePincode || item.sellerId?.pincode || '').trim();
+            return vendorPin && customerPin !== vendorPin;
+        });
+        if (undeliverableItem) {
+            return res.status(400).json({
+                success: false,
+                message: `Product "${undeliverableItem.name || undeliverableItem.itemName || 'Item'}" is only available for local store delivery and cannot be delivered to ${customerPin}. Please remove it to proceed.`
+            });
+        }
+    }
+    // 2. Enforce COD Blocking for Out-of-Local / Inter-City Delivery
+    const paymentMethod = paymentDetails?.method || req.body.paymentMethod;
+    if (paymentMethod === 'cod') {
+        if (customerPin) {
+            const isOutOfLocal = orderItems.some((item) => {
+                const vendorPin = String(item.vendorPincode || item.shopPincode || item.storePincode || '').trim();
+                const isPan = item.isPanIndia || item.deliveryScope === 'pan_india' || item.deliveryScope === 'both';
+                return (isPan && vendorPin && customerPin !== vendorPin) || (vendorPin && customerPin !== vendorPin && !item.isLocalDelivery);
+            });
+            if (isOutOfLocal) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Cash on Delivery (COD) is not available for out-of-local / inter-city items. Please pay online via UPI or Wallet.'
+                });
+            }
+        }
+    }
     try {
         const result = await checkoutService_1.CheckoutService.processCheckoutWithIdempotency({
             userId: customerId,

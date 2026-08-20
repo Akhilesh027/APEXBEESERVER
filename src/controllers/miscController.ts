@@ -362,3 +362,99 @@ export const getTrainingVideos = async (req: Request, res: Response) => {
     return res.status(500).json({ success: false, message: error.message });
   }
 };
+
+// --- Test Location Seeding ---
+export const triggerLocationSeed = async (req: Request, res: Response) => {
+  try {
+    const { seedLocationTestCategoriesAndProducts } = await import('../seeds/seedLocationTestProducts');
+    const { seedLocationStoresAndRestaurants } = await import('../seeds/seedLocationStoresAndRestaurants');
+    
+    const prodResult = await seedLocationTestCategoriesAndProducts();
+    const foodAndStoresResult = await seedLocationStoresAndRestaurants();
+
+    return res.status(200).json({
+      success: true,
+      message: 'Location test categories, stores, restaurants, and food items successfully seeded to DB!',
+      data: {
+        products: prodResult,
+        storesAndRestaurants: foodAndStoresResult
+      }
+    });
+  } catch (error: any) {
+    console.error('triggerLocationSeed error:', error);
+    return res.status(200).json({ success: false, message: error.message, stack: error.stack });
+  }
+};
+
+// --- Update Selected Products to PAN-India Delivery ---
+export const updatePanIndiaProducts = async (req: Request, res: Response) => {
+  try {
+    const Product = (await import('../models/Product')).default;
+    const StoreProduct = (await import('../models/StoreProduct')).default;
+    const { Vendor } = await import('../models/Vendor');
+
+    const panIndiaSlugs = [
+      'rustic-ceramic-planter-bowl-local-test',
+      'artisan-macrame-wall-hanging-local-test',
+      'handwoven-jute-table-runner-local-test',
+      'glazed-ceramic-coffee-mug-ochre-local-test',
+      'terracotta-chai-kulhad-6pack-local-test',
+      'adilabad-farm-fresh-red-chillies-250g',
+      'fresh-stone-ground-wheat-atta-5kg'
+    ];
+
+    const results: any[] = [];
+
+    // 1. Sync PAN-India flags
+    for (const slug of panIndiaSlugs) {
+      const prod = await Product.findOneAndUpdate(
+        { slug },
+        {
+          $set: {
+            deliveryScope: 'both',
+            isPanIndia: true,
+            isLocalDelivery: true
+          }
+        },
+        { new: true }
+      );
+
+      if (prod) {
+        await StoreProduct.updateMany(
+          { productId: prod._id },
+          {
+            $set: {
+              deliveryScope: 'both',
+              isPanIndia: true,
+              isLocalDelivery: true
+            }
+          }
+        );
+        results.push({ name: prod.name, slug: prod.slug, deliveryScope: prod.deliveryScope, isPanIndia: prod.isPanIndia });
+      }
+    }
+
+    // 2. Sync vendorPincode on ALL products from Vendor records
+    const allProducts = await Product.find({});
+    for (const prod of allProducts) {
+      const sellerId = prod.sellerId || prod.createdBy;
+      if (sellerId) {
+        const vendor = await Vendor.findOne({ $or: [{ _id: sellerId }, { userId: sellerId }] });
+        if (vendor?.pincode) {
+          prod.vendorPincode = vendor.pincode;
+          await prod.save();
+        }
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `Updated ${results.length} products to PAN-India + Local delivery and synced vendor pincodes!`,
+      updatedProducts: results
+    });
+  } catch (error: any) {
+    console.error('updatePanIndiaProducts error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+

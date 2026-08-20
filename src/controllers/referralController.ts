@@ -146,7 +146,7 @@ const enrichReferredUsers = async (users: any[], referrerUserId: any) => {
 
     // Sum commission generated for the referrer
     const txs = await ReferralTransaction.find({ referredUserId: userId, recipientUserId: referrerUserId });
-    
+
     // Get Referral record for signup bonus contribution if any
     const referral = await Referral.findOne({ referredUserId: userId, referrerUserId });
     const referralId = referral ? referral._id : null;
@@ -169,17 +169,17 @@ const enrichReferredUsers = async (users: any[], referrerUserId: any) => {
     // Get wallet contributions (ledger entries in referrer's wallet associated with this referral's orderIds or referralId)
     const wallet = await Wallet.findOne({ userId: referrerUserId });
     const orderIds = orders.map(o => o._id.toString());
-    
+
     const walletContributions = wallet
-      ? wallet.ledgerEntries.filter(entry => 
-          (entry.referenceId && orderIds.includes(entry.referenceId.toString())) ||
-          (referralId && entry.referenceId && entry.referenceId.toString() === referralId.toString())
-        ).map(entry => ({
-          transactionId: entry.transactionId,
-          referenceId: entry.referenceId,
-          amount: entry.amount,
-          date: entry.date || entry.createdAt
-        }))
+      ? wallet.ledgerEntries.filter(entry =>
+        (entry.referenceId && orderIds.includes(entry.referenceId.toString())) ||
+        (referralId && entry.referenceId && entry.referenceId.toString() === referralId.toString())
+      ).map(entry => ({
+        transactionId: entry.transactionId,
+        referenceId: entry.referenceId,
+        amount: entry.amount,
+        date: entry.date || entry.createdAt
+      }))
       : [];
 
     enriched.push({
@@ -287,7 +287,7 @@ export const processReferralReleases = async (req: Request, res: Response) => {
     const { orderId } = req.body;
     const adminId = (req as any).user?.id || (req as any).user?._id;
     const stats = await SettlementEngine.releaseEligibleSettlements(undefined, orderId, adminId);
-    
+
     if (orderId) {
       try {
         await Order.findByIdAndUpdate(orderId, {
@@ -346,7 +346,7 @@ export const getReferralStats = async (req: Request, res: Response) => {
 
     // B. First Purchase Commission & C. Product Commission from ReferralTransaction
     const txs = await ReferralTransaction.find({ recipientUserId: user._id });
-    
+
     let signupBonusSum = signupBonus; // Start with KYC rewarded referrals
     let firstPurchaseCommission = 0;
     let productCommission = 0;
@@ -413,7 +413,7 @@ export const getReferralStats = async (req: Request, res: Response) => {
     const withdrawnBalance = wallet ? wallet.withdrawnBalance : 0;
     const walletTotal = availableBalance + pendingBalance + withdrawnBalance;
 
-    const totalEarned = 
+    const totalEarned =
       finalSignupBonus +
       firstPurchaseCommission +
       productCommission +
@@ -428,7 +428,7 @@ export const getReferralStats = async (req: Request, res: Response) => {
         totalReferrals: level1Count + level2Count + level3Count,
         completedReferrals: completedDirectReferrals + completedIndirectReferrals + completedLevel3Referrals,
         pendingReferrals: (level1Count + level2Count + level3Count) - (completedDirectReferrals + completedIndirectReferrals + completedLevel3Referrals),
-        
+
         totalDirectReferrals: level1Count,
         totalIndirectReferrals: level2Count,
         totalLevel3Referrals: level3Count,
@@ -501,7 +501,7 @@ export const getReferralEarningsSummary = async (req: Request, res: Response) =>
     }
 
     const txs = await ReferralTransaction.find({ recipientUserId: userId });
-    
+
     let direct = 0;
     let indirect = 0;
     let level3 = 0;
@@ -592,7 +592,7 @@ export const getReferralLeaderboard = async (req: Request, res: Response) => {
     for (let i = 0; i < transactions.length; i++) {
       const tx = transactions[i];
       const isCurrentUser = tx.recipientUserId.toString() === userId.toString();
-      
+
       const userInfo = await User.findById(tx.recipientUserId, "name email referralCode");
       if (userInfo) {
         if (isCurrentUser) {
