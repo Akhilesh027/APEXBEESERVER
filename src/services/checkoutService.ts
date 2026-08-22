@@ -6,6 +6,7 @@ import { InventoryService } from './inventoryService';
 import { SettlementEngine } from './SettlementEngine';
 import { CouponService } from './couponService';
 import { TransactionalOutbox } from './TransactionalOutbox';
+import { notificationEmitter } from '../modules/notifications/events/notificationEmitter';
 import crypto from 'crypto';
 
 export interface CheckoutInput {
@@ -279,13 +280,31 @@ export class CheckoutService {
   }
 
   /**
-   * Triggers post-checkout hooks (like referral holds) outside the main transaction.
+   * Triggers post-checkout hooks (like referral holds and notifications) outside the main transaction.
    */
   static async executePostCheckoutHooks(order: any): Promise<void> {
     try {
       await SettlementEngine.createSettlements(order);
     } catch (err) {
       console.error('[CheckoutService] Failed to trigger post-checkout referral hook:', err);
+    }
+
+    try {
+      if (order && order.customerId) {
+        notificationEmitter.emitNotification(
+          'order.placed',
+          {
+            orderId: order.orderNumber,
+            orderNumber: order.orderNumber,
+            totalAmount: order.totalAmount,
+            entityType: 'order',
+            entityId: order._id
+          },
+          [{ userId: order.customerId, role: 'customer' }]
+        );
+      }
+    } catch (notifErr) {
+      console.warn('[CheckoutService] Failed to emit order.placed notification:', notifErr);
     }
   }
 }

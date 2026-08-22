@@ -285,6 +285,37 @@ const seedNotificationTemplates = async () => {
                 }
             },
             {
+                eventCode: 'order.placed',
+                name: 'Order Placed by Customer',
+                category: 'orders',
+                titleTemplate: 'Order Placed Successfully! 📦',
+                bodyTemplate: 'Your order {{orderNumber}} for ₹{{totalAmount}} has been placed and is sent for processing.',
+                channels: {
+                    inApp: { enabled: true, deepLinkTemplate: '/my-orders' },
+                    sms: { enabled: true, textTemplate: 'Your order {{orderNumber}} for ₹{{totalAmount}} has been placed.' }
+                }
+            },
+            {
+                eventCode: 'wallet.commission_released',
+                name: 'Referral Commission Released',
+                category: 'wallet',
+                titleTemplate: 'Commission Released: ₹{{amount}} Credited! 💰',
+                bodyTemplate: 'Level {{level}} referral commission of ₹{{amount}} for order {{orderId}} has been released to your wallet.',
+                channels: {
+                    inApp: { enabled: true, deepLinkTemplate: '/referrals' }
+                }
+            },
+            {
+                eventCode: 'offer.promotional_broadcast',
+                name: 'Promotional Offer Released',
+                category: 'offers',
+                titleTemplate: 'Special Deal Alert: {{title}} 🔥',
+                bodyTemplate: '{{description}} Use coupon code at checkout to claim instant discounts.',
+                channels: {
+                    inApp: { enabled: true, deepLinkTemplate: '/products' }
+                }
+            },
+            {
                 eventCode: 'admin.notice',
                 name: 'Admin General Notice',
                 category: 'system',

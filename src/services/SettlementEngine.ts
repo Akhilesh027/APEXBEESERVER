@@ -9,6 +9,7 @@ import { BusinessRelationship } from '../models/BusinessRelationship';
 import { WalletEngine } from './WalletEngine';
 import { ServiceProvider } from '../models/ServiceProvider';
 import { ServiceRequest } from '../models/ServiceRequest';
+import { notificationEmitter } from '../modules/notifications/events/notificationEmitter';
 
 export class SettlementEngine {
   // Constant system wallet user IDs
@@ -562,6 +563,7 @@ export class SettlementEngine {
 
     const executeBlock = async (sess: ClientSession) => {
       const now = new Date();
+      const notificationsToEmit: Array<{ eventCode: string; payload: any; recipients: any[] }> = [];
 
       // Determine query filters based on forceOrderId
       let txQuery: any = { status: { $in: ["placed", "pending"] }, releaseDate: { $lte: now } };
@@ -607,6 +609,18 @@ export class SettlementEngine {
           tx.releasedBy = adminId;
         }
         await tx.save({ session: sess });
+
+        // Queue notification
+        notificationsToEmit.push({
+          eventCode: 'wallet.commission_released',
+          payload: {
+            amount: tx.amount,
+            orderId: order.orderNumber || tx.orderId,
+            level: tx.level || 1,
+            transactionType: tx.transactionType
+          },
+          recipients: [{ userId: tx.recipientUserId, role: 'partner' }]
+        });
 
         // Mark customer as first order qualified if first_order_bonus is released
         if (tx.transactionType === "first_order_bonus" && tx.referredUserId) {
@@ -659,6 +673,20 @@ export class SettlementEngine {
           s.releasedBy = adminId;
         }
         await s.save({ session: sess });
+
+        // Queue notification
+        if (s.recipientId && s.recipientId.toString() !== this.COMPANY_ID.toString()) {
+          notificationsToEmit.push({
+            eventCode: 'franchise.commission',
+            payload: {
+              amount: s.amount,
+              orderId: order.orderNumber || s.orderId,
+              settlementType: s.settlementType
+            },
+            recipients: [{ userId: s.recipientId, role: s.settlementType }]
+          });
+        }
+
         releasedSettlements++;
       }
 
@@ -674,6 +702,15 @@ export class SettlementEngine {
             note: 'Commissions successfully released.'
           });
           await order.save({ session: sess });
+        }
+      }
+
+      // Dispatch queued notifications after db operations
+      for (const notif of notificationsToEmit) {
+        try {
+          notificationEmitter.emitNotification(notif.eventCode, notif.payload, notif.recipients);
+        } catch (err) {
+          console.warn('[SettlementEngine] Failed to emit commission notification:', err);
         }
       }
     };

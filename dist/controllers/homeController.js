@@ -305,14 +305,24 @@ const getPersonalizationDetails = async (req, res) => {
                 console.warn('[Personalization] Token parse failed:', err);
             }
         }
-        // Determine time-of-day greeting
-        const hours = new Date().getHours();
-        let timeGreeting = "Good Morning";
-        if (hours >= 12 && hours < 16) {
-            timeGreeting = "Good Afternoon";
+        // Determine time-of-day greeting (Asia/Kolkata IST compliant)
+        let istHour = new Date().getHours();
+        try {
+            const istStr = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Kolkata", hour: "numeric", hour12: false }).format(new Date());
+            istHour = parseInt(istStr, 10);
         }
-        else if (hours >= 16 || hours < 4) {
-            timeGreeting = "Good Evening";
+        catch {
+            // fallback to server local
+        }
+        let timeGreeting = "Good Morning ☀";
+        if (istHour >= 12 && istHour < 17) {
+            timeGreeting = "Good Afternoon 🌤";
+        }
+        else if (istHour >= 17 && istHour < 22) {
+            timeGreeting = "Good Evening 🌇";
+        }
+        else {
+            timeGreeting = "Good Night 🌙";
         }
         // Default empty schedules for Guest users (strictly real data)
         let todaySchedule = {

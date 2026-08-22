@@ -15,6 +15,7 @@ const BusinessRelationship_1 = require("../models/BusinessRelationship");
 const WalletEngine_1 = require("./WalletEngine");
 const ServiceProvider_1 = require("../models/ServiceProvider");
 const ServiceRequest_1 = require("../models/ServiceRequest");
+const notificationEmitter_1 = require("../modules/notifications/events/notificationEmitter");
 class SettlementEngine {
     // Constant system wallet user IDs
     static COMPANY_ID = new mongoose_1.default.Types.ObjectId('660000000000000000000001');
@@ -540,6 +541,7 @@ class SettlementEngine {
         let releasedSettlements = 0;
         const executeBlock = async (sess) => {
             const now = new Date();
+            const notificationsToEmit = [];
             // Determine query filters based on forceOrderId
             let txQuery = { status: { $in: ["placed", "pending"] }, releaseDate: { $lte: now } };
             let settlementQuery = { status: { $in: ["placed", "pending"] }, releaseDate: { $lte: now } };
@@ -577,6 +579,17 @@ class SettlementEngine {
                     tx.releasedBy = adminId;
                 }
                 await tx.save({ session: sess });
+                // Queue notification
+                notificationsToEmit.push({
+                    eventCode: 'wallet.commission_released',
+                    payload: {
+                        amount: tx.amount,
+                        orderId: order.orderNumber || tx.orderId,
+                        level: tx.level || 1,
+                        transactionType: tx.transactionType
+                    },
+                    recipients: [{ userId: tx.recipientUserId, role: 'partner' }]
+                });
                 // Mark customer as first order qualified if first_order_bonus is released
                 if (tx.transactionType === "first_order_bonus" && tx.referredUserId) {
                     await User_1.User.findByIdAndUpdate(tx.referredUserId, { firstOrderQualified: true }).session(sess);
@@ -620,6 +633,18 @@ class SettlementEngine {
                     s.releasedBy = adminId;
                 }
                 await s.save({ session: sess });
+                // Queue notification
+                if (s.recipientId && s.recipientId.toString() !== this.COMPANY_ID.toString()) {
+                    notificationsToEmit.push({
+                        eventCode: 'franchise.commission',
+                        payload: {
+                            amount: s.amount,
+                            orderId: order.orderNumber || s.orderId,
+                            settlementType: s.settlementType
+                        },
+                        recipients: [{ userId: s.recipientId, role: s.settlementType }]
+                    });
+                }
                 releasedSettlements++;
             }
             // 3. Update the Order details
@@ -634,6 +659,15 @@ class SettlementEngine {
                         note: 'Commissions successfully released.'
                     });
                     await order.save({ session: sess });
+                }
+            }
+            // Dispatch queued notifications after db operations
+            for (const notif of notificationsToEmit) {
+                try {
+                    notificationEmitter_1.notificationEmitter.emitNotification(notif.eventCode, notif.payload, notif.recipients);
+                }
+                catch (err) {
+                    console.warn('[SettlementEngine] Failed to emit commission notification:', err);
                 }
             }
         };

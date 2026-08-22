@@ -335,7 +335,7 @@ const login = async (req, res) => {
             });
             return;
         }
-        if (user.status && user.status !== 'active') {
+        if (user.status && user.status.toLowerCase() !== 'active') {
             await logLoginAudit(user._id, req, 'failed');
             res.status(403).json({
                 message: 'Your account is not active',

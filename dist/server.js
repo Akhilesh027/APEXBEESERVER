@@ -17,7 +17,7 @@ const rateLimiter_1 = require("./middleware/rateLimiter");
 const notificationQueue_1 = require("./modules/notifications/services/notificationQueue");
 const notificationListeners_1 = require("./modules/notifications/events/notificationListeners");
 const db_1 = require("./config/db");
-const seedBanners_1 = require("./seeds/seedBanners");
+const seed_1 = require("./config/seed");
 const inventoryService_1 = require("./services/inventoryService");
 const BusinessApplication_1 = require("./models/BusinessApplication");
 const Vendor_1 = require("./models/Vendor");
@@ -363,16 +363,16 @@ const startServer = async () => {
         };
         if (process.env.NODE_APP_INSTANCE === undefined || process.env.NODE_APP_INSTANCE === '0') {
             try {
+                await (0, seed_1.seedDatabase)();
+            }
+            catch (e) {
+                console.error('seedDatabase error:', e.message);
+            }
+            try {
                 await seedReferralDefaults();
             }
             catch (e) {
                 console.error('seedReferralDefaults non-fatal error:', e.message);
-            }
-            try {
-                await (0, seedBanners_1.seedBannerDefaults)();
-            }
-            catch (e) {
-                console.error('seedBannerDefaults non-fatal error:', e.message);
             }
             try {
                 await syncApprovedFoodPartnerApplications();

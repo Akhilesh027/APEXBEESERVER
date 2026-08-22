@@ -12,6 +12,7 @@ const inventoryService_1 = require("./inventoryService");
 const SettlementEngine_1 = require("./SettlementEngine");
 const couponService_1 = require("./couponService");
 const TransactionalOutbox_1 = require("./TransactionalOutbox");
+const notificationEmitter_1 = require("../modules/notifications/events/notificationEmitter");
 const crypto_1 = __importDefault(require("crypto"));
 class CheckoutService {
     /**
@@ -228,7 +229,7 @@ class CheckoutService {
         }
     }
     /**
-     * Triggers post-checkout hooks (like referral holds) outside the main transaction.
+     * Triggers post-checkout hooks (like referral holds and notifications) outside the main transaction.
      */
     static async executePostCheckoutHooks(order) {
         try {
@@ -236,6 +237,20 @@ class CheckoutService {
         }
         catch (err) {
             console.error('[CheckoutService] Failed to trigger post-checkout referral hook:', err);
+        }
+        try {
+            if (order && order.customerId) {
+                notificationEmitter_1.notificationEmitter.emitNotification('order.placed', {
+                    orderId: order.orderNumber,
+                    orderNumber: order.orderNumber,
+                    totalAmount: order.totalAmount,
+                    entityType: 'order',
+                    entityId: order._id
+                }, [{ userId: order.customerId, role: 'customer' }]);
+            }
+        }
+        catch (notifErr) {
+            console.warn('[CheckoutService] Failed to emit order.placed notification:', notifErr);
         }
     }
 }
