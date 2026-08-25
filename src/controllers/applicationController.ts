@@ -5,6 +5,7 @@ import { Vendor } from "../models/Vendor";
 import { User } from "../models/User";
 import { Territory } from "../models/Territory";
 import { Referral } from "../models/Referral";
+import { NotificationHelper } from "../services/notificationHelper";
 
 const mapApplicationTypeToRole = (appType: string): string => {
   const type = appType.toLowerCase().trim();
@@ -252,6 +253,11 @@ export const createApplication = async (
       },
       [{ userId, role: targetRole }]
     );
+
+    // Dispatch Confirmation Email, Admin Alert & Territory Franchise In-App Alerts
+    NotificationHelper.notifyBusinessApplicationSubmitted(application, user).catch((err) => {
+      console.error('Failed to dispatch application notifications:', err);
+    });
 
     res.status(201).json({
       success: true,

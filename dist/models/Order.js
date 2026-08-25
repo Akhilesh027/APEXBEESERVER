@@ -145,6 +145,8 @@ const OrderSchema = new mongoose_1.Schema({
     acceptedAt: { type: Date, default: null },
     estimatedDeliveryTime: { type: Date, default: null },
     prepStatus: { type: String, default: 'pending' },
+    paymentMethod: { type: String, default: 'cod' },
+    paymentDetails: { type: mongoose_1.Schema.Types.Mixed },
 }, { timestamps: true });
 OrderSchema.index({ orderNumber: 1 });
 OrderSchema.index({ customerId: 1 });

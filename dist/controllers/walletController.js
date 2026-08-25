@@ -8,6 +8,7 @@ const mongoose_1 = __importDefault(require("mongoose"));
 const Wallet_1 = require("../models/Wallet");
 const WalletEngine_1 = require("../services/WalletEngine");
 const Franchise_1 = require("../models/Franchise");
+const notificationHelper_1 = require("../services/notificationHelper");
 // POST /api/wallet/withdrawals
 const createWithdrawalRequest = async (req, res) => {
     try {
@@ -108,6 +109,17 @@ const approveWithdrawal = async (req, res) => {
         await session.withTransaction(async () => {
             updatedWallet = await WalletEngine_1.WalletEngine.approveWithdrawal(wallet.userId, id, finalRefId, payoutMethod, remarks, session);
         });
+        const entry = wallet.ledgerEntries?.id(id);
+        const amount = entry ? Math.abs(entry.amount) : 0;
+        const finalBalance = updatedWallet?.balance?.available ?? 0;
+        notificationHelper_1.NotificationHelper.notifyPayoutReleased({
+            userId: wallet.userId,
+            amount,
+            payoutMethod: payoutMethod || 'bank_transfer',
+            referenceId: finalRefId,
+            remarks,
+            newBalance: finalBalance,
+        }).catch((err) => console.error('[WalletController] Payout notification error:', err));
         return res.status(200).json({ success: true, message: "Withdrawal approved successfully", referenceId: finalRefId, payoutMethod, wallet: updatedWallet });
     }
     catch (error) {

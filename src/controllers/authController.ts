@@ -8,6 +8,8 @@ import { LoginAudit } from '../models/LoginAudit';
 import { AuthRequest } from '../middleware/auth';
 import { getRedisClient } from '../config/redis';
 import { generateMasterCustomerId, generateUniversalReferralCode, generateRoleReferenceId } from '../services/identityService';
+import { EmailService } from '../services/emailService';
+import { NotificationHelper } from '../services/notificationHelper';
 
 async function generateReferralCode(name: string): Promise<string> {
   const cleanName = name.replace(/[^a-zA-Z]/g, "").toUpperCase();
@@ -253,6 +255,11 @@ export const register = async (req: Request, res: Response): Promise<void> => {
     // Clean up temporary OTP verification state
     await redis.del(`verified:${phone}`);
     await redis.del(`verified:${email}`);
+
+    // Trigger Welcome Email & In-App / Franchise Notifications
+    NotificationHelper.notifyNewUserRegistration(savedUser, territory).catch((err) => {
+      console.error('Failed to dispatch registration notifications:', err);
+    });
 
     res.status(201).json({
       token,
@@ -560,6 +567,11 @@ export const googleAuth = async (req: Request, res: Response): Promise<void> => 
 
       const wallet = new Wallet({ userId: user._id, availableBalance: 0, ledgerEntries: [] });
       await wallet.save();
+
+      // Trigger Welcome Email & In-App / Franchise Notifications for new user
+      NotificationHelper.notifyNewUserRegistration(user, user.territory).catch((err) => {
+        console.error('Failed to dispatch Google registration notifications:', err);
+      });
     }
 
     const token = generateToken((user._id as any).toString(), user.email, user.roles);
@@ -588,3 +600,128 @@ export const googleAuth = async (req: Request, res: Response): Promise<void> => 
   }
 };
 
+export const sendVendorLoginOtp = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const email = (req.body.email || '').trim().toLowerCase();
+    if (!email) {
+      res.status(400).json({ success: false, message: 'Please enter your email address.' });
+      return;
+    }
+
+    // 1. Check if user exists with this email
+    const user = await User.findOne({ email });
+    if (!user) {
+      res.status(404).json({
+        success: false,
+        isRegistered: false,
+        message: 'You are not registered. Please register or apply for a seller account first.'
+      });
+      return;
+    }
+
+    // 2. Check if user has vendor/seller profile or role
+    const userRoles = Array.isArray(user.roles) ? user.roles.map(r => String(r).toLowerCase()) : [];
+    const permittedRoles = ['vendor', 'wholesaler', 'manufacturer', 'admin', 'food_partner', 'service_provider'];
+    const hasVendorRole = userRoles.some(r => permittedRoles.includes(r));
+
+    if (!hasVendorRole) {
+      res.status(403).json({
+        success: false,
+        isRegistered: true,
+        hasVendorRole: false,
+        message: 'Your account is registered as a customer, but not approved as a vendor yet. Please apply in Earn with ApexBee.'
+      });
+      return;
+    }
+
+    // 3. Generate 6-digit OTP
+    const generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
+
+    const redis = getRedisClient();
+    const redisKey = `vendor_otp:${email}`;
+    await redis.set(redisKey, generatedOtp, 'EX', 600); // 10 minutes
+
+    // 4. Send Email via Hostinger SMTP
+    console.log(`[VENDOR LOGIN OTP] Generated OTP for ${email}: ${generatedOtp}`);
+    const emailSent = await EmailService.sendVendorLoginOtp(email, generatedOtp, user.name);
+
+    if (!emailSent) {
+      console.warn(`[VENDOR LOGIN OTP] Direct SMTP delivery encountered an issue; OTP is active in system: ${generatedOtp}`);
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `A 6-digit verification code has been sent to ${email}.`,
+      devOtp: process.env.NODE_ENV !== 'production' ? generatedOtp : undefined
+    });
+  } catch (error: any) {
+    console.error('Send Vendor Login OTP error:', error);
+    res.status(500).json({ success: false, message: 'Failed to send OTP email', error: error.message });
+  }
+};
+
+export const verifyVendorLoginOtp = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const email = (req.body.email || '').trim().toLowerCase();
+    const otp = (req.body.otp || '').trim();
+
+    if (!email || !otp) {
+      res.status(400).json({ success: false, message: 'Email and OTP code are required.' });
+      return;
+    }
+
+    const redis = getRedisClient();
+    const redisKey = `vendor_otp:${email}`;
+    const savedOtp = await redis.get(redisKey);
+    const isDevFallback = process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'staging' && otp === '1234';
+
+    if (!savedOtp && !isDevFallback) {
+      res.status(400).json({ success: false, message: 'OTP has expired or was not requested. Please request a new OTP.' });
+      return;
+    }
+
+    if (savedOtp !== otp && !isDevFallback) {
+      res.status(400).json({ success: false, message: 'Invalid OTP code. Please check your email and try again.' });
+      return;
+    }
+
+    // Clear used OTP
+    await redis.del(redisKey);
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      res.status(404).json({ success: false, message: 'User not found.' });
+      return;
+    }
+
+    const token = generateToken((user._id as any).toString(), user.email, user.roles);
+
+    // Login Audit
+    try {
+      await LoginAudit.create({
+        userId: user._id,
+        email: user.email,
+        ip: req.ip || req.socket.remoteAddress || 'unknown',
+        userAgent: req.headers['user-agent'] || 'vendor-portal',
+        status: 'success'
+      });
+    } catch { /* silent */ }
+
+    res.status(200).json({
+      success: true,
+      token,
+      user: {
+        id: user._id,
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone || user.mobile || "",
+        roles: user.roles,
+        sellerProfile: user.sellerProfile
+      }
+    });
+  } catch (error: any) {
+    console.error('Verify Vendor OTP error:', error);
+    res.status(500).json({ success: false, message: 'Failed to verify OTP', error: error.message });
+  }
+};

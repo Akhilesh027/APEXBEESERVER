@@ -9,46 +9,58 @@ import { TransactionalOutbox } from './TransactionalOutbox';
 
 export type OrderStatus =
   | 'Placed'
+  | 'placed'
   | 'Confirmed'
+  | 'confirmed'
   | 'Packed'
+  | 'packed'
   | 'Ready'
+  | 'ready'
+  | 'Preparing'
+  | 'preparing'
+  | 'Processing'
+  | 'processing'
+  | 'Pending'
+  | 'pending'
+  | 'Accepted'
+  | 'accepted'
   | 'Shipped'
+  | 'shipped'
   | 'Out for Delivery'
+  | 'out_for_delivery'
   | 'Delivered'
+  | 'delivered'
   | 'Completed'
+  | 'completed'
   | 'Returned'
   | 'Payment Verified'
   | 'Payment Rejected'
   | 'Cancelled'
+  | 'cancelled'
   | 'Refunded'
   | 'Assigned'
   | 'assigned'
   | 'Reached Vendor'
   | 'Pickup OTP Verified'
   | 'Picked Up'
+  | 'picked_up'
   | 'Reached Customer'
   | 'Delivery OTP Verified'
   | 'ready_for_pickup'
-  | 'picked_up'
-  | 'out_for_delivery';
+  | 'Ready for Pickup';
 
 export class OrderStateMachine {
   // Allow all status updates, but enforce correct side effects based on transitions.
   // To avoid breaking existing flows (e.g. testing direct jumps by admin), we allow all status
   // changes that make sense, but reject illegal or duplicate transitions and enforce safety.
-  private static readonly transitions: Record<OrderStatus, OrderStatus[]> = {
+  private static readonly transitions: Record<string, string[]> = {
     'Placed': [
       'Confirmed',
       'Packed',
-      'Shipped',
-      'Out for Delivery',
-      'Delivered',
-      'Cancelled',
-      'Payment Verified',
-      'Payment Rejected'
-    ],
-    'Confirmed': [
-      'Packed',
+      'Preparing',
+      'preparing',
+      'Processing',
+      'processing',
       'Ready',
       'Shipped',
       'Out for Delivery',
@@ -57,20 +69,218 @@ export class OrderStateMachine {
       'Payment Verified',
       'Payment Rejected'
     ],
-    'Packed': [
+    'placed': [
+      'Confirmed',
+      'Packed',
+      'Preparing',
+      'preparing',
+      'Processing',
+      'processing',
       'Ready',
       'Shipped',
       'Out for Delivery',
       'Delivered',
       'Cancelled'
+    ],
+    'Pending': [
+      'Confirmed',
+      'Packed',
+      'Preparing',
+      'preparing',
+      'Processing',
+      'processing',
+      'Ready',
+      'Shipped',
+      'Out for Delivery',
+      'Delivered',
+      'Cancelled',
+      'Assigned',
+      'assigned'
+    ],
+    'pending': [
+      'Confirmed',
+      'Packed',
+      'Preparing',
+      'preparing',
+      'Processing',
+      'processing',
+      'Ready',
+      'Shipped',
+      'Out for Delivery',
+      'Delivered',
+      'Cancelled',
+      'Assigned',
+      'assigned'
+    ],
+    'Preparing': [
+      'Packed',
+      'Ready',
+      'ready_for_pickup',
+      'Shipped',
+      'Out for Delivery',
+      'Delivered',
+      'Cancelled',
+      'Assigned',
+      'assigned'
+    ],
+    'preparing': [
+      'Packed',
+      'Ready',
+      'ready_for_pickup',
+      'Shipped',
+      'Out for Delivery',
+      'Delivered',
+      'Cancelled',
+      'Assigned',
+      'assigned'
+    ],
+    'Processing': [
+      'Packed',
+      'Ready',
+      'ready_for_pickup',
+      'Shipped',
+      'Out for Delivery',
+      'Delivered',
+      'Cancelled',
+      'Assigned',
+      'assigned'
+    ],
+    'processing': [
+      'Packed',
+      'Ready',
+      'ready_for_pickup',
+      'Shipped',
+      'Out for Delivery',
+      'Delivered',
+      'Cancelled',
+      'Assigned',
+      'assigned'
+    ],
+    'Accepted': [
+      'Preparing',
+      'preparing',
+      'Processing',
+      'processing',
+      'Packed',
+      'Ready',
+      'ready_for_pickup',
+      'Shipped',
+      'Out for Delivery',
+      'Delivered',
+      'Cancelled',
+      'Assigned',
+      'assigned'
+    ],
+    'accepted': [
+      'Preparing',
+      'preparing',
+      'Processing',
+      'processing',
+      'Packed',
+      'Ready',
+      'ready_for_pickup',
+      'Shipped',
+      'Out for Delivery',
+      'Delivered',
+      'Cancelled',
+      'Assigned',
+      'assigned'
+    ],
+    'Confirmed': [
+      'Packed',
+      'Preparing',
+      'preparing',
+      'Processing',
+      'processing',
+      'Ready',
+      'Shipped',
+      'Out for Delivery',
+      'Delivered',
+      'Cancelled',
+      'Payment Verified',
+      'Payment Rejected'
+    ],
+    'confirmed': [
+      'Packed',
+      'Preparing',
+      'preparing',
+      'Processing',
+      'processing',
+      'Ready',
+      'Shipped',
+      'Out for Delivery',
+      'Delivered',
+      'Cancelled'
+    ],
+    'Packed': [
+      'Ready',
+      'ready_for_pickup',
+      'Shipped',
+      'Out for Delivery',
+      'Delivered',
+      'Cancelled',
+      'Assigned',
+      'assigned'
+    ],
+    'packed': [
+      'Ready',
+      'ready_for_pickup',
+      'Shipped',
+      'Out for Delivery',
+      'Delivered',
+      'Cancelled',
+      'Assigned',
+      'assigned'
     ],
     'Ready': [
       'Shipped',
       'Out for Delivery',
       'Delivered',
-      'Cancelled'
+      'Cancelled',
+      'Assigned',
+      'assigned',
+      'picked_up',
+      'Picked Up'
+    ],
+    'ready': [
+      'Shipped',
+      'Out for Delivery',
+      'Delivered',
+      'Cancelled',
+      'Assigned',
+      'assigned',
+      'picked_up',
+      'Picked Up'
+    ],
+    'Ready for Pickup': [
+      'Shipped',
+      'Out for Delivery',
+      'Delivered',
+      'Cancelled',
+      'Assigned',
+      'assigned',
+      'picked_up',
+      'Picked Up'
+    ],
+    'ready_for_pickup': [
+      'picked_up',
+      'Picked Up',
+      'Shipped',
+      'Out for Delivery',
+      'Delivered',
+      'Completed',
+      'Cancelled',
+      'Assigned',
+      'assigned'
     ],
     'Shipped': [
+      'Out for Delivery',
+      'Reached Customer',
+      'Delivered',
+      'Returned',
+      'Cancelled'
+    ],
+    'shipped': [
       'Out for Delivery',
       'Reached Customer',
       'Delivered',
@@ -84,11 +294,25 @@ export class OrderStateMachine {
       'Returned',
       'Cancelled'
     ],
+    'out_for_delivery': [
+      'Reached Customer',
+      'Delivery OTP Verified',
+      'Delivered',
+      'Completed',
+      'Cancelled'
+    ],
     'Delivered': [
       'Completed',
       'Returned'
     ],
+    'delivered': [
+      'Completed',
+      'Returned'
+    ],
     'Completed': [
+      'Returned'
+    ],
+    'completed': [
       'Returned'
     ],
     'Returned': [
@@ -98,6 +322,10 @@ export class OrderStateMachine {
     'Payment Verified': [
       'Confirmed',
       'Packed',
+      'Preparing',
+      'preparing',
+      'Processing',
+      'processing',
       'Shipped',
       'Out for Delivery',
       'Delivered',
@@ -110,6 +338,7 @@ export class OrderStateMachine {
       'Reached Vendor',
       'Pickup OTP Verified',
       'Picked Up',
+      'picked_up',
       'Shipped',
       'Out for Delivery',
       'Reached Customer',
@@ -120,6 +349,7 @@ export class OrderStateMachine {
       'Reached Vendor',
       'Pickup OTP Verified',
       'Picked Up',
+      'picked_up',
       'Shipped',
       'Out for Delivery',
       'Reached Customer',
@@ -129,6 +359,7 @@ export class OrderStateMachine {
     'Reached Vendor': [
       'Pickup OTP Verified',
       'Picked Up',
+      'picked_up',
       'Shipped',
       'Out for Delivery',
       'Reached Customer',
@@ -137,6 +368,7 @@ export class OrderStateMachine {
     ],
     'Pickup OTP Verified': [
       'Picked Up',
+      'picked_up',
       'Shipped',
       'Out for Delivery',
       'Reached Customer',
@@ -145,9 +377,18 @@ export class OrderStateMachine {
     ],
     'Picked Up': [
       'Out for Delivery',
+      'out_for_delivery',
       'Reached Customer',
       'Delivery OTP Verified',
       'Delivered',
+      'Cancelled'
+    ],
+    'picked_up': [
+      'out_for_delivery',
+      'Out for Delivery',
+      'Reached Customer',
+      'Delivered',
+      'Completed',
       'Cancelled'
     ],
     'Reached Customer': [
@@ -162,32 +403,18 @@ export class OrderStateMachine {
       'Completed',
       'Cancelled'
     ],
-    'ready_for_pickup': [
-      'picked_up',
-      'Delivered',
-      'Completed',
-      'Cancelled'
-    ],
-    'picked_up': [
-      'out_for_delivery',
-      'Reached Customer',
-      'Delivered',
-      'Completed',
-      'Cancelled'
-    ],
-    'out_for_delivery': [
-      'Reached Customer',
-      'Delivery OTP Verified',
-      'Delivered',
-      'Completed',
-      'Cancelled'
-    ],
     'Cancelled': [],
+    'cancelled': [],
     'Refunded': []
   };
 
-  static isValidTransition(from: OrderStatus, to: OrderStatus): boolean {
-    return this.transitions[from]?.includes(to) || false;
+  static isValidTransition(from: string, to: string): boolean {
+    if (!from || !to) return false;
+    if (from.toLowerCase() === to.toLowerCase()) return true;
+    const allowed = this.transitions[from] || [];
+    if (allowed.includes(to)) return true;
+    // Case-insensitive check
+    return allowed.some(a => a.toLowerCase() === to.toLowerCase());
   }
 
   static async transition(

@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.restrictTo = exports.protect = void 0;
+exports.optionalProtect = exports.restrictTo = exports.protect = void 0;
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const protect = async (req, res, next) => {
     let token;
@@ -47,3 +47,24 @@ const restrictTo = (...allowedRoles) => {
     };
 };
 exports.restrictTo = restrictTo;
+const optionalProtect = async (req, _res, next) => {
+    let token;
+    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+        token = req.headers.authorization.split(' ')[1];
+    }
+    if (token) {
+        try {
+            const decoded = jsonwebtoken_1.default.verify(token, process.env.JWT_SECRET || 'supersecretjwtkeyforapexbeebusinessoperatingnetwork');
+            req.user = {
+                id: decoded.id,
+                email: decoded.email,
+                roles: decoded.roles
+            };
+        }
+        catch {
+            // Guest or expired token, proceed without failing
+        }
+    }
+    next();
+};
+exports.optionalProtect = optionalProtect;

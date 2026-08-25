@@ -20,15 +20,10 @@ class OrderStateMachine {
         'Placed': [
             'Confirmed',
             'Packed',
-            'Shipped',
-            'Out for Delivery',
-            'Delivered',
-            'Cancelled',
-            'Payment Verified',
-            'Payment Rejected'
-        ],
-        'Confirmed': [
-            'Packed',
+            'Preparing',
+            'preparing',
+            'Processing',
+            'processing',
             'Ready',
             'Shipped',
             'Out for Delivery',
@@ -37,20 +32,218 @@ class OrderStateMachine {
             'Payment Verified',
             'Payment Rejected'
         ],
-        'Packed': [
+        'placed': [
+            'Confirmed',
+            'Packed',
+            'Preparing',
+            'preparing',
+            'Processing',
+            'processing',
             'Ready',
             'Shipped',
             'Out for Delivery',
             'Delivered',
             'Cancelled'
+        ],
+        'Pending': [
+            'Confirmed',
+            'Packed',
+            'Preparing',
+            'preparing',
+            'Processing',
+            'processing',
+            'Ready',
+            'Shipped',
+            'Out for Delivery',
+            'Delivered',
+            'Cancelled',
+            'Assigned',
+            'assigned'
+        ],
+        'pending': [
+            'Confirmed',
+            'Packed',
+            'Preparing',
+            'preparing',
+            'Processing',
+            'processing',
+            'Ready',
+            'Shipped',
+            'Out for Delivery',
+            'Delivered',
+            'Cancelled',
+            'Assigned',
+            'assigned'
+        ],
+        'Preparing': [
+            'Packed',
+            'Ready',
+            'ready_for_pickup',
+            'Shipped',
+            'Out for Delivery',
+            'Delivered',
+            'Cancelled',
+            'Assigned',
+            'assigned'
+        ],
+        'preparing': [
+            'Packed',
+            'Ready',
+            'ready_for_pickup',
+            'Shipped',
+            'Out for Delivery',
+            'Delivered',
+            'Cancelled',
+            'Assigned',
+            'assigned'
+        ],
+        'Processing': [
+            'Packed',
+            'Ready',
+            'ready_for_pickup',
+            'Shipped',
+            'Out for Delivery',
+            'Delivered',
+            'Cancelled',
+            'Assigned',
+            'assigned'
+        ],
+        'processing': [
+            'Packed',
+            'Ready',
+            'ready_for_pickup',
+            'Shipped',
+            'Out for Delivery',
+            'Delivered',
+            'Cancelled',
+            'Assigned',
+            'assigned'
+        ],
+        'Accepted': [
+            'Preparing',
+            'preparing',
+            'Processing',
+            'processing',
+            'Packed',
+            'Ready',
+            'ready_for_pickup',
+            'Shipped',
+            'Out for Delivery',
+            'Delivered',
+            'Cancelled',
+            'Assigned',
+            'assigned'
+        ],
+        'accepted': [
+            'Preparing',
+            'preparing',
+            'Processing',
+            'processing',
+            'Packed',
+            'Ready',
+            'ready_for_pickup',
+            'Shipped',
+            'Out for Delivery',
+            'Delivered',
+            'Cancelled',
+            'Assigned',
+            'assigned'
+        ],
+        'Confirmed': [
+            'Packed',
+            'Preparing',
+            'preparing',
+            'Processing',
+            'processing',
+            'Ready',
+            'Shipped',
+            'Out for Delivery',
+            'Delivered',
+            'Cancelled',
+            'Payment Verified',
+            'Payment Rejected'
+        ],
+        'confirmed': [
+            'Packed',
+            'Preparing',
+            'preparing',
+            'Processing',
+            'processing',
+            'Ready',
+            'Shipped',
+            'Out for Delivery',
+            'Delivered',
+            'Cancelled'
+        ],
+        'Packed': [
+            'Ready',
+            'ready_for_pickup',
+            'Shipped',
+            'Out for Delivery',
+            'Delivered',
+            'Cancelled',
+            'Assigned',
+            'assigned'
+        ],
+        'packed': [
+            'Ready',
+            'ready_for_pickup',
+            'Shipped',
+            'Out for Delivery',
+            'Delivered',
+            'Cancelled',
+            'Assigned',
+            'assigned'
         ],
         'Ready': [
             'Shipped',
             'Out for Delivery',
             'Delivered',
-            'Cancelled'
+            'Cancelled',
+            'Assigned',
+            'assigned',
+            'picked_up',
+            'Picked Up'
+        ],
+        'ready': [
+            'Shipped',
+            'Out for Delivery',
+            'Delivered',
+            'Cancelled',
+            'Assigned',
+            'assigned',
+            'picked_up',
+            'Picked Up'
+        ],
+        'Ready for Pickup': [
+            'Shipped',
+            'Out for Delivery',
+            'Delivered',
+            'Cancelled',
+            'Assigned',
+            'assigned',
+            'picked_up',
+            'Picked Up'
+        ],
+        'ready_for_pickup': [
+            'picked_up',
+            'Picked Up',
+            'Shipped',
+            'Out for Delivery',
+            'Delivered',
+            'Completed',
+            'Cancelled',
+            'Assigned',
+            'assigned'
         ],
         'Shipped': [
+            'Out for Delivery',
+            'Reached Customer',
+            'Delivered',
+            'Returned',
+            'Cancelled'
+        ],
+        'shipped': [
             'Out for Delivery',
             'Reached Customer',
             'Delivered',
@@ -64,11 +257,25 @@ class OrderStateMachine {
             'Returned',
             'Cancelled'
         ],
+        'out_for_delivery': [
+            'Reached Customer',
+            'Delivery OTP Verified',
+            'Delivered',
+            'Completed',
+            'Cancelled'
+        ],
         'Delivered': [
             'Completed',
             'Returned'
         ],
+        'delivered': [
+            'Completed',
+            'Returned'
+        ],
         'Completed': [
+            'Returned'
+        ],
+        'completed': [
             'Returned'
         ],
         'Returned': [
@@ -78,6 +285,10 @@ class OrderStateMachine {
         'Payment Verified': [
             'Confirmed',
             'Packed',
+            'Preparing',
+            'preparing',
+            'Processing',
+            'processing',
             'Shipped',
             'Out for Delivery',
             'Delivered',
@@ -90,6 +301,7 @@ class OrderStateMachine {
             'Reached Vendor',
             'Pickup OTP Verified',
             'Picked Up',
+            'picked_up',
             'Shipped',
             'Out for Delivery',
             'Reached Customer',
@@ -100,6 +312,7 @@ class OrderStateMachine {
             'Reached Vendor',
             'Pickup OTP Verified',
             'Picked Up',
+            'picked_up',
             'Shipped',
             'Out for Delivery',
             'Reached Customer',
@@ -109,6 +322,7 @@ class OrderStateMachine {
         'Reached Vendor': [
             'Pickup OTP Verified',
             'Picked Up',
+            'picked_up',
             'Shipped',
             'Out for Delivery',
             'Reached Customer',
@@ -117,6 +331,7 @@ class OrderStateMachine {
         ],
         'Pickup OTP Verified': [
             'Picked Up',
+            'picked_up',
             'Shipped',
             'Out for Delivery',
             'Reached Customer',
@@ -125,9 +340,18 @@ class OrderStateMachine {
         ],
         'Picked Up': [
             'Out for Delivery',
+            'out_for_delivery',
             'Reached Customer',
             'Delivery OTP Verified',
             'Delivered',
+            'Cancelled'
+        ],
+        'picked_up': [
+            'out_for_delivery',
+            'Out for Delivery',
+            'Reached Customer',
+            'Delivered',
+            'Completed',
             'Cancelled'
         ],
         'Reached Customer': [
@@ -142,31 +366,20 @@ class OrderStateMachine {
             'Completed',
             'Cancelled'
         ],
-        'ready_for_pickup': [
-            'picked_up',
-            'Delivered',
-            'Completed',
-            'Cancelled'
-        ],
-        'picked_up': [
-            'out_for_delivery',
-            'Reached Customer',
-            'Delivered',
-            'Completed',
-            'Cancelled'
-        ],
-        'out_for_delivery': [
-            'Reached Customer',
-            'Delivery OTP Verified',
-            'Delivered',
-            'Completed',
-            'Cancelled'
-        ],
         'Cancelled': [],
+        'cancelled': [],
         'Refunded': []
     };
     static isValidTransition(from, to) {
-        return this.transitions[from]?.includes(to) || false;
+        if (!from || !to)
+            return false;
+        if (from.toLowerCase() === to.toLowerCase())
+            return true;
+        const allowed = this.transitions[from] || [];
+        if (allowed.includes(to))
+            return true;
+        // Case-insensitive check
+        return allowed.some(a => a.toLowerCase() === to.toLowerCase());
     }
     static async transition(orderId, toStatus, meta, session) {
         const executeTransition = async (sessionToUse) => {

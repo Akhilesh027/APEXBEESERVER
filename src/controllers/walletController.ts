@@ -4,6 +4,7 @@ import { AuthRequest } from "../middleware/auth";
 import { Wallet } from "../models/Wallet";
 import { WalletEngine } from '../services/WalletEngine';
 import { Franchise } from "../models/Franchise";
+import { NotificationHelper } from "../services/notificationHelper";
 
 // POST /api/wallet/withdrawals
 export const createWithdrawalRequest = async (req: AuthRequest, res: Response) => {
@@ -113,6 +114,19 @@ export const approveWithdrawal = async (req: AuthRequest, res: Response) => {
     await session.withTransaction(async () => {
       updatedWallet = await WalletEngine.approveWithdrawal(wallet.userId, id, finalRefId, payoutMethod, remarks, session);
     });
+
+    const entry = (wallet.ledgerEntries as any)?.id(id);
+    const amount = entry ? Math.abs(entry.amount) : 0;
+    const finalBalance = updatedWallet?.balance?.available ?? 0;
+
+    NotificationHelper.notifyPayoutReleased({
+      userId: wallet.userId,
+      amount,
+      payoutMethod: payoutMethod || 'bank_transfer',
+      referenceId: finalRefId,
+      remarks,
+      newBalance: finalBalance,
+    }).catch((err) => console.error('[WalletController] Payout notification error:', err));
 
     return res.status(200).json({ success: true, message: "Withdrawal approved successfully", referenceId: finalRefId, payoutMethod, wallet: updatedWallet });
   } catch (error: any) {

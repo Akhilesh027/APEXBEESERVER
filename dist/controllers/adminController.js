@@ -13,6 +13,7 @@ const FoodMenuCategory_1 = require("../models/FoodMenuCategory");
 const FoodMenuItem_1 = require("../models/FoodMenuItem");
 const User_1 = require("../models/User");
 const notificationEmitter_1 = require("../modules/notifications/events/notificationEmitter");
+const notificationHelper_1 = require("../services/notificationHelper");
 const createNotificationCompat = async (payload, options) => {
     try {
         const items = Array.isArray(payload) ? payload : [payload];
@@ -1141,6 +1142,10 @@ const verifyKycApplication = async (req, res) => {
             console.error("Error processing referral reward:", refError);
         }
         const portalUrl = getPortalUrl(targetRole);
+        // Dispatch Approval Email, In-App Notification & Partner Activation Alerts
+        notificationHelper_1.NotificationHelper.notifyBusinessApplicationApproved(app, user, targetRole).catch((err) => {
+            console.error('Failed to dispatch application approved notifications:', err);
+        });
         await createNotificationCompat({
             userId: user._id,
             title: "KYC Verified & Portal Active! 🎉",

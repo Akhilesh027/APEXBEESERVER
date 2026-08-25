@@ -40,6 +40,11 @@ exports.env = {
         API_KEY: process.env.CLOUDINARY_API_KEY || '',
         API_SECRET: process.env.CLOUDINARY_API_SECRET || '',
     },
+    RAZORPAY: {
+        KEY_ID: process.env.RAZORPAY_KEY_ID || 'rzp_test_TTsnL7mJseMdFz',
+        KEY_SECRET: process.env.RAZORPAY_KEY_SECRET || 'kuz633zUvZU1eGDal8TyAIpo',
+        WEBHOOK_SECRET: process.env.RAZORPAY_WEBHOOK_SECRET || process.env.PAYMENT_WEBHOOK_SECRET || 'kuz633zUvZU1eGDal8TyAIpo',
+    },
     // Feature Flags
     ENABLE_ATOMIC_CHECKOUT: getBooleanFlag(process.env.ENABLE_ATOMIC_CHECKOUT, false),
     ENABLE_REDIS_OTP: getBooleanFlag(process.env.ENABLE_REDIS_OTP, false),

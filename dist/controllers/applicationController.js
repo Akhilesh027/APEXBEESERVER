@@ -7,6 +7,7 @@ const Vendor_1 = require("../models/Vendor");
 const User_1 = require("../models/User");
 const Territory_1 = require("../models/Territory");
 const Referral_1 = require("../models/Referral");
+const notificationHelper_1 = require("../services/notificationHelper");
 const mapApplicationTypeToRole = (appType) => {
     const type = appType.toLowerCase().trim();
     if (type === "vendor" || type.includes("vendor"))
@@ -214,6 +215,10 @@ const createApplication = async (req, res) => {
             entityType: 'application',
             entityId: application._id
         }, [{ userId, role: targetRole }]);
+        // Dispatch Confirmation Email, Admin Alert & Territory Franchise In-App Alerts
+        notificationHelper_1.NotificationHelper.notifyBusinessApplicationSubmitted(application, user).catch((err) => {
+            console.error('Failed to dispatch application notifications:', err);
+        });
         res.status(201).json({
             success: true,
             message: "Business application created successfully",

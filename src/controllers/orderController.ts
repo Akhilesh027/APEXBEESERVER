@@ -569,7 +569,7 @@ export const getOrdersByUserId = async (req: Request, res: Response) => {
           pincode: '504312'
         } : null),
         paymentDetails: order.paymentDetails || {
-          method: 'cod',
+          method: order.paymentMethod || 'cod',
           status: order.paymentStatus === 'Paid' ? 'completed' : 'pending_verification',
           amount: order.totalAmount
         },

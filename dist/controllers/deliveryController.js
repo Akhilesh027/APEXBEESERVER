@@ -110,8 +110,8 @@ const getOrders = async (req, res) => {
         if (!partner && authUser?.phone) {
             partner = await DeliveryPartner_1.DeliveryPartner.findOne({ mobile: authUser.phone });
         }
-        if (!partner) {
-            partner = (await DeliveryPartner_1.DeliveryPartner.findOne({ status: 'active' })) || (await DeliveryPartner_1.DeliveryPartner.findOne({}));
+        if (!partner && authUser?.email) {
+            partner = await DeliveryPartner_1.DeliveryPartner.findOne({ email: authUser.email });
         }
         const validObjectIds = [];
         const validStringIds = [];
@@ -134,6 +134,12 @@ const getOrders = async (req, res) => {
                     validObjectIds.push(partner.userId);
                 }
             }
+            if (partner.deliveryPartnerId) {
+                validStringIds.push(partner.deliveryPartnerId);
+            }
+            if (partner.referenceId) {
+                validStringIds.push(partner.referenceId);
+            }
         }
         const allAgentIds = Array.from(new Set([...validObjectIds, ...validStringIds]));
         // Hard guard: if no valid partner identity found, return empty — never leak other partners' orders
@@ -143,38 +149,26 @@ const getOrders = async (req, res) => {
         }
         let assignments = [];
         try {
-            const rawAssignments = await DeliveryAssignment_1.DeliveryAssignment.find({
+            assignments = await DeliveryAssignment_1.DeliveryAssignment.find({
                 $or: [
                     { partnerId: { $in: allAgentIds } },
                     { deliveryPartnerId: { $in: allAgentIds } },
-                    { status: { $in: ['Pending', 'Unassigned'] } },
                 ]
             })
                 .populate('orderId')
                 .populate('vendorId', 'name email phone businessName address')
                 .populate('customerId', 'name email phone')
                 .sort({ createdAt: -1 });
-            // Unassigned broadcast orders are ONLY shown to riders when food is ready for pickup
-            assignments = rawAssignments.filter((a) => {
-                const isMine = allAgentIds.some((id) => String(id) === String(a.partnerId) || String(id) === String(a.deliveryPartnerId));
-                if (isMine)
-                    return true;
-                const ordSt = a.orderId?.orderStatus || '';
-                return ['ready_for_pickup', 'Ready', 'Packed', 'Shipped'].includes(ordSt);
-            });
         }
         catch (e) {
             console.warn('[getOrders] Assignment query warning:', e);
         }
-        // Direct Order Lookup by deliveryAgentId and unassigned ready broadcast orders
+        // Direct Order Lookup strictly assigned to this delivery partner
         try {
-            const readyBroadcastStatuses = ['ready_for_pickup', 'Ready', 'Packed', 'Shipped', 'Confirmed', 'Accepted', 'Placed'];
             const assignedOrders = await Order_1.Order.find({
                 $or: [
                     { deliveryAgentId: { $in: allAgentIds } },
                     { assignedDeliveryAgent: { $in: allAgentIds } },
-                    { deliveryAgentId: { $in: [null, undefined, ''] }, orderStatus: { $in: readyBroadcastStatuses } },
-                    { deliveryAgentId: { $exists: false }, orderStatus: { $in: readyBroadcastStatuses } },
                 ]
             }).sort({ createdAt: -1 });
             const existingOrderIds = new Set(assignments.map((a) => String(a.orderId?._id || a.orderId || a._id)));
@@ -206,14 +200,14 @@ const getOrders = async (req, res) => {
                         }
                         catch (pErr) { }
                     }
-                    const vendorName = vendorObj?.restaurantName || vendorObj?.businessName || vendorObj?.ownerName || 'ApexBee Food Outlet';
+                    const vendorName = vendorObj?.restaurantName || vendorObj?.businessName || vendorObj?.ownerName || 'ApexBee Merchant Store';
                     const vendorAddr = vendorObj
                         ? (vendorObj.address
                             ? `${vendorObj.address}, ${vendorObj.locality ? vendorObj.locality + ', ' : ''}${vendorObj.city || ''}`
-                            : (vendorObj.storeAddress || `${vendorObj.city || vendorObj.mandal || 'బుచ్చిరెడ్డిపాలెం'}, Sri Potti Sriramulu Nellore`))
-                        : 'Palodi Road, Adilabad, Telangana - 504312';
+                            : (vendorObj.storeAddress || `${vendorObj.city || vendorObj.mandal || ''}, ${vendorObj.district || ''}`))
+                        : 'Merchant Store Address';
                     const vendorPhone = vendorObj?.phone || vendorObj?.mobile || '9177176969';
-                    const isMine = ord.deliveryAgentId && validObjectIds.some((id) => String(id) === String(ord.deliveryAgentId));
+                    const isMine = ord.deliveryAgentId && allAgentIds.some((id) => String(id) === String(ord.deliveryAgentId));
                     const assignedStatus = isMine ? (ord.orderStatus === 'Shipped' ? 'Assigned' : ord.orderStatus) : 'Pending';
                     assignments.push({
                         _id: ord._id,
@@ -228,11 +222,11 @@ const getOrders = async (req, res) => {
                             mobile: vendorPhone
                         },
                         customerId: {
-                            name: ord.shippingAddress?.recipientName || ord.shippingAddress?.name || 'Akhilesh Reddy',
+                            name: ord.shippingAddress?.recipientName || ord.shippingAddress?.name || 'Customer',
                             phone: ord.shippingAddress?.phone || '9707010797',
                             address: ord.shippingAddress
                                 ? `${ord.shippingAddress.address || ''}, ${ord.shippingAddress.city || ''}, ${ord.shippingAddress.state || ''} - ${ord.shippingAddress.pincode || ''}`
-                                : 'Palodi, Adilabad, Telangana - 504312'
+                                : 'Customer Delivery Address'
                         }
                     });
                 }
@@ -252,12 +246,19 @@ exports.getOrders = getOrders;
 /** Get Order By ID */
 const getOrderById = async (req, res) => {
     try {
-        const order = await Order_1.Order.findById(req.params.id);
+        const { id } = req.params;
+        let { order, assignment } = await findOrderAndAssignment(id);
+        if (!order && mongoose_1.default.Types.ObjectId.isValid(id)) {
+            order = await Order_1.Order.findById(id);
+        }
         if (!order) {
-            res.status(404).json({ message: 'Order not found' });
+            res.status(404).json({ success: false, message: 'Order not found' });
             return;
         }
-        res.status(200).json({ success: true, order });
+        const populatedOrder = await Order_1.Order.findById(order._id)
+            .populate('sellerId', 'businessName ownerName mobile phone storeAddress address city state pincode')
+            .populate('customerId', 'name mobile phone address');
+        res.status(200).json({ success: true, order: populatedOrder || order, assignment });
     }
     catch (error) {
         res.status(500).json({ message: 'Error fetching order', error: error.message });
@@ -272,7 +273,9 @@ async function findOrderAndAssignment(id) {
         assignment = await DeliveryAssignment_1.DeliveryAssignment.findOne({ $or: [{ orderId: id }, { _id: id }] });
         if (!order && assignment?.orderId) {
             const rawOrderId = assignment.orderId?._id || assignment.orderId;
-            order = await Order_1.Order.findById(rawOrderId);
+            if (mongoose_1.default.Types.ObjectId.isValid(rawOrderId)) {
+                order = await Order_1.Order.findById(rawOrderId);
+            }
         }
     }
     if (!order && id) {
@@ -335,36 +338,29 @@ const acceptOrder = async (req, res) => {
             deliveryPartnerIdObj = partnerIdObj;
         }
         if (order) {
-            if (partner) {
-                order.deliveryAgentId = String(partner._id);
-                order.deliveryType = 'Platform';
-            }
             const newStatus = ['ready_for_pickup', 'Ready', 'Packed'].includes(order.orderStatus)
                 ? order.orderStatus
                 : 'Accepted';
             addOrderTimelineStep(order, newStatus, `Order offer accepted by rider ${partner?.name || 'Partner'}`);
-            try {
-                await order.save();
-            }
-            catch (saveErr) {
-                console.warn('[acceptOrder] order.save warning:', saveErr);
-            }
+            await Order_1.Order.findByIdAndUpdate(order._id, {
+                deliveryAgentId: partner ? String(partner._id) : undefined,
+                deliveryType: 'Platform',
+                orderStatus: newStatus,
+                timeline: order.timeline,
+                orderStatusObj: order.orderStatusObj
+            });
         }
         if (assignment) {
-            assignment.deliveryPartnerId = deliveryPartnerIdObj;
-            assignment.partnerId = partnerIdObj;
-            assignment.partnerSnapshot = {
-                name: partner?.name || 'Delivery Partner',
-                phoneMasked: partner?.mobile || '+91 98765 43210',
-            };
-            assignment.status = 'Accepted';
-            assignment.acceptedAt = new Date();
-            try {
-                await assignment.save();
-            }
-            catch (saveErr) {
-                console.warn('[acceptOrder] assignment.save warning:', saveErr);
-            }
+            await DeliveryAssignment_1.DeliveryAssignment.findByIdAndUpdate(assignment._id, {
+                deliveryPartnerId: deliveryPartnerIdObj,
+                partnerId: partnerIdObj,
+                partnerSnapshot: {
+                    name: partner?.name || 'Delivery Partner',
+                    phoneMasked: partner?.mobile || '+91 98765 43210',
+                },
+                status: 'Accepted',
+                acceptedAt: new Date()
+            });
         }
         else if (order) {
             try {
@@ -406,11 +402,9 @@ const rejectOrder = async (req, res) => {
         const { reason } = req.body || {};
         const { order, assignment } = await findOrderAndAssignment(id);
         if (order) {
-            // Do NOT cancel customer order! Keep order active (Confirmed/Shipped) for re-assignment
             if (order.orderStatus === 'Accepted' || order.orderStatus === 'Assigned') {
                 order.orderStatus = 'Confirmed';
             }
-            order.deliveryAgentId = null;
             if (!order.timeline)
                 order.timeline = [];
             order.timeline.push({
@@ -418,12 +412,17 @@ const rejectOrder = async (req, res) => {
                 date: new Date(),
                 note: `Delivery partner declined offer (${reason || 'Rider unavailable'}). Ready for re-assignment.`
             });
-            await order.save();
+            await Order_1.Order.findByIdAndUpdate(order._id, {
+                orderStatus: order.orderStatus,
+                deliveryAgentId: null,
+                timeline: order.timeline
+            });
         }
         if (assignment) {
-            assignment.status = 'Rejected';
-            assignment.rejectionReason = reason || 'Rider unavailable';
-            await assignment.save();
+            await DeliveryAssignment_1.DeliveryAssignment.findByIdAndUpdate(assignment._id, {
+                status: 'Rejected',
+                rejectionReason: reason || 'Rider unavailable'
+            });
         }
         res.status(200).json({
             success: true,
@@ -440,27 +439,22 @@ const reachedPickup = async (req, res) => {
         const { id } = req.params;
         const { order, assignment } = await findOrderAndAssignment(id);
         if (order) {
-            order.orderStatus = 'Reached Vendor';
             addOrderTimelineStep(order, 'Reached Vendor', 'Delivery partner arrived at merchant store pickup location');
-            try {
-                await order.save();
-            }
-            catch (e) {
-                console.warn('[reachedPickup] order.save warning:', e);
-            }
+            await Order_1.Order.findByIdAndUpdate(order._id, {
+                orderStatus: 'Reached Vendor',
+                timeline: order.timeline,
+                orderStatusObj: order.orderStatusObj
+            });
         }
         if (assignment) {
-            assignment.status = 'Reached Vendor';
-            try {
-                await assignment.save();
-            }
-            catch (e) {
-                console.warn('[reachedPickup] assignment.save warning:', e);
-            }
+            await DeliveryAssignment_1.DeliveryAssignment.findByIdAndUpdate(assignment._id, {
+                status: 'Reached Vendor'
+            });
         }
         res.status(200).json({ success: true, message: 'Reached pickup location' });
     }
     catch (err) {
+        console.error('[reachedPickup] Error:', err);
         res.status(500).json({ message: 'Failed to update pickup reach', error: err.message });
     }
 };
@@ -470,31 +464,27 @@ const pickupOrder = async (req, res) => {
         const { id } = req.params;
         const { order, assignment } = await findOrderAndAssignment(id);
         if (order) {
-            order.orderStatus = 'Picked Up';
             if (!order.pickupVerification)
                 order.pickupVerification = {};
             order.pickupVerification.verified = true;
             addOrderTimelineStep(order, 'Picked Up', 'Merchant pickup OTP verified. Package picked up by delivery partner');
-            try {
-                await order.save();
-            }
-            catch (e) {
-                console.warn('[pickupOrder] order.save warning:', e);
-            }
+            await Order_1.Order.findByIdAndUpdate(order._id, {
+                orderStatus: 'Picked Up',
+                pickupVerification: order.pickupVerification,
+                timeline: order.timeline,
+                orderStatusObj: order.orderStatusObj
+            });
         }
         if (assignment) {
-            assignment.status = 'Picked Up';
-            assignment.pickedUpAt = new Date();
-            try {
-                await assignment.save();
-            }
-            catch (e) {
-                console.warn('[pickupOrder] assignment.save warning:', e);
-            }
+            await DeliveryAssignment_1.DeliveryAssignment.findByIdAndUpdate(assignment._id, {
+                status: 'Picked Up',
+                pickedUpAt: new Date()
+            });
         }
         res.status(200).json({ success: true, message: 'Order picked up successfully' });
     }
     catch (err) {
+        console.error('[pickupOrder] Error:', err);
         res.status(500).json({ message: 'Failed to update pickup status', error: err.message });
     }
 };
@@ -504,27 +494,22 @@ const outForDelivery = async (req, res) => {
         const { id } = req.params;
         const { order, assignment } = await findOrderAndAssignment(id);
         if (order) {
-            order.orderStatus = 'Out for Delivery';
             addOrderTimelineStep(order, 'Out for Delivery', 'Package is out for delivery to customer address');
-            try {
-                await order.save();
-            }
-            catch (e) {
-                console.warn('[outForDelivery] order.save warning:', e);
-            }
+            await Order_1.Order.findByIdAndUpdate(order._id, {
+                orderStatus: 'Out for Delivery',
+                timeline: order.timeline,
+                orderStatusObj: order.orderStatusObj
+            });
         }
         if (assignment) {
-            assignment.status = 'Out for Delivery';
-            try {
-                await assignment.save();
-            }
-            catch (e) {
-                console.warn('[outForDelivery] assignment.save warning:', e);
-            }
+            await DeliveryAssignment_1.DeliveryAssignment.findByIdAndUpdate(assignment._id, {
+                status: 'Out for Delivery'
+            });
         }
         res.status(200).json({ success: true, message: 'Out for delivery' });
     }
     catch (err) {
+        console.error('[outForDelivery] Error:', err);
         res.status(500).json({ message: 'Failed to update out for delivery status', error: err.message });
     }
 };
@@ -534,27 +519,22 @@ const reachedCustomer = async (req, res) => {
         const { id } = req.params;
         const { order, assignment } = await findOrderAndAssignment(id);
         if (order) {
-            order.orderStatus = 'Reached Customer';
             addOrderTimelineStep(order, 'Reached Customer', 'Delivery partner arrived at customer delivery location');
-            try {
-                await order.save();
-            }
-            catch (e) {
-                console.warn('[reachedCustomer] order.save warning:', e);
-            }
+            await Order_1.Order.findByIdAndUpdate(order._id, {
+                orderStatus: 'Reached Customer',
+                timeline: order.timeline,
+                orderStatusObj: order.orderStatusObj
+            });
         }
         if (assignment) {
-            assignment.status = 'Reached Customer';
-            try {
-                await assignment.save();
-            }
-            catch (e) {
-                console.warn('[reachedCustomer] assignment.save warning:', e);
-            }
+            await DeliveryAssignment_1.DeliveryAssignment.findByIdAndUpdate(assignment._id, {
+                status: 'Reached Customer'
+            });
         }
         res.status(200).json({ success: true, message: 'Reached customer location' });
     }
     catch (err) {
+        console.error('[reachedCustomer] Error:', err);
         res.status(500).json({ message: 'Failed to update customer reach', error: err.message });
     }
 };
@@ -564,10 +544,6 @@ const deliverOrder = async (req, res) => {
         const { id } = req.params;
         const { order, assignment } = await findOrderAndAssignment(id);
         if (order) {
-            order.orderStatus = 'Delivered';
-            order.paymentStatus = 'Paid';
-            order.isPaid = true;
-            order.deliveredAt = new Date();
             if (!order.deliveryVerification)
                 order.deliveryVerification = {};
             order.deliveryVerification.verified = true;
@@ -575,27 +551,28 @@ const deliverOrder = async (req, res) => {
                 order.paymentDetails = {};
             order.paymentDetails.status = 'completed';
             addOrderTimelineStep(order, 'Delivered', 'Customer delivery OTP verified. Order delivered successfully to doorstep');
-            try {
-                await order.save();
-            }
-            catch (e) {
-                console.warn('[deliverOrder] order.save warning:', e);
-            }
+            await Order_1.Order.findByIdAndUpdate(order._id, {
+                orderStatus: 'Delivered',
+                paymentStatus: 'Paid',
+                isPaid: true,
+                deliveredAt: new Date(),
+                deliveryVerification: order.deliveryVerification,
+                paymentDetails: order.paymentDetails,
+                timeline: order.timeline,
+                orderStatusObj: order.orderStatusObj
+            });
         }
         if (assignment) {
-            assignment.status = 'Delivered';
-            assignment.deliveredAt = new Date();
-            assignment.completedAt = new Date();
-            try {
-                await assignment.save();
-            }
-            catch (e) {
-                console.warn('[deliverOrder] assignment.save warning:', e);
-            }
+            await DeliveryAssignment_1.DeliveryAssignment.findByIdAndUpdate(assignment._id, {
+                status: 'Delivered',
+                deliveredAt: new Date(),
+                completedAt: new Date()
+            });
         }
         res.status(200).json({ success: true, message: 'Order delivered successfully' });
     }
     catch (err) {
+        console.error('[deliverOrder] Error:', err);
         res.status(500).json({ message: 'Failed to mark order as delivered', error: err.message });
     }
 };
@@ -606,30 +583,32 @@ const collectCodPayment = async (req, res) => {
         const { method, amount } = req.body;
         const { order, assignment } = await findOrderAndAssignment(id);
         if (order) {
-            order.paymentStatus = 'Paid';
-            order.isPaid = true;
-            order.codCollected = true;
-            order.codPaymentMethod = method || 'Cash';
-            order.codCollectedAt = new Date();
             if (!order.paymentDetails)
                 order.paymentDetails = {};
             order.paymentDetails.status = 'completed';
             order.paymentDetails.method = method || 'cod';
             addOrderTimelineStep(order, 'Paid', `COD Payment of ₹${amount || order.totalAmount} collected via ${method || 'Cash'}`);
-            await order.save();
+            await Order_1.Order.findByIdAndUpdate(order._id, {
+                paymentStatus: 'Paid',
+                isPaid: true,
+                codCollected: true,
+                codPaymentMethod: method || 'Cash',
+                codCollectedAt: new Date(),
+                paymentDetails: order.paymentDetails,
+                timeline: order.timeline,
+                orderStatusObj: order.orderStatusObj
+            });
         }
         if (assignment) {
-            if (!assignment.codCollection) {
-                assignment.codCollection = { expected: amount || 0, collected: amount || 0 };
-            }
-            else {
-                assignment.codCollection.collected = amount || assignment.codCollection.expected;
-            }
-            await assignment.save();
+            const codUpdate = {
+                'codCollection.collected': amount || assignment.codCollection?.expected || 0
+            };
+            await DeliveryAssignment_1.DeliveryAssignment.findByIdAndUpdate(assignment._id, codUpdate);
         }
         res.status(200).json({ success: true, message: 'COD payment collected successfully', method });
     }
     catch (err) {
+        console.error('[collectCodPayment] Error:', err);
         res.status(500).json({ message: 'Failed to record COD payment', error: err.message });
     }
 };
@@ -668,14 +647,29 @@ const getDashboard = async (req, res) => {
             res.status(401).json({ message: 'Unauthorized' });
             return;
         }
-        let partner = await DeliveryPartner_1.DeliveryPartner.findOne({ userId: req.user.id });
-        if (!partner && mongoose_1.default.Types.ObjectId.isValid(req.user.id)) {
-            partner = await DeliveryPartner_1.DeliveryPartner.findById(req.user.id);
+        const { partner, authUser } = await resolveAgentIds(req);
+        let partnerObj = partner ? partner.toObject() : null;
+        if (partnerObj) {
+            if (!partnerObj.zone) {
+                partnerObj.zone = partnerObj.mandal || authUser?.mandal || authUser?.city || 'Tamsi Mandal';
+            }
         }
-        // If no partner found, return null — never return a hardcoded mock partner
+        else if (authUser) {
+            partnerObj = {
+                _id: authUser._id,
+                name: authUser.name,
+                mobile: authUser.phone || authUser.mobile,
+                email: authUser.email,
+                zone: authUser.mandal || authUser.zone || authUser.city || 'Tamsi Mandal',
+                status: 'active',
+                availability: 'Available',
+                partnerType: 'Employee',
+                ratings: { averageRating: 5.0 }
+            };
+        }
         res.status(200).json({
             success: true,
-            partner: partner || null
+            partner: partnerObj || null
         });
     }
     catch (error) {
@@ -683,14 +677,62 @@ const getDashboard = async (req, res) => {
     }
 };
 exports.getDashboard = getDashboard;
+async function resolveAgentIds(req) {
+    if (!req.user?.id)
+        return { allAgentIds: [], partner: null, authUser: null };
+    const authUser = await User_1.User.findById(req.user.id);
+    let partner = await DeliveryPartner_1.DeliveryPartner.findOne({ userId: req.user.id });
+    if (!partner && mongoose_1.default.Types.ObjectId.isValid(req.user.id)) {
+        partner = await DeliveryPartner_1.DeliveryPartner.findById(req.user.id);
+    }
+    if (!partner && authUser?.phone) {
+        partner = await DeliveryPartner_1.DeliveryPartner.findOne({ mobile: authUser.phone });
+    }
+    if (!partner && authUser?.email) {
+        partner = await DeliveryPartner_1.DeliveryPartner.findOne({ email: authUser.email });
+    }
+    const validObjectIds = [];
+    const validStringIds = [];
+    validStringIds.push(String(req.user.id));
+    if (mongoose_1.default.Types.ObjectId.isValid(req.user.id)) {
+        validObjectIds.push(new mongoose_1.default.Types.ObjectId(req.user.id));
+    }
+    if (partner) {
+        const pIdStr = partner._id.toString();
+        validStringIds.push(pIdStr);
+        if (mongoose_1.default.Types.ObjectId.isValid(pIdStr)) {
+            validObjectIds.push(partner._id);
+        }
+        if (partner.userId) {
+            const uIdStr = partner.userId.toString();
+            validStringIds.push(uIdStr);
+            if (mongoose_1.default.Types.ObjectId.isValid(uIdStr)) {
+                validObjectIds.push(partner.userId);
+            }
+        }
+        if (partner.deliveryPartnerId) {
+            validStringIds.push(partner.deliveryPartnerId);
+        }
+        if (partner.referenceId) {
+            validStringIds.push(partner.referenceId);
+        }
+    }
+    const allAgentIds = Array.from(new Set([...validObjectIds, ...validStringIds]));
+    return { allAgentIds, partner, authUser };
+}
 /** Financial & Attendance Controllers */
 const getWallet = async (req, res) => {
     try {
-        const userId = req.user?.id;
-        let partner = await DeliveryPartner_1.DeliveryPartner.findOne({ userId });
-        const partnerId = partner?._id || userId;
+        const { allAgentIds } = await resolveAgentIds(req);
+        if (allAgentIds.length === 0) {
+            res.status(200).json({ success: true, wallet: { availableBalance: 0, pendingBalance: 0, withdrawnBalance: 0, tdsDeducted: 0, ledgerEntries: [] } });
+            return;
+        }
         const completed = await DeliveryAssignment_1.DeliveryAssignment.find({
-            deliveryPartnerId: partnerId,
+            $or: [
+                { deliveryPartnerId: { $in: allAgentIds } },
+                { partnerId: { $in: allAgentIds } }
+            ],
             status: { $in: ['Delivered', 'Completed'] }
         }).populate('orderId');
         const totalEarned = completed.reduce((sum, a) => sum + (a.orderId?.orderSummary?.shippingFee || 35), 0);
@@ -719,7 +761,6 @@ const getWallet = async (req, res) => {
         });
     }
     catch (err) {
-        // On error return zero balances — never return hardcoded amounts from another partner's context
         res.status(200).json({ success: true, wallet: { availableBalance: 0, pendingBalance: 0, withdrawnBalance: 0, tdsDeducted: 0, ledgerEntries: [] } });
     }
 };
@@ -742,21 +783,23 @@ const toggleBreak = async (req, res) => {
 exports.toggleBreak = toggleBreak;
 const updateLocation = async (req, res) => {
     try {
-        const { latitude, longitude, address, heading, speed } = req.body;
-        const userId = req.user?.id;
-        if (userId) {
-            const partner = await DeliveryPartner_1.DeliveryPartner.findOne({ userId });
-            if (partner) {
-                partner.currentLocation = {
-                    latitude: latitude || 17.3457,
-                    longitude: longitude || 78.5522,
-                    address: address || 'LB Nagar, Hyderabad, 500074',
-                    updatedAt: new Date()
-                };
-                await partner.save();
-            }
+        const { latitude, longitude, address } = req.body;
+        const { allAgentIds, partner } = await resolveAgentIds(req);
+        if (partner) {
+            partner.currentLocation = {
+                latitude: latitude || 17.3457,
+                longitude: longitude || 78.5522,
+                address: address || 'LB Nagar, Hyderabad, 500074',
+                updatedAt: new Date()
+            };
+            await partner.save();
+        }
+        if (allAgentIds.length > 0) {
             await DeliveryAssignment_1.DeliveryAssignment.updateMany({
-                deliveryPartnerId: partner?._id || userId,
+                $or: [
+                    { deliveryPartnerId: { $in: allAgentIds } },
+                    { partnerId: { $in: allAgentIds } }
+                ],
                 status: { $in: ['Assigned', 'Accepted', 'Reached Vendor', 'Picked Up', 'Out for Delivery', 'Reached Customer'] }
             }, {
                 $set: {
@@ -781,10 +824,17 @@ const getNotifications = async (req, res) => {
 exports.getNotifications = getNotifications;
 const getHistory = async (req, res) => {
     try {
-        const userId = req.user?.id;
-        let partner = await DeliveryPartner_1.DeliveryPartner.findOne({ userId });
-        const partnerId = partner?._id || userId;
-        const assignments = await DeliveryAssignment_1.DeliveryAssignment.find({ deliveryPartnerId: partnerId })
+        const { allAgentIds } = await resolveAgentIds(req);
+        if (allAgentIds.length === 0) {
+            res.status(200).json({ success: true, history: [] });
+            return;
+        }
+        const assignments = await DeliveryAssignment_1.DeliveryAssignment.find({
+            $or: [
+                { deliveryPartnerId: { $in: allAgentIds } },
+                { partnerId: { $in: allAgentIds } }
+            ]
+        })
             .populate('orderId')
             .populate('vendorId')
             .populate('customerId')
@@ -797,22 +847,50 @@ const getHistory = async (req, res) => {
 };
 exports.getHistory = getHistory;
 const getPerformance = async (req, res) => {
-    res.status(200).json({ success: true, performance: { acceptanceRate: 100, onTimeRate: 100 } });
+    try {
+        const { partner } = await resolveAgentIds(req);
+        const acceptanceRate = partner?.performance?.acceptanceRate ?? 100;
+        const onTimeRate = partner?.performance?.onTimeRate ?? 100;
+        res.status(200).json({ success: true, performance: { acceptanceRate, onTimeRate } });
+    }
+    catch (e) {
+        res.status(200).json({ success: true, performance: { acceptanceRate: 100, onTimeRate: 100 } });
+    }
 };
 exports.getPerformance = getPerformance;
 const getAnalytics = async (req, res) => {
     try {
-        const userId = req.user?.id;
-        let partner = await DeliveryPartner_1.DeliveryPartner.findOne({ userId });
-        const partnerId = partner?._id || userId;
+        const { allAgentIds, partner } = await resolveAgentIds(req);
+        if (allAgentIds.length === 0) {
+            res.status(200).json({
+                success: true,
+                todayEarnings: 0,
+                todayIncentives: 0,
+                completedCount: 0,
+                acceptanceRate: 100,
+                weeklyTrend: []
+            });
+            return;
+        }
         const completed = await DeliveryAssignment_1.DeliveryAssignment.find({
-            deliveryPartnerId: partnerId,
+            $or: [
+                { deliveryPartnerId: { $in: allAgentIds } },
+                { partnerId: { $in: allAgentIds } }
+            ],
             status: { $in: ['Delivered', 'Completed'] }
         }).populate('orderId');
-        const count = completed.length;
-        // Use real earnings only — never hardcode amounts from another partner's context
-        const todayEarnings = completed.reduce((acc, c) => acc + (c.orderId?.orderSummary?.shippingFee || 35), 0);
+        const completedOrders = await Order_1.Order.find({
+            $or: [
+                { deliveryAgentId: { $in: allAgentIds } },
+                { assignedDeliveryAgent: { $in: allAgentIds } }
+            ],
+            orderStatus: { $in: ['Delivered', 'Completed'] }
+        });
+        const count = Math.max(completed.length, completedOrders.length);
+        const todayEarnings = completed.reduce((acc, c) => acc + (c.orderId?.orderSummary?.shippingFee || 35), 0) ||
+            completedOrders.reduce((acc, o) => acc + (o.orderSummary?.shippingFee || 35), 0);
         const todayIncentives = count >= 10 ? 300 : count * 25;
+        const acceptanceRate = partner?.performance?.acceptanceRate ?? 100;
         const weeklyTrend = [
             { day: 'Mon', earnings: 0, incentives: 0 },
             { day: 'Tue', earnings: 0, incentives: 0 },
@@ -826,24 +904,19 @@ const getAnalytics = async (req, res) => {
             success: true,
             todayEarnings,
             todayIncentives,
+            completedCount: count,
+            acceptanceRate,
             weeklyTrend
         });
     }
     catch (err) {
-        // On error return zeros — never return hardcoded earnings from another partner's context
         res.status(200).json({
             success: true,
             todayEarnings: 0,
             todayIncentives: 0,
-            weeklyTrend: [
-                { day: 'Mon', earnings: 0, incentives: 0 },
-                { day: 'Tue', earnings: 0, incentives: 0 },
-                { day: 'Wed', earnings: 0, incentives: 0 },
-                { day: 'Thu', earnings: 0, incentives: 0 },
-                { day: 'Fri', earnings: 0, incentives: 0 },
-                { day: 'Sat', earnings: 0, incentives: 0 },
-                { day: 'Sun', earnings: 0, incentives: 0 }
-            ]
+            completedCount: 0,
+            acceptanceRate: 100,
+            weeklyTrend: []
         });
     }
 };
@@ -858,11 +931,16 @@ const getRatings = async (req, res) => {
 exports.getRatings = getRatings;
 const getCod = async (req, res) => {
     try {
-        const userId = req.user?.id;
-        let partner = await DeliveryPartner_1.DeliveryPartner.findOne({ userId });
-        const partnerId = partner?._id || userId;
+        const { allAgentIds } = await resolveAgentIds(req);
+        if (allAgentIds.length === 0) {
+            res.status(200).json({ success: true, totalCod: 0, count: 0, orders: [] });
+            return;
+        }
         const codAssignments = await DeliveryAssignment_1.DeliveryAssignment.find({
-            deliveryPartnerId: partnerId,
+            $or: [
+                { deliveryPartnerId: { $in: allAgentIds } },
+                { partnerId: { $in: allAgentIds } }
+            ],
             status: { $in: ['Delivered', 'Completed'] }
         }).populate('orderId');
         const totalCod = codAssignments.reduce((sum, a) => {
@@ -987,8 +1065,15 @@ const getSubscriptions = async (req, res) => {
     try {
         const userId = req.user?.id;
         let partner = await DeliveryPartner_1.DeliveryPartner.findOne({ userId });
-        if (!partner) {
-            partner = (await DeliveryPartner_1.DeliveryPartner.findOne({ status: 'active' })) || (await DeliveryPartner_1.DeliveryPartner.findOne({}));
+        if (!partner && userId && mongoose_1.default.Types.ObjectId.isValid(userId)) {
+            partner = await DeliveryPartner_1.DeliveryPartner.findById(userId);
+        }
+        const authUser = userId ? await User_1.User.findById(userId) : null;
+        if (!partner && authUser?.phone) {
+            partner = await DeliveryPartner_1.DeliveryPartner.findOne({ mobile: authUser.phone });
+        }
+        if (!partner && authUser?.email) {
+            partner = await DeliveryPartner_1.DeliveryPartner.findOne({ email: authUser.email });
         }
         const partnerIds = [];
         if (userId) {
@@ -1009,14 +1094,14 @@ const getSubscriptions = async (req, res) => {
             if (mongoose_1.default.Types.ObjectId.isValid(partner.userId.toString()))
                 partnerIds.push(new mongoose_1.default.Types.ObjectId(partner.userId.toString()));
         }
+        if (partnerIds.length === 0) {
+            res.status(200).json({ success: true, subscriptions: [] });
+            return;
+        }
         let dbSubscriptions = await LocalShopSubscription_1.default.find({
             $or: [
                 { deliveryAgentId: { $in: partnerIds } },
-                { assignedDeliveryAgent: { $in: partnerIds } },
-                { deliveryAgentId: { $in: [null, undefined, ''] } },
-                { assignedDeliveryAgent: { $in: [null, undefined, ''] } },
-                { status: 'active' },
-                { status: 'Pending' }
+                { assignedDeliveryAgent: { $in: partnerIds } }
             ]
         }).lean();
         const mappedDbSubs = [];
@@ -1061,7 +1146,11 @@ const getSubscriptions = async (req, res) => {
         }
         const subOrders = await Order_1.Order.find({
             isScheduledSubscription: true,
-            orderStatus: { $ne: 'Cancelled' }
+            orderStatus: { $ne: 'Cancelled' },
+            $or: [
+                { deliveryAgentId: { $in: partnerIds } },
+                { assignedDeliveryAgent: { $in: partnerIds } }
+            ]
         })
             .populate('sellerId', 'businessName address phone mobile')
             .lean();
@@ -1071,50 +1160,27 @@ const getSubscriptions = async (req, res) => {
                 _id: so._id,
                 id: so.orderNumber || so._id,
                 productName: so.items?.[0]?.name || so.orderItems?.[0]?.name || 'Fresh Organic Daily Subscription Run',
-                customerName: so.shippingAddress?.name || 'K. Ananya Reddy (Customer)',
+                customerName: so.shippingAddress?.name || 'Customer',
                 customerPhone: so.shippingAddress?.phone || '+91 95503 79505',
                 address: so.shippingAddress
                     ? `${so.shippingAddress.address}, ${so.shippingAddress.city}, ${so.shippingAddress.state} - ${so.shippingAddress.pincode}`
-                    : 'Flat 402, Sri Sai Nivas Apartments, Road No. 3, Vasavi Colony, LB Nagar, Hyderabad - 500074',
-                pickupStoreName: seller?.businessName || 'ApexBee Organic Dairy & Grocery Store',
-                pickupAddress: seller?.address || 'Shop #14, Main Commercial Market Road, LB Nagar, Hyderabad - 500074',
+                    : 'Customer Address',
+                pickupStoreName: seller?.businessName || 'Merchant Store',
+                pickupAddress: seller?.address || 'Store Address',
                 pickupPhone: seller?.mobile || seller?.phone || '+91 98480 12345',
                 deliverySlot: so.scheduleDetails?.slot || 'Morning Shift (6:00 AM - 7:30 AM)',
                 frequency: so.scheduleDetails?.frequency || 'Daily',
-                status: 'Pending',
-                runStatus: 'Pending',
+                status: so.orderStatus || 'Pending',
+                runStatus: so.orderStatus || 'Pending',
                 quantity: so.items?.[0]?.quantity || 1,
-                deliveryAgentId: so.assignedDeliveryAgent || (partnerIds[0] ? String(partnerIds[0]) : String(userId)),
+                deliveryAgentId: so.assignedDeliveryAgent || so.deliveryAgentId,
                 startDate: '2026-08-01'
             };
         });
         let allSubs = [...mappedDbSubs, ...mappedSubOrders];
         if (allSubs.length === 0) {
-            allSubs = [
-                {
-                    _id: '6a740a123d0ee74fa42c162e',
-                    id: '6a740a123d0ee74fa42c162e',
-                    productName: 'Idols & Spiritual - Fresh & Premium Grade',
-                    quantity: 1,
-                    frequency: 'Alternate Days',
-                    deliverySlot: '06:00 AM - 07:00 AM',
-                    status: 'Pending',
-                    runStatus: 'Pending',
-                    startDate: '2026-08-01',
-                    pickupStoreName: 'cdcd',
-                    pickupAddress: 'dcdc, tamsi, Telangana - 504312',
-                    pickupPhone: '+91 98480 12345',
-                    customerName: 'PALODI GAMEING',
-                    customerPhone: '+91 95503 79505',
-                    address: 'Tamsi Mandal, Adilabad, Telangana, 504312, India',
-                    deliveryAddress: 'Tamsi Mandal, Adilabad, Telangana, 504312, India',
-                    calendarHistory: [
-                        { date: '2026-08-06', status: 'Pending' },
-                        { date: '2026-08-08', status: 'Pending' },
-                        { date: '2026-08-10', status: 'Scheduled' },
-                    ]
-                }
-            ];
+            res.status(200).json({ success: true, subscriptions: [] });
+            return;
         }
         const todayObj = new Date();
         const todayStr = todayObj.toISOString().split('T')[0];
@@ -1413,11 +1479,49 @@ const triggerCourierFallback = async (req, res) => {
 exports.triggerCourierFallback = triggerCourierFallback;
 const getAllDeliveryPartners = async (req, res) => {
     try {
-        const partners = await DeliveryPartner_1.DeliveryPartner.find({}).sort({ updatedAt: -1 });
+        const partners = await DeliveryPartner_1.DeliveryPartner.find({}).sort({ updatedAt: -1 }).lean();
+        const deliveryUsers = await User_1.User.find({ roles: 'delivery_partner' }).lean();
+        const existingUserIds = new Set(partners.map(p => p.userId ? p.userId.toString() : p._id.toString()));
+        const allAgents = partners.map(p => ({
+            id: p.userId ? p.userId.toString() : p._id.toString(),
+            _id: p._id.toString(),
+            userId: p.userId ? p.userId.toString() : p._id.toString(),
+            name: p.name || 'Delivery Partner',
+            phone: p.mobile || '9550379505',
+            mobile: p.mobile || '9550379505',
+            email: p.email,
+            type: p.partnerType === 'Freelancer' ? 'Independent' : 'Platform',
+            partnerType: p.partnerType || 'Employee',
+            status: p.status === 'active' ? 'Active' : (p.status || 'Active'),
+            zone: p.zone || 'Tamsi Mandal',
+            rating: p.ratings?.averageRating || 5.0,
+            activeDeliveries: 0
+        }));
+        for (const u of deliveryUsers) {
+            if (!existingUserIds.has(u._id.toString())) {
+                allAgents.push({
+                    id: u._id.toString(),
+                    _id: u._id.toString(),
+                    userId: u._id.toString(),
+                    name: u.name || 'Delivery Agent',
+                    phone: u.phone || u.mobile || '9550379505',
+                    mobile: u.phone || u.mobile || '9550379505',
+                    email: u.email,
+                    type: 'Platform',
+                    partnerType: 'Employee',
+                    status: 'Active',
+                    zone: u.zone || u.mandal || 'Tamsi Mandal',
+                    rating: 5.0,
+                    activeDeliveries: 0
+                });
+            }
+        }
         res.status(200).json({
             success: true,
-            count: partners.length,
-            partners
+            count: allAgents.length,
+            partners: allAgents,
+            deliveryAgents: allAgents,
+            agents: allAgents
         });
     }
     catch (error) {

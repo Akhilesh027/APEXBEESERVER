@@ -158,12 +158,12 @@ const buildAdminPricing = (body: any) => {
     body.distributionPool !== undefined
       ? normalizeNumber(body.distributionPool)
       : distributedFrom === 'apexbee_commission'
-      ? vendorCommissionAmount
-      : distributedFrom === 'both'
-      ? (vendorCommissionAmount + platformFeeAmount)
-      : distributedFrom === 'none'
-      ? 0
-      : platformFeeAmount
+        ? vendorCommissionAmount
+        : distributedFrom === 'both'
+          ? (vendorCommissionAmount + platformFeeAmount)
+          : distributedFrom === 'none'
+            ? 0
+            : platformFeeAmount
   );
 
   const shippingCharge = normalizeNumber(body.shippingCharge);
@@ -799,7 +799,7 @@ export const getAllProducts = async (req: Request, res: Response) => {
       productObj.isCourierShipping = isCourierShipping;
       productObj.deliveryMode = vendor?.deliveryMode || 'self_delivery';
       productObj.vendorLocationName = vendor?.district || vendor?.state || '';
-      
+
       const vPin = vendor?.pincode || (p.sellerId && typeof p.sellerId === 'object' ? (p.sellerId.pincode || p.sellerId.pinCode) : '') || '';
       productObj.vendorPincode = vPin;
       productObj.shopPincode = vPin;
@@ -917,7 +917,7 @@ export const getProductById = async (req: Request, res: Response) => {
     const sellerIdVal = product.sellerId?._id || product.sellerId || product.createdBy;
     const vendor = await Vendor.findOne({ $or: [{ _id: sellerIdVal }, { userId: sellerIdVal }] });
     const vPin = vendor?.pincode || (product.sellerId && typeof product.sellerId === 'object' ? ((product.sellerId as any).pincode || (product.sellerId as any).pinCode) : '') || '';
-    
+
     productObj.vendorPincode = vPin;
     productObj.shopPincode = vPin;
     productObj.storePincode = vPin;
@@ -1641,7 +1641,7 @@ export const bulkRejectProducts = async (req: Request, res: Response) => {
           }
         }
       );
-    } catch (err: any) {}
+    } catch (err: any) { }
 
     res.json({
       success: true,

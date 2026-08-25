@@ -13,6 +13,7 @@ const SettlementEngine_1 = require("./SettlementEngine");
 const couponService_1 = require("./couponService");
 const TransactionalOutbox_1 = require("./TransactionalOutbox");
 const notificationEmitter_1 = require("../modules/notifications/events/notificationEmitter");
+const notificationHelper_1 = require("./notificationHelper");
 const crypto_1 = __importDefault(require("crypto"));
 class CheckoutService {
     /**
@@ -42,6 +43,8 @@ class CheckoutService {
             categoryId: item.categoryId || primaryCategoryId,
             categoryName: item.categoryName || primaryCategoryName,
         }));
+        const isPaidOnline = input.paymentDetails?.status === 'completed' || input.paymentDetails?.method === 'razorpay' || input.paymentDetails?.method === 'wallet';
+        const resolvedPaymentMethod = input.paymentDetails?.method || 'cod';
         const timeline = [
             {
                 status: 'pending',
@@ -49,15 +52,22 @@ class CheckoutService {
                 note: 'Order placed successfully (price verified by backend)',
             },
         ];
+        if (isPaidOnline) {
+            timeline.push({
+                status: 'paid',
+                date: new Date().toISOString(),
+                note: resolvedPaymentMethod === 'razorpay'
+                    ? `Payment completed via Razorpay (${input.paymentDetails?.razorpayPaymentId || input.paymentDetails?.transactionId || 'online'})`
+                    : `Payment completed via Wallet deduction`,
+            });
+        }
         const orderStatusObj = {
             currentStatus: 'pending',
-            timeline: [
-                {
-                    status: 'pending',
-                    timestamp: new Date().toISOString(),
-                    description: 'Order placed successfully (price verified by backend)',
-                },
-            ],
+            timeline: timeline.map(t => ({
+                status: t.status,
+                timestamp: t.date,
+                description: t.note
+            })),
         };
         const finalGrandTotal = input.paymentDetails?.amount ?? input.orderSummary?.grandTotal ?? pricing.orderSummary.grandTotal;
         const mergedOrderSummary = {
@@ -73,14 +83,19 @@ class CheckoutService {
             sellerId: new mongoose_1.default.Types.ObjectId(pricing.sellerId),
             items,
             totalAmount: finalGrandTotal,
-            paymentStatus: input.paymentDetails?.status === 'completed' ? 'Paid' : 'Pending',
+            paymentMethod: resolvedPaymentMethod,
+            paymentStatus: isPaidOnline ? 'Paid' : 'Pending',
+            paymentVerificationStatus: isPaidOnline ? 'Verified' : (resolvedPaymentMethod === 'upi' ? 'Pending Verification' : 'Not Required'),
             orderStatus: 'Placed',
             timeline,
             orderItems: pricing.orderItems,
             shippingAddress: input.shippingAddress,
             paymentDetails: {
                 ...(input.paymentDetails || {}),
-                amount: finalGrandTotal
+                method: resolvedPaymentMethod,
+                status: isPaidOnline ? 'completed' : (resolvedPaymentMethod === 'cod' ? 'pending' : 'pending_verification'),
+                amount: finalGrandTotal,
+                paidAt: isPaidOnline ? new Date() : undefined,
             },
             fulfillment: input.fulfillment,
             isSelfPickup: input.fulfillment?.type === 'pickup',
@@ -248,6 +263,10 @@ class CheckoutService {
                     entityId: order._id
                 }, [{ userId: order.customerId, role: 'customer' }]);
             }
+            // Multi-channel notifications: Customer receipt email, Vendor alert, and Admin alerts
+            notificationHelper_1.NotificationHelper.notifyOrderPlaced(order).catch((err) => {
+                console.error('[CheckoutService] Failed to dispatch multi-channel order notifications:', err);
+            });
         }
         catch (notifErr) {
             console.warn('[CheckoutService] Failed to emit order.placed notification:', notifErr);

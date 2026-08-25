@@ -8,6 +8,7 @@ import { FoodMenuItem } from "../models/FoodMenuItem";
 import { User, RoleType } from "../models/User";
 import { Notification } from "../models/Notification";
 import { notificationEmitter } from "../modules/notifications/events/notificationEmitter";
+import { NotificationHelper } from "../services/notificationHelper";
 
 const createNotificationCompat = async (
   payload: any,
@@ -1327,6 +1328,11 @@ export const verifyKycApplication = async (
     }
 
     const portalUrl = getPortalUrl(targetRole);
+
+    // Dispatch Approval Email, In-App Notification & Partner Activation Alerts
+    NotificationHelper.notifyBusinessApplicationApproved(app, user, targetRole).catch((err) => {
+      console.error('Failed to dispatch application approved notifications:', err);
+    });
 
     await createNotificationCompat({
       userId: user._id,

@@ -82,6 +82,8 @@ export interface IOrder extends Document {
   acceptedAt?: Date | null;
   estimatedDeliveryTime?: Date | null;
   prepStatus?: string;
+  paymentMethod?: string;
+  paymentDetails?: any;
 }
 
 const OrderItemSchema = new Schema<IOrderItem>({
@@ -196,6 +198,8 @@ const OrderSchema = new Schema<IOrder>(
     acceptedAt: { type: Date, default: null },
     estimatedDeliveryTime: { type: Date, default: null },
     prepStatus: { type: String, default: 'pending' },
+    paymentMethod: { type: String, default: 'cod' },
+    paymentDetails: { type: Schema.Types.Mixed },
   },
   { timestamps: true }
 );

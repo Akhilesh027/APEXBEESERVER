@@ -62,3 +62,31 @@ export const restrictTo = (...allowedRoles: RoleType[]) => {
     next();
   };
 };
+
+export const optionalProtect = async (req: AuthRequest, _res: Response, next: NextFunction): Promise<void> => {
+  let token: string | undefined;
+
+  if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+    token = req.headers.authorization.split(' ')[1];
+  }
+
+  if (token) {
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'supersecretjwtkeyforapexbeebusinessoperatingnetwork') as {
+        id: string;
+        email: string;
+        roles: RoleType[];
+      };
+
+      req.user = {
+        id: decoded.id,
+        email: decoded.email,
+        roles: decoded.roles
+      };
+    } catch {
+      // Guest or expired token, proceed without failing
+    }
+  }
+
+  next();
+};
