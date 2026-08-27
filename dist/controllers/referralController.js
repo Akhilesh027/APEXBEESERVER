@@ -225,16 +225,39 @@ const getReferralNetwork = async (req, res) => {
     }
 };
 exports.getReferralNetwork = getReferralNetwork;
-// GET /api/admin/referrals/settings
+// GET /api/referrals/admin/settings
 const getReferralSettings = async (req, res) => {
     try {
         let settings = await ReferralSettings_1.ReferralSettings.findOne({});
         if (!settings) {
             settings = new ReferralSettings_1.ReferralSettings({
-                firstOrderRewards: { level1: 50, level2: 0, level3: 0 },
+                firstOrderRewards: { level1: 0, level2: 0, level3: 0 },
+                onboardingRewards: {
+                    vendor: 0,
+                    service_provider: 0,
+                    wholesaler: 0,
+                    manufacturer: 0,
+                    entrepreneur: 0,
+                    mandal_franchise: 0,
+                    district_franchise: 0,
+                    state_franchise: 0
+                },
                 enabled: true,
                 defaultReferralCode: "APEXBEE"
             });
+            await settings.save();
+        }
+        else if (!settings.onboardingRewards) {
+            settings.onboardingRewards = {
+                vendor: 0,
+                service_provider: 0,
+                wholesaler: 0,
+                manufacturer: 0,
+                entrepreneur: 0,
+                mandal_franchise: 0,
+                district_franchise: 0,
+                state_franchise: 0
+            };
             await settings.save();
         }
         return res.status(200).json({ success: true, settings });
@@ -244,7 +267,7 @@ const getReferralSettings = async (req, res) => {
     }
 };
 exports.getReferralSettings = getReferralSettings;
-// PUT /api/admin/referrals/settings
+// PUT /api/referrals/admin/settings
 const updateReferralSettings = async (req, res) => {
     try {
         let settings = await ReferralSettings_1.ReferralSettings.findOne({});
@@ -252,10 +275,21 @@ const updateReferralSettings = async (req, res) => {
             settings = new ReferralSettings_1.ReferralSettings(req.body);
         }
         else {
-            Object.assign(settings, req.body);
+            if (req.body.firstOrderRewards) {
+                settings.firstOrderRewards = { ...settings.firstOrderRewards, ...req.body.firstOrderRewards };
+            }
+            if (req.body.onboardingRewards) {
+                settings.onboardingRewards = { ...settings.onboardingRewards, ...req.body.onboardingRewards };
+            }
+            if (req.body.enabled !== undefined)
+                settings.enabled = req.body.enabled;
+            if (req.body.defaultReferralCode !== undefined)
+                settings.defaultReferralCode = req.body.defaultReferralCode;
+            settings.markModified('onboardingRewards');
+            settings.markModified('firstOrderRewards');
         }
         await settings.save();
-        return res.status(200).json({ success: true, settings });
+        return res.status(200).json({ success: true, message: "Referral & onboarding reward settings saved successfully!", settings });
     }
     catch (error) {
         return res.status(500).json({ success: false, message: error.message });

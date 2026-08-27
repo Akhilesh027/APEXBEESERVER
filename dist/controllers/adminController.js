@@ -55,6 +55,7 @@ const WalletEngine_1 = require("../services/WalletEngine");
 const Order_1 = require("../models/Order");
 const CommissionSettlement_1 = require("../models/CommissionSettlement");
 const ReferralTransaction_1 = require("../models/ReferralTransaction");
+const ReferralSettings_1 = require("../models/ReferralSettings");
 const SettlementEngine_1 = require("../services/SettlementEngine");
 const Product_1 = __importDefault(require("../models/Product"));
 const getTargetRole = (app) => {
@@ -1069,7 +1070,7 @@ const verifyKycApplication = async (req, res) => {
         }
         app.status = "verified";
         await app.save();
-        // Process referral rewards
+        // Process referral mapping & dynamic onboarding rewards (Configurable by Admin in Commission Engine, defaults to 0)
         try {
             const referral = await Referral_1.Referral.findOne({ referredUserId: user._id, status: { $in: ["registered", "applied"] } });
             if (referral) {
@@ -1097,32 +1098,27 @@ const verifyKycApplication = async (req, res) => {
                     rewardRoleKey = "mandal_franchise";
                 }
                 referral.referralType = rewardRoleKey;
-                const referralRewards = {
-                    vendor: 500,
-                    service_provider: 500,
-                    wholesaler: 1000,
-                    manufacturer: 2000,
-                    entrepreneur: 3000,
-                    mandal_franchise: 2500,
-                    district_franchise: 5000,
-                    state_franchise: 10000
-                };
-                const amount = referralRewards[rewardRoleKey] || 0;
-                if (amount > 0) {
+                // Fetch dynamic admin-configured onboarding rewards from DB
+                const refSettings = await ReferralSettings_1.ReferralSettings.findOne({});
+                const onboardingRewards = refSettings?.onboardingRewards;
+                const configuredAmount = onboardingRewards && typeof onboardingRewards[rewardRoleKey] === 'number'
+                    ? Number(onboardingRewards[rewardRoleKey])
+                    : 0;
+                if (configuredAmount > 0) {
                     const session = await mongoose_1.default.startSession();
                     try {
                         await session.withTransaction(async () => {
                             const label = rewardRoleKey.replace("_", " ").toUpperCase();
-                            await WalletEngine_1.WalletEngine.credit(referral.referrerUserId, amount, {
+                            await WalletEngine_1.WalletEngine.credit(referral.referrerUserId, configuredAmount, {
                                 category: "Referral Bonus",
                                 source: "referral",
-                                remarks: `${label} referral approved`,
-                                description: `${label} referral approved`,
+                                remarks: `${label} referral onboarding approved`,
+                                description: `${label} referral onboarding approved`,
                                 referenceId: referral._id,
                                 referenceType: "REFERRAL"
                             }, session);
                             referral.status = "rewarded";
-                            referral.rewardAmount = amount;
+                            referral.rewardAmount = configuredAmount;
                             await referral.save({ session });
                             await User_1.User.findByIdAndUpdate(referral.referrerUserId, {
                                 $inc: { successfulReferrals: 1 }
@@ -1134,12 +1130,16 @@ const verifyKycApplication = async (req, res) => {
                     }
                 }
                 else {
+                    referral.rewardAmount = 0;
                     await referral.save();
+                    await User_1.User.findByIdAndUpdate(referral.referrerUserId, {
+                        $inc: { successfulReferrals: 1 }
+                    });
                 }
             }
         }
         catch (refError) {
-            console.error("Error processing referral reward:", refError);
+            console.error("Error updating referral status & onboarding reward:", refError);
         }
         const portalUrl = getPortalUrl(targetRole);
         // Dispatch Approval Email, In-App Notification & Partner Activation Alerts

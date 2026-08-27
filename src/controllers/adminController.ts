@@ -56,6 +56,7 @@ import { WalletEngine } from '../services/WalletEngine';
 import { Order } from "../models/Order";
 import { CommissionSettlement } from "../models/CommissionSettlement";
 import { ReferralTransaction } from "../models/ReferralTransaction";
+import { ReferralSettings } from "../models/ReferralSettings";
 import { SettlementEngine } from "../services/SettlementEngine";
 import Product from "../models/Product";
 
@@ -1249,7 +1250,7 @@ export const verifyKycApplication = async (
 
     await app.save();
 
-    // Process referral rewards
+    // Process referral mapping & dynamic onboarding rewards (Configurable by Admin in Commission Engine, defaults to 0)
     try {
       const referral = await Referral.findOne({ referredUserId: user._id, status: { $in: ["registered", "applied"] } });
       if (referral) {
@@ -1275,33 +1276,26 @@ export const verifyKycApplication = async (
 
         referral.referralType = rewardRoleKey as any;
 
-        const referralRewards: Record<string, number> = {
-          vendor: 500,
-          service_provider: 500,
-          wholesaler: 1000,
-          manufacturer: 2000,
-          entrepreneur: 3000,
-          mandal_franchise: 2500,
-          district_franchise: 5000,
-          state_franchise: 10000
-        };
+        // Fetch dynamic admin-configured onboarding rewards from DB
+        const refSettings = await ReferralSettings.findOne({});
+        const onboardingRewards = refSettings?.onboardingRewards as any;
+        const configuredAmount = onboardingRewards && typeof onboardingRewards[rewardRoleKey] === 'number'
+          ? Number(onboardingRewards[rewardRoleKey])
+          : 0;
 
-        const amount = referralRewards[rewardRoleKey] || 0;
-
-        if (amount > 0) {
+        if (configuredAmount > 0) {
           const session = await mongoose.startSession();
           try {
             await session.withTransaction(async () => {
               const label = rewardRoleKey.replace("_", " ").toUpperCase();
-
               await WalletEngine.credit(
                 referral.referrerUserId,
-                amount,
+                configuredAmount,
                 {
                   category: "Referral Bonus",
                   source: "referral",
-                  remarks: `${label} referral approved`,
-                  description: `${label} referral approved`,
+                  remarks: `${label} referral onboarding approved`,
+                  description: `${label} referral onboarding approved`,
                   referenceId: referral._id,
                   referenceType: "REFERRAL"
                 },
@@ -1309,7 +1303,7 @@ export const verifyKycApplication = async (
               );
 
               referral.status = "rewarded";
-              referral.rewardAmount = amount;
+              referral.rewardAmount = configuredAmount;
               await referral.save({ session });
 
               await User.findByIdAndUpdate(referral.referrerUserId, {
@@ -1320,11 +1314,15 @@ export const verifyKycApplication = async (
             await session.endSession();
           }
         } else {
+          referral.rewardAmount = 0;
           await referral.save();
+          await User.findByIdAndUpdate(referral.referrerUserId, {
+            $inc: { successfulReferrals: 1 }
+          });
         }
       }
     } catch (refError) {
-      console.error("Error processing referral reward:", refError);
+      console.error("Error updating referral status & onboarding reward:", refError);
     }
 
     const portalUrl = getPortalUrl(targetRole);

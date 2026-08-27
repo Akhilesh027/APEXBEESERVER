@@ -207,6 +207,30 @@ const buildAdminPricing = (body: any) => {
       : sellingPrice + shippingCharge + packingCharge
   );
 
+  const getShareAmt = (type: string) => {
+    const sh = commissionShares.find((s: any) => s.type === type && s.isActive !== false);
+    return sh ? normalizeNumber(sh.amount) : 0;
+  };
+  const getSharePct = (type: string) => {
+    const sh = commissionShares.find((s: any) => s.type === type && s.isActive !== false);
+    return sh ? normalizeNumber(sh.percent) : 0;
+  };
+
+  const level1Amt = getShareAmt('level1') || roundMoney((distributionPool * (getSharePct('level1') || 10)) / 100);
+  const level2Amt = getShareAmt('level2') || roundMoney((distributionPool * (getSharePct('level2') || 5)) / 100);
+  const level3Amt = getShareAmt('level3') || roundMoney((distributionPool * (getSharePct('level3') || 2.5)) / 100);
+
+  const computedAverage = roundMoney((level1Amt + level2Amt + level3Amt) / 3);
+  const totalReferralEarning = roundMoney(level1Amt + level2Amt + level3Amt);
+
+  const estimatedEarning = body.estimatedEarning !== undefined && body.estimatedEarning !== null && body.estimatedEarning !== '' && !isNaN(Number(body.estimatedEarning))
+    ? normalizeNumber(body.estimatedEarning)
+    : (body.averageReferralEarning !== undefined && body.averageReferralEarning !== null && body.averageReferralEarning !== '' && !isNaN(Number(body.averageReferralEarning))
+      ? normalizeNumber(body.averageReferralEarning)
+      : computedAverage);
+
+  const averageReferralEarning = estimatedEarning;
+
   const platformNetProfit = roundMoney(
     body.platformNetProfit !== undefined
       ? normalizeNumber(body.platformNetProfit)
@@ -229,6 +253,15 @@ const buildAdminPricing = (body: any) => {
     finalSellerAmount,
     customerSellingAmount,
     platformNetProfit,
+    referralEarnings: {
+      level1: level1Amt,
+      level2: level2Amt,
+      level3: level3Amt,
+      average: averageReferralEarning,
+      total: totalReferralEarning,
+    },
+    averageReferralEarning,
+    estimatedEarning,
     remarks: body.remarks || '',
   };
 };
@@ -1548,30 +1581,59 @@ export const bulkApproveProducts = async (req: Request, res: Response) => {
       const prodPrice = prod.baseSellingPrice || (prod as any).price || 0;
       const prodMrp = prod.baseMrp || prodPrice;
 
+      const pool = Math.round((prodPrice * 10) / 100);
+      const l1 = Math.round((pool * 10) / 100);
+      const l2 = Math.round((pool * 5) / 100);
+      const l3 = Math.round((pool * 2.5) / 100);
+      const avg = Math.round(((l1 + l2 + l3) / 3) * 100) / 100;
+
       if (!prod.adminPricing) {
         prod.adminPricing = {
           mrp: prodMrp,
           sellingPrice: prodPrice,
-          platformFeePercent: 10,
-          platformFeeAmount: Math.round((prodPrice * 10) / 100),
+          platformFeePercent: 25,
+          platformFeeAmount: pool,
           vendorCommissionPercent: 0,
           vendorCommissionAmount: 0,
           distributedFrom: 'platform_fee',
-          distributionPool: Math.round((prodPrice * 10) / 100),
+          distributionPool: pool,
           finalSellerAmount: prodPrice,
           shippingCharge: 0,
           packingCharge: 0,
           remarks: remarks || 'Bulk Approved by Admin',
-          commissionShares: []
+          commissionShares: [],
+          referralEarnings: {
+            level1: l1,
+            level2: l2,
+            level3: l3,
+            average: avg,
+            total: l1 + l2 + l3,
+          },
+          averageReferralEarning: avg,
+          estimatedEarning: l1,
         };
       } else {
         // If price was modified by vendor, sync sellingPrice in adminPricing
         if (prodPrice && prod.adminPricing.sellingPrice !== prodPrice) {
           prod.adminPricing.sellingPrice = prodPrice;
           prod.adminPricing.mrp = Math.max(prod.adminPricing.mrp || 0, prodMrp);
-          const pFee = prod.adminPricing.platformFeePercent || 10;
-          prod.adminPricing.platformFeeAmount = Math.round((prodPrice * pFee) / 100);
-          prod.adminPricing.distributionPool = prod.adminPricing.platformFeeAmount;
+          const pFee = prod.adminPricing.platformFeePercent !== undefined && prod.adminPricing.platformFeePercent !== null ? prod.adminPricing.platformFeePercent : 25;
+          const currentPool = Math.round((prodPrice * pFee) / 100);
+          prod.adminPricing.platformFeeAmount = currentPool;
+          prod.adminPricing.distributionPool = currentPool;
+          const curL1 = Math.round((currentPool * 10) / 100);
+          const curL2 = Math.round((currentPool * 5) / 100);
+          const curL3 = Math.round((currentPool * 2.5) / 100);
+          const curAvg = Math.round(((curL1 + curL2 + curL3) / 3) * 100) / 100;
+          prod.adminPricing.referralEarnings = {
+            level1: curL1,
+            level2: curL2,
+            level3: curL3,
+            average: curAvg,
+            total: curL1 + curL2 + curL3,
+          };
+          prod.adminPricing.averageReferralEarning = curAvg;
+          prod.adminPricing.estimatedEarning = curL1;
         }
       }
 

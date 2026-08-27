@@ -37,9 +37,19 @@ exports.ReferralSettings = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
 const ReferralSettingsSchema = new mongoose_1.Schema({
     firstOrderRewards: {
-        level1: { type: Number, default: 50 },
+        level1: { type: Number, default: 0 },
         level2: { type: Number, default: 0 },
         level3: { type: Number, default: 0 }
+    },
+    onboardingRewards: {
+        vendor: { type: Number, default: 0 },
+        service_provider: { type: Number, default: 0 },
+        wholesaler: { type: Number, default: 0 },
+        manufacturer: { type: Number, default: 0 },
+        entrepreneur: { type: Number, default: 0 },
+        mandal_franchise: { type: Number, default: 0 },
+        district_franchise: { type: Number, default: 0 },
+        state_franchise: { type: Number, default: 0 }
     },
     enabled: { type: Boolean, default: true },
     defaultReferralCode: { type: String, default: "APEXBEE" }
