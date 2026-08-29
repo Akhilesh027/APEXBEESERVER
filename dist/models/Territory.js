@@ -128,6 +128,48 @@ const TerritorySchema = new mongoose_1.Schema({
         type: String,
         default: "100%",
     },
+    annualFranchiseFee: {
+        type: Number,
+        default: 0,
+        min: 0,
+    },
+    franchiseFeePerYear: {
+        type: Number,
+        default: 0,
+        min: 0,
+    },
+    advanceBookingType: {
+        type: String,
+        enum: ["percentage", "fixed"],
+        default: "percentage",
+    },
+    advanceBookingValue: {
+        type: Number,
+        default: 20,
+        min: 0,
+    },
+    minBookingAdvance: {
+        type: Number,
+        default: 0,
+        min: 0,
+    },
+    lockedAt: {
+        type: Date,
+        default: null,
+    },
+    paymentStatus: {
+        type: String,
+        enum: ["NONE", "PARTIAL_ADVANCE", "PAID_FULL"],
+        default: "NONE",
+    },
+    paymentDetails: {
+        razorpayPaymentId: { type: String, default: "" },
+        razorpayOrderId: { type: String, default: "" },
+        amountPaid: { type: Number, default: 0 },
+        paymentType: { type: String, enum: ["FULL", "ADVANCE", ""], default: "" },
+        balanceAmount: { type: Number, default: 0 },
+        paidAt: { type: Date, default: null },
+    },
     currentFranchisee: {
         masterUserId: { type: String, default: "" },
         franchiseId: { type: mongoose_1.Schema.Types.ObjectId, ref: "Franchise", default: null },

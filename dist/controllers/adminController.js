@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getAdminLiveFoodOrders = exports.getAdminRestaurantOrders = exports.getAdminRestaurantMenu = exports.getAdminFoodRestaurants = exports.getTreasuryMasterStats = exports.updateVendorCategoryGovernance = exports.getMetrics = exports.setFeatureFlag = exports.getFeatureFlag = exports.cleanupExpiredReservations = exports.requestServiceProviderDocument = exports.updateServiceProviderDocumentStatus = exports.createDeliveryPartner = exports.getDeliveryPartners = exports.getReconciliationStats = exports.getWallets = exports.processEntrepreneurCommissionRelease = exports.processManufacturerDrawdown = exports.processWholesalerDrawdown = exports.processVendorDrawdown = exports.updateEntrepreneurStatus = exports.updateManufacturerStatus = exports.updateWholesalerStatus = exports.updateUserStatus = exports.createTerritory = exports.getTerritories = exports.updateFranchiseStatus = exports.getFranchises = exports.updateServiceProviderStatus = exports.getServiceProviders = exports.getEntrepreneurs = exports.getManufacturers = exports.getWholesalers = exports.getUsers = exports.updateServiceProviderKycStatus = exports.getServiceProviderKycs = exports.updateVendorStatus = exports.updateVendorDocumentStatus = exports.getVendorProducts = exports.getVendors = exports.getDashboardStats = exports.reviewApplication = exports.rejectApplication = exports.verifyKycApplication = exports.approveApplication = exports.getApplicationById = exports.getApplications = void 0;
+exports.getAdminLiveFoodOrders = exports.getAdminRestaurantOrders = exports.getAdminRestaurantMenu = exports.getAdminFoodRestaurants = exports.getTreasuryMasterStats = exports.updateVendorCategoryGovernance = exports.getMetrics = exports.setFeatureFlag = exports.getFeatureFlag = exports.cleanupExpiredReservations = exports.requestServiceProviderDocument = exports.updateServiceProviderDocumentStatus = exports.createDeliveryPartner = exports.getDeliveryPartners = exports.getReconciliationStats = exports.getWallets = exports.processEntrepreneurCommissionRelease = exports.processManufacturerDrawdown = exports.processWholesalerDrawdown = exports.processVendorDrawdown = exports.updateEntrepreneurStatus = exports.updateManufacturerStatus = exports.updateWholesalerStatus = exports.updateUserStatus = exports.createTerritory = exports.getTerritories = exports.updateFranchisePayment = exports.updateFranchiseStatus = exports.getFranchises = exports.updateServiceProviderStatus = exports.getServiceProviders = exports.getEntrepreneurs = exports.getManufacturers = exports.getWholesalers = exports.getUsers = exports.updateServiceProviderKycStatus = exports.getServiceProviderKycs = exports.updateVendorStatus = exports.updateVendorDocumentStatus = exports.getVendorProducts = exports.getVendors = exports.getDashboardStats = exports.reviewApplication = exports.rejectApplication = exports.verifyKycApplication = exports.approveApplication = exports.getApplicationById = exports.getApplications = void 0;
 exports.assignTerritoryAndMapFranchises = assignTerritoryAndMapFranchises;
 const mongoose_1 = __importDefault(require("mongoose"));
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
@@ -1850,10 +1850,130 @@ const updateServiceProviderStatus = async (req, res) => {
 exports.updateServiceProviderStatus = updateServiceProviderStatus;
 const getFranchises = async (req, res) => {
     try {
-        const franchises = await Franchise_1.Franchise.find().sort({ createdAt: -1 });
+        const franchises = await Franchise_1.Franchise.find()
+            .populate("userId", "name email phone isVerified roles")
+            .populate("assignedTerritories")
+            .sort({ createdAt: -1 });
+        const enhancedFranchises = await Promise.all(franchises.map(async (f) => {
+            const fObj = f.toObject ? f.toObject() : { ...f };
+            const applications = await BusinessApplication_1.BusinessApplication.find({
+                $or: [
+                    { "assignedFranchise.mandalFranchiseId": f._id },
+                    { "assignedFranchise.districtFranchiseId": f._id },
+                    { "assignedFranchise.stateFranchiseId": f._id },
+                    { userId: f.userId?._id || f.userId },
+                    { email: f.email },
+                    { mobile: f.mobile },
+                ],
+            }).sort({ createdAt: -1 });
+            const app = applications[0] || null;
+            let territory = await Territory_1.Territory.findOne({
+                $or: [{ franchiseId: f._id }, { _id: { $in: f.assignedTerritories || [] } }],
+            });
+            if (!territory) {
+                if (f.mandal) {
+                    territory = await Territory_1.Territory.findOne({
+                        state: new RegExp(`^${String(f.state || '').trim()}$`, "i"),
+                        district: new RegExp(`^${String(f.district || '').trim()}$`, "i"),
+                        mandal: new RegExp(`^${String(f.mandal || '').trim()}$`, "i"),
+                    });
+                }
+                if (!territory && f.district) {
+                    territory = await Territory_1.Territory.findOne({
+                        state: new RegExp(`^${String(f.state || '').trim()}$`, "i"),
+                        district: new RegExp(`^${String(f.district || '').trim()}$`, "i"),
+                    });
+                }
+                if (!territory && f.state) {
+                    territory = await Territory_1.Territory.findOne({
+                        state: new RegExp(`^${String(f.state || '').trim()}$`, "i"),
+                    });
+                }
+            }
+            return {
+                ...fObj,
+                allApplications: applications.map((a) => ({
+                    _id: a._id,
+                    applicationType: a.applicationType,
+                    roleId: a.roleId,
+                    status: a.status,
+                    businessName: a.businessName,
+                    category: a.category,
+                    primaryCategory: a.primaryCategory,
+                    subCategory: a.subCategory,
+                    approvedSubcategories: a.approvedSubcategories,
+                    restaurantName: a.restaurantName,
+                    foodBusinessType: a.foodBusinessType,
+                    fssaiNumber: a.fssaiNumber,
+                    cuisines: a.cuisines,
+                    foodPreference: a.foodPreference,
+                    serviceType: a.serviceType,
+                    sampleVideoLink: a.sampleVideoLink,
+                    vehicleType: a.vehicleType,
+                    licenseNumber: a.licenseNumber,
+                    experience: a.experience,
+                    investmentCapacity: a.investmentCapacity,
+                    expectedSales: a.expectedSales,
+                    panNumber: a.panNumber,
+                    aadhaarNumber: a.aadhaarNumber,
+                    gstNumber: a.gstNumber,
+                    documents: a.documents,
+                    remarks: a.remarks,
+                    createdAt: a.createdAt,
+                })),
+                applicationDetails: app
+                    ? {
+                        _id: app._id,
+                        applicationType: app.applicationType,
+                        roleId: app.roleId,
+                        status: app.status,
+                        businessName: app.businessName,
+                        category: app.category,
+                        primaryCategory: app.primaryCategory,
+                        subCategory: app.subCategory,
+                        approvedSubcategories: app.approvedSubcategories,
+                        restaurantName: app.restaurantName,
+                        foodBusinessType: app.foodBusinessType,
+                        fssaiNumber: app.fssaiNumber,
+                        cuisines: app.cuisines,
+                        foodPreference: app.foodPreference,
+                        serviceType: app.serviceType,
+                        sampleVideoLink: app.sampleVideoLink,
+                        vehicleType: app.vehicleType,
+                        licenseNumber: app.licenseNumber,
+                        experience: app.experience,
+                        investmentCapacity: app.investmentCapacity,
+                        expectedSales: app.expectedSales,
+                        documents: app.documents,
+                        panNumber: app.panNumber,
+                        aadhaarNumber: app.aadhaarNumber,
+                        gstNumber: app.gstNumber,
+                        address: app.address,
+                        remarks: app.remarks,
+                        createdAt: app.createdAt,
+                    }
+                    : null,
+                territoryDetails: territory
+                    ? {
+                        _id: territory._id,
+                        ftid: territory.ftid,
+                        name: territory.name,
+                        level: territory.level,
+                        state: territory.state,
+                        district: territory.district,
+                        mandal: territory.mandal,
+                        annualFranchiseFee: territory.annualFranchiseFee,
+                        franchiseFeePerYear: territory.franchiseFeePerYear,
+                        minBookingAdvance: territory.minBookingAdvance,
+                        paymentStatus: territory.paymentStatus,
+                        paymentDetails: territory.paymentDetails,
+                    }
+                    : null,
+            };
+        }));
         res.status(200).json({
             success: true,
-            franchises,
+            franchises: enhancedFranchises,
         });
     }
     catch (error) {
@@ -1883,13 +2003,35 @@ const updateFranchiseStatus = async (req, res) => {
         }
         const saved = await franchise.save();
         const user = await User_1.User.findById(franchise.userId);
-        if (user && status === "active") {
+        if (user && (status === "active" || kycStatus === "Approved")) {
             user.isVerified = true;
             const fRole = (franchise.franchiseLevel + "_franchise");
             if (!user.roles.includes(fRole)) {
                 user.roles.push(fRole);
             }
+            if (!user.roles.includes("franchise")) {
+                user.roles.push("franchise");
+            }
             await user.save();
+        }
+        // Also sync and approve BusinessApplication
+        try {
+            await BusinessApplication_1.BusinessApplication.updateMany({
+                $or: [
+                    { "assignedFranchise.mandalFranchiseId": franchise._id },
+                    { userId: franchise.userId },
+                    { email: franchise.email },
+                ],
+                applicationType: { $regex: /franchise/i },
+            }, {
+                $set: {
+                    status: status === "active" || kycStatus === "Approved" ? "verified" : "rejected",
+                    kycStatus: kycStatus === "Approved" ? "approved" : "rejected",
+                },
+            });
+        }
+        catch (appErr) {
+            console.warn("Syncing BusinessApplication status warning:", appErr);
         }
         res.status(200).json({
             success: true,
@@ -1907,6 +2049,75 @@ const updateFranchiseStatus = async (req, res) => {
     }
 };
 exports.updateFranchiseStatus = updateFranchiseStatus;
+const updateFranchisePayment = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { annualFee, amountPaid, isCompleted } = req.body;
+        const franchise = await Franchise_1.Franchise.findById(id);
+        if (!franchise) {
+            res.status(404).json({ success: false, message: "Franchise profile not found" });
+            return;
+        }
+        if (franchise.securityDeposit) {
+            if (amountPaid !== undefined)
+                franchise.securityDeposit.amountPaid = Number(amountPaid);
+            if (isCompleted !== undefined)
+                franchise.securityDeposit.status = isCompleted ? "COMPLETED" : "PARTIAL";
+        }
+        const savedFranchise = await franchise.save();
+        let territory = await Territory_1.Territory.findOne({
+            $or: [{ franchiseId: franchise._id }, { _id: { $in: franchise.assignedTerritories || [] } }],
+        });
+        if (!territory) {
+            if (franchise.mandal) {
+                territory = await Territory_1.Territory.findOne({
+                    state: new RegExp(`^${String(franchise.state || '').trim()}$`, "i"),
+                    district: new RegExp(`^${String(franchise.district || '').trim()}$`, "i"),
+                    mandal: new RegExp(`^${String(franchise.mandal || '').trim()}$`, "i"),
+                });
+            }
+            if (!territory && franchise.district) {
+                territory = await Territory_1.Territory.findOne({
+                    state: new RegExp(`^${String(franchise.state || '').trim()}$`, "i"),
+                    district: new RegExp(`^${String(franchise.district || '').trim()}$`, "i"),
+                });
+            }
+            if (!territory && franchise.state) {
+                territory = await Territory_1.Territory.findOne({
+                    state: new RegExp(`^${String(franchise.state || '').trim()}$`, "i"),
+                });
+            }
+        }
+        if (territory) {
+            if (annualFee !== undefined && Number(annualFee) > 0) {
+                territory.annualFranchiseFee = Number(annualFee);
+                territory.franchiseFeePerYear = Number(annualFee);
+            }
+            if (amountPaid !== undefined && territory.paymentDetails) {
+                territory.paymentDetails.amountPaid = Number(amountPaid);
+            }
+            if (isCompleted) {
+                territory.paymentStatus = "PAID_FULL";
+            }
+            await territory.save();
+        }
+        res.status(200).json({
+            success: true,
+            message: "Franchise fee and payment record updated successfully",
+            franchise: savedFranchise,
+            territory,
+        });
+    }
+    catch (error) {
+        console.error("Update franchise payment error:", error);
+        res.status(500).json({
+            success: false,
+            message: "Server error updating franchise payment",
+            error: error.message,
+        });
+    }
+};
+exports.updateFranchisePayment = updateFranchisePayment;
 const getTerritories = async (req, res) => {
     try {
         if (req.query.clear === 'true') {

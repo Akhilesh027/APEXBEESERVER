@@ -549,5 +549,43 @@ export class NotificationHelper {
       console.error('[NotificationHelper] Error in notifyPayoutReleased:', error);
     }
   }
+
+  /**
+   * 7. EVENT TRIGGER: TERRITORY FRANCHISE BOOKED & REGISTERED
+   * - Notifies Super Admins about new franchise booking & territory allocation
+   */
+  public static async notifyTerritoryFranchiseRegistered(params: {
+    ownerName: string;
+    businessName: string;
+    roleName: string;
+    territory: {
+      state?: string;
+      district?: string;
+      mandal?: string;
+    };
+  }): Promise<void> {
+    try {
+      const admins = await this.getAdminUsers();
+      const terrStr = [params.territory.mandal, params.territory.district, params.territory.state].filter(Boolean).join(', ');
+
+      for (const admin of admins) {
+        await this.createInAppNotification({
+          recipientId: admin._id,
+          recipientType: 'User',
+          eventCode: 'FRANCHISE_TERRITORY_ALLOCATED',
+          title: `🏢 New Franchise Territory Allocated: ${terrStr}`,
+          message: `${params.ownerName} (${params.businessName}) has booked and locked the ${params.roleName} jurisdiction in ${terrStr}.`,
+          entityType: 'vendor',
+          icon: 'briefcase',
+          deepLink: '/territory-management',
+        });
+      }
+
+      console.log(`[NotificationHelper] Processed territory franchise registered notification for: ${params.ownerName} (${terrStr})`);
+    } catch (error) {
+      console.error('[NotificationHelper] Error in notifyTerritoryFranchiseRegistered:', error);
+    }
+  }
 }
+
 

@@ -23,6 +23,21 @@ export interface ITerritory extends Document {
   franchiseStatus: "ACTIVE" | "VACANT" | "SUSPENDED";
   density: "High" | "Medium" | "Low";
   targetCoverage: string;
+  annualFranchiseFee?: number;
+  franchiseFeePerYear?: number;
+  advanceBookingType?: "percentage" | "fixed";
+  advanceBookingValue?: number;
+  minBookingAdvance?: number;
+  lockedAt?: Date;
+  paymentStatus?: "NONE" | "PARTIAL_ADVANCE" | "PAID_FULL";
+  paymentDetails?: {
+    razorpayPaymentId?: string;
+    razorpayOrderId?: string;
+    amountPaid?: number;
+    paymentType?: "FULL" | "ADVANCE";
+    balanceAmount?: number;
+    paidAt?: Date;
+  };
 
   currentFranchisee?: {
     masterUserId?: string;
@@ -155,6 +170,56 @@ const TerritorySchema = new Schema<ITerritory>(
     targetCoverage: {
       type: String,
       default: "100%",
+    },
+
+    annualFranchiseFee: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    franchiseFeePerYear: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    advanceBookingType: {
+      type: String,
+      enum: ["percentage", "fixed"],
+      default: "percentage",
+    },
+
+    advanceBookingValue: {
+      type: Number,
+      default: 20,
+      min: 0,
+    },
+
+    minBookingAdvance: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    lockedAt: {
+      type: Date,
+      default: null,
+    },
+
+    paymentStatus: {
+      type: String,
+      enum: ["NONE", "PARTIAL_ADVANCE", "PAID_FULL"],
+      default: "NONE",
+    },
+
+    paymentDetails: {
+      razorpayPaymentId: { type: String, default: "" },
+      razorpayOrderId: { type: String, default: "" },
+      amountPaid: { type: Number, default: 0 },
+      paymentType: { type: String, enum: ["FULL", "ADVANCE", ""], default: "" },
+      balanceAmount: { type: Number, default: 0 },
+      paidAt: { type: Date, default: null },
     },
 
     currentFranchisee: {

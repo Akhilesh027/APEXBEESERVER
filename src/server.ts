@@ -134,6 +134,7 @@ app.use('/api/vendors', vendorRoutes);
 app.use('/api/devotional', devotionalRoutes);
 app.use('/api/service-provider', serviceProviderRoutes);
 app.use('/api/franchise', franchiseRoutes);
+app.use('/api/franchises', franchiseRoutes);
 app.use('/api/entrepreneur', entrepreneurRoutes);
 
 import tableBookingRoutes from './routes/tableBookingRoutes';
@@ -147,6 +148,7 @@ app.use('/api/business-relationships', businessRelationshipRoutes);
 app.use('/api/leads', leadRoutes);
 app.use('/api/commission-rules', commissionRuleRoutes);
 app.use("/api/referrals", referralRoutes);
+app.use("/api/referral", referralRoutes);
 app.use("/api/wallet", walletRoutes);
 app.use("/api/payment", paymentRoutes);
 app.use("/api/products", productRoutes);

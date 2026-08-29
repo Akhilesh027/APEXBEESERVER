@@ -22,9 +22,17 @@ import {
   getFranchiseDeliveryPartners,
   getFranchiseTerritoryDetails,
 } from "../controllers/franchiseController";
+import {
+  createFranchiseBookingOrder,
+  verifyFranchiseBookingPayment,
+} from "../controllers/franchiseBookingController";
 import { protect } from "../middleware/auth";
 
 const router = Router();
+
+// Public Franchise Online Booking & Razorpay Payment Endpoints
+router.post("/booking/create-order", createFranchiseBookingOrder);
+router.post("/booking/verify-payment", verifyFranchiseBookingPayment);
 
 router.post("/create", protect, createFranchise);
 router.get("/profile", protect, getFranchiseProfile);

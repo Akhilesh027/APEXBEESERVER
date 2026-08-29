@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import mongoose from "mongoose";
 import { BusinessApplication } from "../models/BusinessApplication";
 import { notificationEmitter } from "../modules/notifications/events/notificationEmitter";
 import { Vendor } from "../models/Vendor";
@@ -229,7 +230,9 @@ export const createApplication = async (
       fssaiNumber: req.body.fssaiNumber || "",
       cuisines: req.body.cuisines || [],
       foodPreference: req.body.foodPreference || "Both",
-      status: "pending",
+      isWaitlisted: Boolean(req.body.isWaitlisted),
+      waitlistTerritoryFtid: req.body.waitlistTerritoryFtid || "",
+      status: req.body.isWaitlisted ? "waitlist" : "pending",
     });
 
     // Link application to Referral
@@ -281,7 +284,32 @@ export const getUserApplications = async (
   try {
     const { userId } = req.params;
 
-    const applications = await BusinessApplication.find({ userId }).sort({
+    const queryFilters: any[] = [];
+    if (userId) {
+      queryFilters.push({ userId });
+      if (mongoose.Types.ObjectId.isValid(userId)) {
+        queryFilters.push({ userId: new mongoose.Types.ObjectId(userId) });
+      }
+    }
+
+    // Also look up user in DB to find their email/phone
+    if (userId && mongoose.Types.ObjectId.isValid(userId)) {
+      const user = await User.findById(userId);
+      if (user) {
+        if (user.email) queryFilters.push({ email: new RegExp(`^${user.email.trim()}$`, "i") });
+        if (user.phone) queryFilters.push({ mobile: user.phone.trim() });
+      }
+    }
+
+    if ((req as any).user) {
+      if ((req as any).user._id) queryFilters.push({ userId: (req as any).user._id });
+      if ((req as any).user.email) queryFilters.push({ email: new RegExp(`^${(req as any).user.email.trim()}$`, "i") });
+      if ((req as any).user.phone) queryFilters.push({ mobile: (req as any).user.phone.trim() });
+    }
+
+    const applications = await BusinessApplication.find(
+      queryFilters.length > 0 ? { $or: queryFilters } : { userId }
+    ).sort({
       createdAt: -1,
     });
 
@@ -299,12 +327,15 @@ export const getUserApplications = async (
       email: app.email,
       state: app.state,
       district: app.district,
+      mandal: app.mandal,
       restaurantName: app.restaurantName || app.businessName,
       foodBusinessType: app.foodBusinessType || "RESTAURANT",
       fssaiNumber: app.fssaiNumber || "",
       cuisines: app.cuisines || [],
       foodPreference: app.foodPreference || "Both",
       documents: app.documents || {},
+      isWaitlisted: app.isWaitlisted,
+      waitlistTerritoryFtid: app.waitlistTerritoryFtid,
     }));
 
     res.status(200).json({

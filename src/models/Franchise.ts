@@ -47,6 +47,13 @@ export interface IFranchise extends Document {
 
   bankDetails?: IFranchiseBankDetails;
 
+  securityDeposit?: {
+    amountPaid: number;
+    paidAt: Date;
+    status: "COMPLETED" | "PARTIAL";
+    paymentReference: string;
+  };
+
   kycStatus?: "Not Submitted" | "Pending Verification" | "Approved" | "Rejected";
   status?: "active" | "inactive" | "pending_verification";
 
@@ -253,6 +260,13 @@ const FranchiseSchema = new Schema<IFranchise>(
         type: String,
         default: "",
       },
+    },
+
+    securityDeposit: {
+      amountPaid: { type: Number, default: 0 },
+      paidAt: { type: Date, default: null },
+      status: { type: String, enum: ["COMPLETED", "PARTIAL"], default: "PARTIAL" },
+      paymentReference: { type: String, default: "" },
     },
 
     kycStatus: {

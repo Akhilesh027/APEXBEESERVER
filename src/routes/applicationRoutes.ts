@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { createApplication, getUserApplications, updateApplicationKyc, getPublicTerritories } from '../controllers/applicationController';
-import { protect } from '../middleware/auth';
+import { protect, optionalProtect } from '../middleware/auth';
 
 const router = Router();
 
@@ -12,7 +12,7 @@ router.post('/', protect, createApplication);
 router.get('/territories', getPublicTerritories);
 
 // Handle /api/applications/user/:userId and /api/business-applications/user/:userId
-router.get('/user/:userId', protect, getUserApplications);
+router.get('/user/:userId', optionalProtect, getUserApplications);
 
 // Handle KYC updates: /api/applications/:id/kyc and /api/business-applications/:id/kyc
 router.patch('/:id/kyc', protect, updateApplicationKyc);

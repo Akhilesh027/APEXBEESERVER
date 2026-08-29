@@ -203,6 +203,12 @@ const FranchiseSchema = new mongoose_1.Schema({
             default: "",
         },
     },
+    securityDeposit: {
+        amountPaid: { type: Number, default: 0 },
+        paidAt: { type: Date, default: null },
+        status: { type: String, enum: ["COMPLETED", "PARTIAL"], default: "PARTIAL" },
+        paymentReference: { type: String, default: "" },
+    },
     kycStatus: {
         type: String,
         enum: ["Not Submitted", "Pending Verification", "Approved", "Rejected"],

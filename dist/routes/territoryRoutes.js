@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const territoryController_1 = require("../controllers/territoryController");
 const router = (0, express_1.Router)();
+router.get("/availability", territoryController_1.getTerritoryAvailability);
 router.get("/states", territoryController_1.getStates);
 router.get("/districts/:stateId", territoryController_1.getDistricts);
 router.get("/mandals/:districtId", territoryController_1.getMandals);

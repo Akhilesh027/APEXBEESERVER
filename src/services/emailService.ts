@@ -589,4 +589,74 @@ export class EmailService {
       html,
     });
   }
+
+  /**
+   * 12. Send Franchise Territory Booking & Payment Confirmation
+   */
+  public static async sendFranchiseBookingConfirmation(params: {
+    to: string;
+    name: string;
+    territoryName: string;
+    level: string;
+    amountPaid: number;
+    paymentId: string;
+    isFullPayment: boolean;
+  }): Promise<boolean> {
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <body style="margin: 0; padding: 0; background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+        <div style="max-width: 600px; margin: 30px auto; background-color: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.05); border: 1px solid #e2e8f0;">
+          <div style="background: linear-gradient(135deg, #0A1128 0%, #1c2b5e 100%); padding: 35px 30px; text-align: center;">
+            <h1 style="color: #F3BA12; margin: 0; font-size: 26px; font-weight: 900;">ApexBee Franchise Network</h1>
+            <p style="color: #ffffff; opacity: 0.9; margin-top: 6px; font-size: 13px;">Official Territory Allocation Certificate</p>
+          </div>
+          <div style="padding: 35px 30px;">
+            <div style="display: inline-block; background-color: #ecfdf5; color: #059669; padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 800; text-transform: uppercase; margin-bottom: 15px;">
+              🎉 Territory Successfully Locked
+            </div>
+            <h2 style="color: #0A1128; font-size: 20px; font-weight: 800; margin-top: 0;">Congratulations, ${params.name}!</h2>
+            <p style="color: #475569; font-size: 14px; line-height: 1.6;">
+              Your booking for the <strong>${params.level}</strong> territory <strong>${params.territoryName}</strong> has been successfully confirmed and locked in your name upon payment verification.
+            </p>
+            <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; margin: 20px 0;">
+              <table style="width: 100%; font-size: 13px; color: #334155; border-collapse: collapse;">
+                <tr>
+                  <td style="padding: 6px 0; color: #64748b; font-weight: 600;">Territory Jurisdiction:</td>
+                  <td style="padding: 6px 0; font-weight: 800; text-align: right; color: #0A1128;">${params.territoryName}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 6px 0; color: #64748b; font-weight: 600;">Franchise Level:</td>
+                  <td style="padding: 6px 0; font-weight: 800; text-align: right; color: #0A1128;">${params.level} Partner</td>
+                </tr>
+                <tr>
+                  <td style="padding: 6px 0; color: #64748b; font-weight: 600;">Amount Paid:</td>
+                  <td style="padding: 6px 0; font-weight: 800; text-align: right; color: #059669;">₹${params.amountPaid.toLocaleString('en-IN')} (${params.isFullPayment ? 'Full Payment' : 'Advance Booking'})</td>
+                </tr>
+                <tr>
+                  <td style="padding: 6px 0; color: #64748b; font-weight: 600;">Payment Ref ID:</td>
+                  <td style="padding: 6px 0; font-weight: 800; font-family: monospace; text-align: right; color: #0A1128;">${params.paymentId}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 6px 0; color: #64748b; font-weight: 600;">Territory Status:</td>
+                  <td style="padding: 6px 0; font-weight: 800; text-align: right; color: #059669;">🟢 ACTIVE / LOCKED</td>
+                </tr>
+              </table>
+            </div>
+          </div>
+          <div style="background-color: #0A1128; padding: 18px; text-align: center; color: #94a3b8; font-size: 11px;">
+            © 2026 ApexBee Technologies • Franchise Operations Division
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    return this.sendMail({
+      to: params.to,
+      subject: `🎉 Territory Confirmed: ${params.territoryName} is now locked in your name!`,
+      html,
+    });
+  }
 }
+

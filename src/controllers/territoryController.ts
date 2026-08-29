@@ -48,6 +48,11 @@ export const createTerritory = async (req: Request, res: Response) => {
       density,
       targetCoverage,
       franchiseId,
+      annualFranchiseFee,
+      franchiseFeePerYear,
+      advanceBookingType,
+      advanceBookingValue,
+      minBookingAdvance,
     } = req.body;
 
     if (!level || !state) {
@@ -215,9 +220,46 @@ export const createTerritory = async (req: Request, res: Response) => {
       }
     }
 
+    const fee = Number(annualFranchiseFee ?? franchiseFeePerYear ?? 0);
+    const advType = advanceBookingType === "fixed" ? "fixed" : "percentage";
+    const advVal = Number(advanceBookingValue ?? (advType === "percentage" ? 20 : 5000));
+    const calculatedMinAdv = minBookingAdvance !== undefined && minBookingAdvance !== null
+      ? Number(minBookingAdvance)
+      : advType === "percentage"
+        ? Math.round((fee * advVal) / 100)
+        : advVal;
+
+    let finalFtid = ftid;
+    let finalCodeNumber = paddedNumber;
+    let counter = parseInt(paddedNumber, 10) || 1;
+
+    let existing = await Territory.findOne({ ftid: finalFtid });
+    while (existing) {
+      counter++;
+      finalCodeNumber = String(counter).padStart(3, "0");
+      if (level === "State") {
+        finalFtid = `APX-SF-${finalCodeNumber}`;
+      } else if (level === "District") {
+        const sfNum = parentFtid.replace("APX-SF-", "").replace("APX-SF", "");
+        finalFtid = `APX-SF${sfNum}-DF-${finalCodeNumber}`;
+      } else if (level === "Mandal") {
+        const parentParts = parentFtid.replace("APX-", "").replace(/-/g, "");
+        finalFtid = `APX-${parentParts}-MF-${finalCodeNumber}`;
+      } else if (level === "Village") {
+        const parentParts = parentFtid.replace("APX-", "").replace(/-/g, "");
+        finalFtid = `APX-${parentParts}-VF-${finalCodeNumber}`;
+      } else if (level === "Pincode") {
+        const parentParts = parentFtid.replace("APX-", "").replace(/-/g, "");
+        finalFtid = `APX-${parentParts}-PIN-${finalCodeNumber}`;
+      } else {
+        finalFtid = `APX-TR-${finalCodeNumber}`;
+      }
+      existing = await Territory.findOne({ ftid: finalFtid });
+    }
+
     const territory = await Territory.create({
-      ftid,
-      codeNumber: paddedNumber,
+      ftid: finalFtid,
+      codeNumber: finalCodeNumber,
       level,
       name,
       state: state.trim(),
@@ -241,6 +283,11 @@ export const createTerritory = async (req: Request, res: Response) => {
       status: status || "Active",
       density: density || "Medium",
       targetCoverage: targetCoverage || "100%",
+      annualFranchiseFee: fee,
+      franchiseFeePerYear: fee,
+      advanceBookingType: advType,
+      advanceBookingValue: advVal,
+      minBookingAdvance: calculatedMinAdv,
     });
 
     if (franchiseId) {
@@ -305,6 +352,11 @@ export const updateTerritory = async (req: Request, res: Response) => {
       density,
       targetCoverage,
       franchiseId,
+      annualFranchiseFee,
+      franchiseFeePerYear,
+      advanceBookingType,
+      advanceBookingValue,
+      minBookingAdvance,
     } = req.body;
 
     const oldFranchiseId = existingTerritory.franchiseId
@@ -349,6 +401,25 @@ export const updateTerritory = async (req: Request, res: Response) => {
     if (franchiseStatus !== undefined) existingTerritory.franchiseStatus = franchiseStatus;
     if (density !== undefined) existingTerritory.density = density;
     if (targetCoverage !== undefined) existingTerritory.targetCoverage = targetCoverage.trim();
+    if (annualFranchiseFee !== undefined || franchiseFeePerYear !== undefined) {
+      const fee = Number(annualFranchiseFee ?? franchiseFeePerYear ?? 0);
+      existingTerritory.annualFranchiseFee = fee;
+      existingTerritory.franchiseFeePerYear = fee;
+    }
+    if (advanceBookingType !== undefined) {
+      existingTerritory.advanceBookingType = advanceBookingType === "fixed" ? "fixed" : "percentage";
+    }
+    if (advanceBookingValue !== undefined) {
+      existingTerritory.advanceBookingValue = Number(advanceBookingValue || 0);
+    }
+    if (minBookingAdvance !== undefined) {
+      existingTerritory.minBookingAdvance = Number(minBookingAdvance || 0);
+    } else if (advanceBookingType !== undefined || advanceBookingValue !== undefined || annualFranchiseFee !== undefined) {
+      const fee = existingTerritory.annualFranchiseFee || 0;
+      const advType = existingTerritory.advanceBookingType || "percentage";
+      const advVal = existingTerritory.advanceBookingValue || 20;
+      existingTerritory.minBookingAdvance = advType === "percentage" ? Math.round((fee * advVal) / 100) : advVal;
+    }
     existingTerritory.franchiseId = newFranchiseId as any;
 
     if (newFranchiseId) {
@@ -680,6 +751,102 @@ export const getMandals = async (req: Request, res: Response) => {
     }
     const mandals = await MandalMaster.find({ districtId, status: "active" }).sort({ name: 1 });
     res.json({ success: true, count: mandals.length, mandals });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const getTerritoryAvailability = async (req: Request, res: Response) => {
+  try {
+    const { level, state, district, mandal, village, pincode } = req.query;
+
+    if (!level || !state) {
+      return res.status(400).json({ success: false, message: "Level and state are required" });
+    }
+
+    const query: any = {
+      level: String(level),
+      state: new RegExp(`^${String(state).trim()}$`, "i"),
+    };
+
+    if (district) query.district = new RegExp(`^${String(district).trim()}$`, "i");
+    if (mandal) query.mandal = new RegExp(`^${String(mandal).trim()}$`, "i");
+    if (village) query.village = new RegExp(`^${String(village).trim()}$`, "i");
+    if (pincode) query.pincode = String(pincode).trim();
+
+    let territory = await Territory.findOne(query)
+      .populate("franchiseId", "businessName ownerName email mobile franchiseCode franchiseLevel")
+      .populate("parentId", "name level ftid");
+
+    // Hierarchical fallback lookup if not found by exact level query
+    if (!territory) {
+      if (mandal) {
+        territory = await Territory.findOne({
+          state: new RegExp(`^${String(state).trim()}$`, "i"),
+          district: new RegExp(`^${String(district || "").trim()}$`, "i"),
+          mandal: new RegExp(`^${String(mandal).trim()}$`, "i"),
+        })
+        .populate("franchiseId", "businessName ownerName email mobile franchiseCode franchiseLevel")
+        .populate("parentId", "name level ftid");
+      }
+      if (!territory && district) {
+        territory = await Territory.findOne({
+          state: new RegExp(`^${String(state).trim()}$`, "i"),
+          district: new RegExp(`^${String(district).trim()}$`, "i"),
+        })
+        .populate("franchiseId", "businessName ownerName email mobile franchiseCode franchiseLevel")
+        .populate("parentId", "name level ftid");
+      }
+      if (!territory) {
+        territory = await Territory.findOne({
+          state: new RegExp(`^${String(state).trim()}$`, "i"),
+        })
+        .populate("franchiseId", "businessName ownerName email mobile franchiseCode franchiseLevel")
+        .populate("parentId", "name level ftid");
+      }
+    }
+
+    if (!territory) {
+      const lvl = String(level);
+      const defaultFee = lvl === "State" ? 500000 : lvl === "District" ? 150000 : lvl === "Mandal" ? 25000 : lvl === "Village" ? 5000 : 10000;
+      const defaultAdvPct = 20;
+      const minAdv = Math.round((defaultFee * defaultAdvPct) / 100);
+
+      return res.json({
+        success: true,
+        exists: false,
+        isAvailable: true,
+        franchiseStatus: "VACANT",
+        territory: null,
+        annualFranchiseFee: defaultFee,
+        advanceBookingType: "percentage",
+        advanceBookingValue: defaultAdvPct,
+        minBookingAdvance: minAdv,
+      });
+    }
+
+    const isAvailable = territory.franchiseStatus === "VACANT" && !territory.franchiseId;
+    const fee = Number(territory.annualFranchiseFee ?? territory.franchiseFeePerYear ?? (territory.level === "State" ? 500000 : territory.level === "District" ? 150000 : 25000));
+    const advType = territory.advanceBookingType || "percentage";
+    const advVal = Number(territory.advanceBookingValue !== undefined ? territory.advanceBookingValue : 20);
+    const minAdv = territory.minBookingAdvance && territory.minBookingAdvance > 0 
+      ? territory.minBookingAdvance 
+      : advType === "percentage" 
+        ? Math.round((fee * advVal) / 100) 
+        : advVal;
+
+    return res.json({
+      success: true,
+      exists: true,
+      isAvailable,
+      franchiseStatus: territory.franchiseStatus,
+      territory,
+      annualFranchiseFee: fee,
+      advanceBookingType: advType,
+      advanceBookingValue: advVal,
+      minBookingAdvance: minAdv,
+      currentFranchisee: territory.currentFranchisee || (territory.franchiseId ? { name: (territory.franchiseId as any).businessName || (territory.franchiseId as any).ownerName } : null),
+    });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
   }

@@ -9,10 +9,12 @@ import {
   getStates,
   getDistricts,
   getMandals,
+  getTerritoryAvailability,
 } from "../controllers/territoryController";
 
 const router = Router();
 
+router.get("/availability", getTerritoryAvailability);
 router.get("/states", getStates);
 router.get("/districts/:stateId", getDistricts);
 router.get("/mandals/:districtId", getMandals);

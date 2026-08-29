@@ -1,6 +1,10 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getPublicTerritories = exports.updateApplicationKyc = exports.getUserApplications = exports.createApplication = void 0;
+const mongoose_1 = __importDefault(require("mongoose"));
 const BusinessApplication_1 = require("../models/BusinessApplication");
 const notificationEmitter_1 = require("../modules/notifications/events/notificationEmitter");
 const Vendor_1 = require("../models/Vendor");
@@ -200,7 +204,9 @@ const createApplication = async (req, res) => {
             fssaiNumber: req.body.fssaiNumber || "",
             cuisines: req.body.cuisines || [],
             foodPreference: req.body.foodPreference || "Both",
-            status: "pending",
+            isWaitlisted: Boolean(req.body.isWaitlisted),
+            waitlistTerritoryFtid: req.body.waitlistTerritoryFtid || "",
+            status: req.body.isWaitlisted ? "waitlist" : "pending",
         });
         // Link application to Referral
         await Referral_1.Referral.findOneAndUpdate({ referredUserId: userId, status: "registered" }, {
@@ -238,7 +244,32 @@ exports.createApplication = createApplication;
 const getUserApplications = async (req, res) => {
     try {
         const { userId } = req.params;
-        const applications = await BusinessApplication_1.BusinessApplication.find({ userId }).sort({
+        const queryFilters = [];
+        if (userId) {
+            queryFilters.push({ userId });
+            if (mongoose_1.default.Types.ObjectId.isValid(userId)) {
+                queryFilters.push({ userId: new mongoose_1.default.Types.ObjectId(userId) });
+            }
+        }
+        // Also look up user in DB to find their email/phone
+        if (userId && mongoose_1.default.Types.ObjectId.isValid(userId)) {
+            const user = await User_1.User.findById(userId);
+            if (user) {
+                if (user.email)
+                    queryFilters.push({ email: new RegExp(`^${user.email.trim()}$`, "i") });
+                if (user.phone)
+                    queryFilters.push({ mobile: user.phone.trim() });
+            }
+        }
+        if (req.user) {
+            if (req.user._id)
+                queryFilters.push({ userId: req.user._id });
+            if (req.user.email)
+                queryFilters.push({ email: new RegExp(`^${req.user.email.trim()}$`, "i") });
+            if (req.user.phone)
+                queryFilters.push({ mobile: req.user.phone.trim() });
+        }
+        const applications = await BusinessApplication_1.BusinessApplication.find(queryFilters.length > 0 ? { $or: queryFilters } : { userId }).sort({
             createdAt: -1,
         });
         const normalizedApps = applications.map((app) => ({
@@ -255,12 +286,15 @@ const getUserApplications = async (req, res) => {
             email: app.email,
             state: app.state,
             district: app.district,
+            mandal: app.mandal,
             restaurantName: app.restaurantName || app.businessName,
             foodBusinessType: app.foodBusinessType || "RESTAURANT",
             fssaiNumber: app.fssaiNumber || "",
             cuisines: app.cuisines || [],
             foodPreference: app.foodPreference || "Both",
             documents: app.documents || {},
+            isWaitlisted: app.isWaitlisted,
+            waitlistTerritoryFtid: app.waitlistTerritoryFtid,
         }));
         res.status(200).json({
             success: true,

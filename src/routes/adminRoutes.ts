@@ -28,6 +28,7 @@ import {
   updateServiceProviderStatus,
   getFranchises,
   updateFranchiseStatus,
+  updateFranchisePayment,
   getTerritories,
   createTerritory,
   updateUserStatus,
@@ -96,6 +97,7 @@ router.patch('/wholesalers/:userId/status', protect, restrictTo('admin'), update
 router.patch('/manufacturers/:userId/status', protect, restrictTo('admin'), updateManufacturerStatus);
 router.patch('/entrepreneurs/:userId/status', protect, restrictTo('admin'), updateEntrepreneurStatus);
 router.patch('/franchises/:id/status', protect, restrictTo('admin'), updateFranchiseStatus);
+router.patch('/franchises/:id/payment', protect, restrictTo('admin'), updateFranchisePayment);
 
 router.post('/vendors/:userId/drawdown', protect, restrictTo('admin'), processVendorDrawdown);
 router.post('/wholesalers/:userId/drawdown', protect, restrictTo('admin'), processWholesalerDrawdown);

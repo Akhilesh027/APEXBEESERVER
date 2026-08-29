@@ -2,8 +2,12 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const franchiseController_1 = require("../controllers/franchiseController");
+const franchiseBookingController_1 = require("../controllers/franchiseBookingController");
 const auth_1 = require("../middleware/auth");
 const router = (0, express_1.Router)();
+// Public Franchise Online Booking & Razorpay Payment Endpoints
+router.post("/booking/create-order", franchiseBookingController_1.createFranchiseBookingOrder);
+router.post("/booking/verify-payment", franchiseBookingController_1.verifyFranchiseBookingPayment);
 router.post("/create", auth_1.protect, franchiseController_1.createFranchise);
 router.get("/profile", auth_1.protect, franchiseController_1.getFranchiseProfile);
 router.put("/profile", auth_1.protect, franchiseController_1.updateFranchiseProfile);

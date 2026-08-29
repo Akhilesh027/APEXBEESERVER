@@ -60,7 +60,10 @@ export interface IBusinessApplication extends Document {
   subCategory?: string;
   approvedSubcategories?: string[];
   requestedCapabilities?: string[];
-  status: "pending" | "pending_approval" | "pre_approved" | "kyc_submitted" | "under_review" | "approved" | "verified" | "rejected";
+  isWaitlisted?: boolean;
+  waitlistTerritoryFtid?: string;
+  status: "pending" | "pending_approval" | "pre_approved" | "kyc_submitted" | "under_review" | "approved" | "verified" | "rejected" | "waitlist";
+  remarks?: string;
   adminRemarks?: string;
   createdAt: Date;
   updatedAt: Date;
@@ -72,6 +75,7 @@ const BusinessApplicationSchema = new Schema<IBusinessApplication>(
 
     applicationType: { type: String, required: true },
     roleId: { type: String },
+    remarks: { type: String, default: "" },
     category: { type: String, default: "" },
     primaryCategory: { type: String, default: "" },
     subCategory: { type: String, default: "" },
@@ -130,9 +134,12 @@ assignedFranchise: {
       ifscCode: { type: String, default: "" },
     },
 
+    isWaitlisted: { type: Boolean, default: false },
+    waitlistTerritoryFtid: { type: String, default: "" },
+
     status: {
       type: String,
-      enum: ["pending", "pending_approval", "pre_approved", "kyc_submitted", "under_review", "approved", "verified", "rejected"],
+      enum: ["pending", "pending_approval", "pre_approved", "kyc_submitted", "under_review", "approved", "verified", "rejected", "waitlist"],
       default: "pending",
     },
 
