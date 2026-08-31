@@ -180,7 +180,7 @@ export class EmailService {
               </ul>
             </div>
             <div style="text-align: center; margin: 30px 0;">
-              <a href="http://localhost:8080" style="display: inline-block; background-color: #F3BA12; color: #0A1128; font-weight: 800; font-size: 14px; padding: 14px 32px; border-radius: 12px; text-decoration: none; box-shadow: 0 4px 12px rgba(243, 186, 18, 0.3);">
+              <a href="https://apexbee.in" style="display: inline-block; background-color: #F3BA12; color: #0A1128; font-weight: 800; font-size: 14px; padding: 14px 32px; border-radius: 12px; text-decoration: none; box-shadow: 0 4px 12px rgba(243, 186, 18, 0.3);">
                 Explore Marketplace Now →
               </a>
             </div>
@@ -357,7 +357,7 @@ export class EmailService {
           <p style="margin: 4px 0; font-size: 13px;"><strong>Application ID:</strong> ${applicationId}</p>
         </div>
         <div style="text-align: center; margin-top: 20px;">
-          <a href="http://localhost:5173" style="display: inline-block; background-color: #0A1128; color: #ffffff; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 13px;">
+          <a href="https://admin.apexbee.in" style="display: inline-block; background-color: #0A1128; color: #ffffff; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 13px;">
             Open Admin Panel to Review & Approve →
           </a>
         </div>
@@ -445,7 +445,7 @@ export class EmailService {
             </div>
 
             <div style="text-align: center; margin: 30px 0;">
-              <a href="http://localhost:8080/my-orders" style="display: inline-block; background-color: #F3BA12; color: #0A1128; font-weight: 800; font-size: 14px; padding: 14px 32px; border-radius: 12px; text-decoration: none; box-shadow: 0 4px 12px rgba(243, 186, 18, 0.3);">
+              <a href="https://apexbee.in/my-orders" style="display: inline-block; background-color: #F3BA12; color: #0A1128; font-weight: 800; font-size: 14px; padding: 14px 32px; border-radius: 12px; text-decoration: none; box-shadow: 0 4px 12px rgba(243, 186, 18, 0.3);">
                 Track Your Order Live →
               </a>
             </div>
@@ -506,7 +506,7 @@ export class EmailService {
           </table>
         </div>
         <div style="text-align: center; margin-top: 24px;">
-          <a href="http://localhost:5174" style="display: inline-block; background-color: #0A1128; color: #ffffff; padding: 12px 28px; border-radius: 10px; text-decoration: none; font-weight: bold; font-size: 13px;">
+          <a href="https://vendor.apexbee.in" style="display: inline-block; background-color: #0A1128; color: #ffffff; padding: 12px 28px; border-radius: 10px; text-decoration: none; font-weight: bold; font-size: 13px;">
             Open Vendor Hub to Accept & Pack →
           </a>
         </div>
@@ -570,7 +570,7 @@ export class EmailService {
             </div>
 
             <div style="text-align: center; margin: 30px 0;">
-              <a href="http://localhost:5174" style="display: inline-block; background-color: #059669; color: #ffffff; font-weight: 800; font-size: 14px; padding: 14px 32px; border-radius: 12px; text-decoration: none; box-shadow: 0 4px 12px rgba(5, 150, 105, 0.3);">
+              <a href="https://vendor.apexbee.in" style="display: inline-block; background-color: #059669; color: #ffffff; font-weight: 800; font-size: 14px; padding: 14px 32px; border-radius: 12px; text-decoration: none; box-shadow: 0 4px 12px rgba(5, 150, 105, 0.3);">
                 Open Vendor Wallet & Ledger →
               </a>
             </div>

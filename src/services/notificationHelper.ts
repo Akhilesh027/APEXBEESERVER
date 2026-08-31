@@ -354,15 +354,16 @@ export class NotificationHelper {
       const roleName = targetRole.toUpperCase();
 
       const portalLinks: Record<string, string> = {
-        vendor: 'http://localhost:5174',
-        wholesaler: 'http://localhost:5174',
-        manufacturer: 'http://localhost:5174',
-        franchise: 'https://franchser.apexbee.in/',
-        delivery_partner: 'https://delivery.apexbee.in/',
-        food_partner: 'https://food.apexbee.in/',
-        service_provider: 'https://service.apexbee.in/',
+        vendor: 'https://vendor.apexbee.in',
+        wholesaler: 'https://vendor.apexbee.in',
+        manufacturer: 'https://vendor.apexbee.in',
+        franchise: 'https://franchise.apexbee.in',
+        delivery_partner: 'https://delivery.apexbee.in',
+        food_partner: 'https://food.apexbee.in',
+        service_provider: 'https://service.apexbee.in',
+        course_provider: 'https://academy.apexbee.in',
       };
-      const portalUrl = portalLinks[targetRole.toLowerCase()] || 'http://localhost:5174';
+      const portalUrl = portalLinks[targetRole.toLowerCase()] || 'https://vendor.apexbee.in';
 
       // A. Send Approval Email
       if (email && email.includes('@')) {
