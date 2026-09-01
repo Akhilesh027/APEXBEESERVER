@@ -700,7 +700,13 @@ export const approveApplication = async (
 
     await app.save();
 
-    const user = await User.findById(app.userId);
+    let user = null;
+    if (app.userId && mongoose.Types.ObjectId.isValid(String(app.userId))) {
+      user = await User.findById(app.userId);
+    }
+    if (!user && app.email) {
+      user = await User.findOne({ email: String(app.email).trim().toLowerCase() });
+    }
 
     if (user) {
       await createNotificationCompat({
@@ -788,14 +794,32 @@ export const verifyKycApplication = async (
       (app as any).requestedCapabilities = requestedCapabilities;
     }
 
-    const user = await User.findById(app.userId);
+    const targetRole = getTargetRole(app);
 
-    if (!user) {
-      res.status(404).json({ message: "Associated user not found" });
-      return;
+    let user: any = null;
+    if (app.userId && mongoose.Types.ObjectId.isValid(String(app.userId))) {
+      user = await User.findById(app.userId);
+    }
+    if (!user && app.email) {
+      user = await User.findOne({ email: String(app.email).trim().toLowerCase() });
+    }
+    if (!user && app.mobile) {
+      user = await User.findOne({ phone: String(app.mobile).trim() });
     }
 
-    const targetRole = getTargetRole(app);
+    if (!user) {
+      const tempPassword = await bcrypt.hash("ApexBee@123", 10);
+      user = await User.create({
+        name: app.ownerName || app.businessName || "Business Partner",
+        email: app.email || `partner_${Date.now()}@apexbee.in`,
+        phone: app.mobile || "0000000000",
+        passwordHash: tempPassword,
+        roles: [targetRole],
+        isVerified: true,
+      });
+      app.userId = user._id;
+      await app.save();
+    }
 
     if (!Array.isArray(user.roles)) {
       user.roles = [];
@@ -980,8 +1004,6 @@ export const verifyKycApplication = async (
 
       if (validLocation) {
         updateObj.$set.location = validLocation;
-      } else {
-        updateObj.$unset = { location: "" };
       }
 
       const savedVendor = await Vendor.findOneAndUpdate(
@@ -1423,34 +1445,30 @@ export const verifyKycApplication = async (
           : 0;
 
         if (configuredAmount > 0) {
-          const session = await mongoose.startSession();
           try {
-            await session.withTransaction(async () => {
-              const label = rewardRoleKey.replace("_", " ").toUpperCase();
-              await WalletEngine.credit(
-                referral.referrerUserId,
-                configuredAmount,
-                {
-                  category: "Referral Bonus",
-                  source: "referral",
-                  remarks: `${label} referral onboarding approved`,
-                  description: `${label} referral onboarding approved`,
-                  referenceId: referral._id,
-                  referenceType: "REFERRAL"
-                },
-                session
-              );
+            const label = rewardRoleKey.replace("_", " ").toUpperCase();
+            await WalletEngine.credit(
+              referral.referrerUserId,
+              configuredAmount,
+              {
+                category: "Referral Bonus",
+                source: "referral",
+                remarks: `${label} referral onboarding approved`,
+                description: `${label} referral onboarding approved`,
+                referenceId: referral._id,
+                referenceType: "REFERRAL"
+              }
+            );
 
-              referral.status = "rewarded";
-              referral.rewardAmount = configuredAmount;
-              await referral.save({ session });
+            referral.status = "rewarded";
+            referral.rewardAmount = configuredAmount;
+            await referral.save();
 
-              await User.findByIdAndUpdate(referral.referrerUserId, {
-                $inc: { successfulReferrals: 1 }
-              }).session(session);
+            await User.findByIdAndUpdate(referral.referrerUserId, {
+              $inc: { successfulReferrals: 1 }
             });
-          } finally {
-            await session.endSession();
+          } catch (rwErr) {
+            console.error("Error crediting referral onboarding reward:", rwErr);
           }
         } else {
           referral.rewardAmount = 0;
