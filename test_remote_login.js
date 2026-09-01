@@ -37,12 +37,12 @@ function postJson(url, data) {
 
 async function run() {
   console.log("1. Sending OTP to 9550379505...");
-  const r1 = await postJson('http://localhost:5500/api/delivery/login', { phone: '9550379505' });
+  const r1 = await postJson('https://server.apexbee.in/api/delivery/login', { phone: '9550379505' });
   console.log("R1:", r1);
 
   if (r1.statusCode === 200) {
     console.log("2. Verifying OTP 1234...");
-    const r2 = await postJson('http://localhost:5500/api/delivery/verify-otp', { phone: '9550379505', otp: '1234' });
+    const r2 = await postJson('https://server.apexbee.in/api/delivery/verify-otp', { phone: '9550379505', otp: '1234' });
     console.log("R2:", r2);
   }
 }
