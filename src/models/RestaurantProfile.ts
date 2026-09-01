@@ -1,6 +1,6 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
-export type FoodBusinessType = 'RESTAURANT' | 'STREET_FOOD' | 'CAFE_BAKERY_BEVERAGES' | 'SWEETS_DESSERTS';
+export type FoodBusinessType = 'RESTAURANT' | 'STREET_FOOD' | 'CAFE_BAKERY_BEVERAGES' | 'CAFE_BAKERY' | 'SWEETS_DESSERTS';
 export type AccountStatus = 'ACTIVE' | 'SUSPENDED' | 'BLOCKED';
 export type VerificationStatus = 'PENDING' | 'UNDER_REVIEW' | 'APPROVED' | 'REJECTED';
 export type OperationalStatus = 'OPEN' | 'CLOSED' | 'TEMPORARILY_CLOSED' | 'BUSY';
@@ -77,7 +77,7 @@ const RestaurantProfileSchema = new Schema<IRestaurantProfile>(
     slug: { type: String, required: true, unique: true, lowercase: true, trim: true },
     businessType: {
       type: String,
-      enum: ['RESTAURANT', 'STREET_FOOD', 'CAFE_BAKERY_BEVERAGES', 'SWEETS_DESSERTS'],
+      enum: ['RESTAURANT', 'STREET_FOOD', 'CAFE_BAKERY_BEVERAGES', 'CAFE_BAKERY', 'SWEETS_DESSERTS'],
       default: 'RESTAURANT',
       required: true,
     },

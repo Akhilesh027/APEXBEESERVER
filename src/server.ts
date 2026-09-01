@@ -363,7 +363,7 @@ const startServer = async () => {
                 storeId: vendor._id,
                 restaurantName: app.restaurantName || app.businessName,
                 slug: slugName,
-                businessType: app.foodBusinessType || 'RESTAURANT',
+                businessType: (['RESTAURANT', 'STREET_FOOD', 'CAFE_BAKERY_BEVERAGES', 'CAFE_BAKERY', 'SWEETS_DESSERTS'].includes(String(app.foodBusinessType || '').toUpperCase().trim()) ? String(app.foodBusinessType).toUpperCase().trim() : 'RESTAURANT') as any,
                 legalBusinessName: app.businessName || user.name,
                 phone: app.mobile || user.phone,
                 email: app.email || user.email,
