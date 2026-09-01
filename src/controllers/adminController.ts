@@ -1370,10 +1370,10 @@ export const verifyKycApplication = async (
           .replace(/[^a-z0-9]/g, '-')
           .replace(/-+/g, '-') + '-' + Math.floor(1000 + Math.random() * 9000);
 
-        const normalizeBusinessType = (bt: string): any => {
+        const normalizeBusinessType = (bt?: string): any => {
           const raw = String(bt || '').toUpperCase().trim();
           if (raw === 'CAFE_BAKERY' || raw === 'CAFE' || raw === 'BAKERY') return 'CAFE_BAKERY_BEVERAGES';
-          if (['RESTAURANT', 'STREET_FOOD', 'CAFE_BAKERY_BEVERAGES', 'SWEETS_DESSERTS'].includes(raw)) return raw;
+          if (['RESTAURANT', 'STREET_FOOD', 'CAFE_BAKERY_BEVERAGES', 'CAFE_BAKERY', 'SWEETS_DESSERTS'].includes(raw)) return raw;
           return 'RESTAURANT';
         };
 
