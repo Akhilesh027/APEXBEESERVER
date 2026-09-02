@@ -251,6 +251,31 @@ const updateVendorProfile = async (req, res) => {
                 vendor.isMarketplaceListed = !!updates.isMarketplaceListed;
         }
         const saved = await vendor.save();
+        // Synchronize address, pincode, and territory to corresponding User record
+        try {
+            const uId = vendor.userId || targetUserId;
+            if (uId) {
+                const userDoc = await User_1.User.findById(uId);
+                if (userDoc) {
+                    if (updates.address !== undefined)
+                        userDoc.address = updates.address;
+                    if (updates.pincode !== undefined)
+                        userDoc.pincode = updates.pincode;
+                    if (updates.state !== undefined || updates.district !== undefined || updates.mandal !== undefined) {
+                        userDoc.territory = {
+                            ...userDoc.territory,
+                            state: updates.state !== undefined ? updates.state : userDoc.territory?.state,
+                            district: updates.district !== undefined ? updates.district : userDoc.territory?.district,
+                            mandal: updates.mandal !== undefined ? updates.mandal : userDoc.territory?.mandal,
+                        };
+                    }
+                    await userDoc.save();
+                }
+            }
+        }
+        catch (syncErr) {
+            console.warn('Syncing vendor profile update to User warning:', syncErr);
+        }
         const vendorObj = saved.toObject();
         vendorObj.businessType = resObj.type;
         if (vendor.userId) {

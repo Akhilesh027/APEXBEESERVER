@@ -58,6 +58,11 @@ const ReferralTransaction_1 = require("../models/ReferralTransaction");
 const ReferralSettings_1 = require("../models/ReferralSettings");
 const SettlementEngine_1 = require("../services/SettlementEngine");
 const Product_1 = __importDefault(require("../models/Product"));
+function escapeRegex(text) {
+    if (!text)
+        return "";
+    return text.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, "\\$&");
+}
 const getTargetRole = (app) => {
     const type = String(app.applicationType || app.roleId || "").toLowerCase().trim();
     if (type.includes("vendor"))
@@ -110,27 +115,31 @@ const getFranchiseLevelFromRole = (role, app) => {
 };
 const getPortalUrl = (role) => {
     if (role === "vendor")
-        return "http://localhost:5177";
+        return "https://vendor.apexbee.in";
     if (role === "course_provider")
-        return "http://localhost:5174";
+        return "https://academy.apexbee.in";
     if (role === "franchise" ||
         role === "state_franchise" ||
         role === "district_franchise" ||
         role === "mandal_franchise") {
-        return "http://localhost:5175";
+        return "https://franchise.apexbee.in";
     }
     if (role === "service_provider")
-        return "http://localhost:5176";
-    return "http://localhost:5173";
+        return "https://service.apexbee.in";
+    if (role === "delivery_partner")
+        return "https://delivery.apexbee.in";
+    if (role === "food_partner")
+        return "https://food.apexbee.in";
+    return "https://apexbee.in";
 };
 const getBaseProfileFields = (app, user) => ({
     userId: user._id,
-    businessName: app.businessName,
-    ownerName: app.ownerName,
-    mobile: app.mobile,
-    email: app.email,
-    address: app.address,
-    pincode: app.pincode,
+    businessName: app.businessName || user.name || "ApexBee Business Partner",
+    ownerName: app.ownerName || user.name || "Partner",
+    mobile: app.mobile || user.phone || user.mobile || "0000000000",
+    email: app.email || user.email || "partner@apexbee.in",
+    address: app.address || "Main Road",
+    pincode: app.pincode || user?.pincode || "",
     state: app.state || "",
     district: app.district || "",
     mandal: app.mandal || "",
@@ -196,66 +205,92 @@ async function assignTerritoryAndMapFranchises(businessType, businessProfile) {
         let stateId = null;
         let districtId = null;
         let mandalId = null;
-        if (state) {
-            let stateRecord = await StateMaster_1.StateMaster.findOne({ name: { $regex: new RegExp(`^${state}$`, "i") } });
-            if (!stateRecord) {
-                stateRecord = await StateMaster_1.StateMaster.create({
-                    name: state,
-                    code: state.split(" ").map((w) => w[0]).join("").toUpperCase().substring(0, 3) || "ST",
-                    status: "active",
+        if (state && String(state).trim()) {
+            try {
+                const safeState = escapeRegex(String(state).trim());
+                let stateRecord = await StateMaster_1.StateMaster.findOne({
+                    name: { $regex: new RegExp(`^${safeState}$`, "i") },
                 });
-            }
-            stateId = stateRecord._id;
-            if (district) {
-                let districtRecord = await DistrictMaster_1.DistrictMaster.findOne({
-                    stateId: stateRecord._id,
-                    name: { $regex: new RegExp(`^${district}$`, "i") },
-                });
-                if (!districtRecord) {
-                    districtRecord = await DistrictMaster_1.DistrictMaster.create({
-                        stateId: stateRecord._id,
-                        name: district,
+                if (!stateRecord) {
+                    const baseCode = String(state)
+                        .split(" ")
+                        .map((w) => w[0])
+                        .join("")
+                        .toUpperCase()
+                        .substring(0, 3) || "ST";
+                    const uniqueCode = `${baseCode}_${Math.floor(100 + Math.random() * 900)}`;
+                    stateRecord = await StateMaster_1.StateMaster.create({
+                        name: String(state).trim(),
+                        code: uniqueCode,
                         status: "active",
                     });
                 }
-                districtId = districtRecord._id;
-                if (mandal) {
-                    let mandalRecord = await MandalMaster_1.MandalMaster.findOne({
+                stateId = stateRecord._id;
+                if (district && String(district).trim()) {
+                    const safeDistrict = escapeRegex(String(district).trim());
+                    let districtRecord = await DistrictMaster_1.DistrictMaster.findOne({
                         stateId: stateRecord._id,
-                        districtId: districtRecord._id,
-                        name: { $regex: new RegExp(`^${mandal}$`, "i") },
+                        name: { $regex: new RegExp(`^${safeDistrict}$`, "i") },
                     });
-                    if (!mandalRecord) {
-                        mandalRecord = await MandalMaster_1.MandalMaster.create({
+                    if (!districtRecord) {
+                        districtRecord = await DistrictMaster_1.DistrictMaster.create({
                             stateId: stateRecord._id,
-                            districtId: districtRecord._id,
-                            name: mandal,
+                            name: String(district).trim(),
                             status: "active",
                         });
                     }
-                    mandalId = mandalRecord._id;
+                    districtId = districtRecord._id;
+                    if (mandal && String(mandal).trim()) {
+                        const safeMandal = escapeRegex(String(mandal).trim());
+                        let mandalRecord = await MandalMaster_1.MandalMaster.findOne({
+                            stateId: stateRecord._id,
+                            districtId: districtRecord._id,
+                            name: { $regex: new RegExp(`^${safeMandal}$`, "i") },
+                        });
+                        if (!mandalRecord) {
+                            mandalRecord = await MandalMaster_1.MandalMaster.create({
+                                stateId: stateRecord._id,
+                                districtId: districtRecord._id,
+                                name: String(mandal).trim(),
+                                status: "active",
+                            });
+                        }
+                        mandalId = mandalRecord._id;
+                    }
                 }
+            }
+            catch (locErr) {
+                console.warn("Territory master auto-upsert warning:", locErr);
             }
         }
         // 2. Find Franchise Hierarchy
-        const stateFranchise = await Franchise_1.Franchise.findOne({
-            franchiseLevel: "state",
-            state,
-            status: "active",
-        });
-        const districtFranchise = await Franchise_1.Franchise.findOne({
-            franchiseLevel: "district",
-            state,
-            district,
-            status: "active",
-        });
-        const mandalFranchise = await Franchise_1.Franchise.findOne({
-            franchiseLevel: "mandal",
-            state,
-            district,
-            mandal,
-            status: "active",
-        });
+        let stateFranchise = null;
+        let districtFranchise = null;
+        let mandalFranchise = null;
+        if (state) {
+            stateFranchise = await Franchise_1.Franchise.findOne({
+                franchiseLevel: "state",
+                state,
+                status: "active",
+            });
+        }
+        if (state && district) {
+            districtFranchise = await Franchise_1.Franchise.findOne({
+                franchiseLevel: "district",
+                state,
+                district,
+                status: "active",
+            });
+        }
+        if (state && district && mandal) {
+            mandalFranchise = await Franchise_1.Franchise.findOne({
+                franchiseLevel: "mandal",
+                state,
+                district,
+                mandal,
+                status: "active",
+            });
+        }
         // 3. Find and Auto-Assign Entrepreneur (Mandal -> District -> State cascade)
         let entrepreneur = await Entrepreneur_1.Entrepreneur.findOne({
             userId,
@@ -283,35 +318,52 @@ async function assignTerritoryAndMapFranchises(businessType, businessProfile) {
             }).sort({ createdAt: -1 });
         }
         // 4. Initialize Wallet if not exists
-        let wallet = await Wallet_1.Wallet.findOne({ userId });
-        if (!wallet) {
-            wallet = await Wallet_1.Wallet.create({
-                userId,
-                availableBalance: 0,
-                pendingBalance: 0,
-                withdrawnBalance: 0,
-                totalCredits: 0,
-                totalDebits: 0,
-                ledgerEntries: [],
-            });
+        try {
+            let wallet = await Wallet_1.Wallet.findOne({ userId });
+            if (!wallet) {
+                await Wallet_1.Wallet.create({
+                    userId,
+                    availableBalance: 0,
+                    pendingBalance: 0,
+                    holdBalance: 0,
+                    withdrawnBalance: 0,
+                    rewardCoins: 0,
+                    totalCredits: 0,
+                    totalDebits: 0,
+                    version: 0,
+                    ledgerEntries: [],
+                });
+            }
+        }
+        catch (wErr) {
+            console.warn("Wallet creation warning in assignTerritoryAndMapFranchises:", wErr);
         }
         // 5. Track/Convert Lead if any matches mobile/email
         const queryMobile = businessProfile.mobile || "";
         const queryEmail = businessProfile.email || "";
-        if (queryMobile || queryEmail) {
-            const pendingLead = await Lead_1.Lead.findOne({
-                $or: [
-                    { mobile: queryMobile },
-                    { email: queryEmail }
-                ].filter(q => q.mobile !== "" || q.email !== ""),
-                status: { $ne: "Converted" }
-            });
-            if (pendingLead) {
-                await Lead_1.Lead.findByIdAndUpdate(pendingLead._id, {
-                    status: "Converted",
-                    convertedTo: businessType,
-                    convertedBusinessId: businessProfile._id
+        const leadConditions = [];
+        if (queryMobile && String(queryMobile).trim()) {
+            leadConditions.push({ mobile: String(queryMobile).trim() });
+        }
+        if (queryEmail && String(queryEmail).trim()) {
+            leadConditions.push({ email: String(queryEmail).trim() });
+        }
+        if (leadConditions.length > 0) {
+            try {
+                const pendingLead = await Lead_1.Lead.findOne({
+                    $or: leadConditions,
+                    status: { $ne: "Converted" },
                 });
+                if (pendingLead) {
+                    await Lead_1.Lead.findByIdAndUpdate(pendingLead._id, {
+                        status: "Converted",
+                        convertedTo: businessType,
+                        convertedBusinessId: businessProfile._id,
+                    });
+                }
+            }
+            catch (leadErr) {
+                console.warn("Lead conversion check skipped:", leadErr);
             }
         }
         const updates = {
@@ -321,14 +373,16 @@ async function assignTerritoryAndMapFranchises(businessType, businessProfile) {
             entrepreneurId: entrepreneur ? entrepreneur._id : null,
             stateId,
             districtId,
-            mandalId
+            mandalId,
         };
         // 6. Create or Update BusinessRelationship
+        const validRelTypes = ["vendor", "manufacturer", "wholesaler", "service_provider", "course_provider", "delivery_partner"];
+        const relType = validRelTypes.includes(businessType) ? businessType : "vendor";
         await BusinessRelationship_1.BusinessRelationship.findOneAndUpdate({
-            businessType,
+            businessType: relType,
             businessId: businessProfile._id,
         }, {
-            businessType,
+            businessType: relType,
             businessId: businessProfile._id,
             userId,
             entrepreneurId: entrepreneur ? entrepreneur._id : null,
@@ -348,9 +402,9 @@ async function assignTerritoryAndMapFranchises(businessType, businessProfile) {
             businessType,
             businessId: businessProfile._id,
             userId,
-            state,
-            district,
-            mandal,
+            state: state || "",
+            district: district || "",
+            mandal: mandal || "",
             village: businessProfile.village || "",
             stateFranchiseId: updates.stateFranchiseId,
             districtFranchiseId: updates.districtFranchiseId,
@@ -385,7 +439,7 @@ async function assignTerritoryAndMapFranchises(businessType, businessProfile) {
                     districtFranchiseId: updates.districtFranchiseId,
                     mandalFranchiseId: updates.mandalFranchiseId,
                 },
-            }
+            },
         });
         const notifyFranchise = async (franchise, levelLabel) => {
             if (!franchise)
@@ -410,7 +464,7 @@ async function assignTerritoryAndMapFranchises(businessType, businessProfile) {
         }
     }
     catch (error) {
-        console.error("Error assigning territories:", error);
+        console.error("Error in assignTerritoryAndMapFranchises:", error);
     }
 }
 const getApplications = async (req, res) => {
@@ -575,7 +629,13 @@ const approveApplication = async (req, res) => {
         }
         app.status = "pre_approved";
         await app.save();
-        const user = await User_1.User.findById(app.userId);
+        let user = null;
+        if (app.userId && mongoose_1.default.Types.ObjectId.isValid(String(app.userId))) {
+            user = await User_1.User.findById(app.userId);
+        }
+        if (!user && app.email) {
+            user = await User_1.User.findOne({ email: String(app.email).trim().toLowerCase() });
+        }
         if (user) {
             await createNotificationCompat({
                 userId: user._id,
@@ -602,24 +662,74 @@ exports.approveApplication = approveApplication;
 const verifyKycApplication = async (req, res) => {
     try {
         const { id } = req.params;
-        const { adminRemarks } = req.body;
+        const { adminRemarks, primaryCategory, category, subCategory, approvedSubcategories, requestedCapabilities, } = req.body || {};
+        if (!mongoose_1.default.Types.ObjectId.isValid(id)) {
+            res.status(400).json({ message: "Invalid application ID format" });
+            return;
+        }
         const app = await BusinessApplication_1.BusinessApplication.findById(id);
         if (!app) {
             res.status(404).json({ message: "Application not found" });
             return;
         }
-        if (!["approved", "pre_approved", "under_review", "kyc_submitted"].includes(app.status)) {
+        if (![
+            "approved",
+            "pre_approved",
+            "under_review",
+            "kyc_submitted",
+            "pending",
+            "pending_approval",
+            "verified",
+        ].includes(app.status)) {
             res.status(400).json({
-                message: "Application must be pre-approved or under review before KYC verification",
+                message: "Application is in an invalid status for KYC verification",
             });
             return;
         }
-        const user = await User_1.User.findById(app.userId);
-        if (!user) {
-            res.status(404).json({ message: "Associated user not found" });
-            return;
+        // Apply category / capability overrides from req.body if provided
+        const assignedCat = primaryCategory ||
+            category ||
+            app.primaryCategory ||
+            app.category ||
+            "Food & Restaurant";
+        app.primaryCategory = assignedCat;
+        app.category = assignedCat;
+        if (subCategory) {
+            app.subCategory = subCategory;
+        }
+        if (Array.isArray(approvedSubcategories) && approvedSubcategories.length > 0) {
+            app.approvedSubcategories = approvedSubcategories;
+        }
+        if (Array.isArray(requestedCapabilities) && requestedCapabilities.length > 0) {
+            app.requestedCapabilities = requestedCapabilities;
         }
         const targetRole = getTargetRole(app);
+        let user = null;
+        if (app.userId && mongoose_1.default.Types.ObjectId.isValid(String(app.userId))) {
+            user = await User_1.User.findById(app.userId);
+        }
+        if (!user && app.email) {
+            user = await User_1.User.findOne({ email: String(app.email).trim().toLowerCase() });
+        }
+        if (!user && app.mobile) {
+            user = await User_1.User.findOne({ phone: String(app.mobile).trim() });
+        }
+        if (!user) {
+            const tempPassword = await bcryptjs_1.default.hash("ApexBee@123", 10);
+            user = await User_1.User.create({
+                name: app.ownerName || app.businessName || "Business Partner",
+                email: app.email || `partner_${Date.now()}@apexbee.in`,
+                phone: app.mobile || "0000000000",
+                passwordHash: tempPassword,
+                roles: [targetRole],
+                isVerified: true,
+            });
+            app.userId = user._id;
+            await app.save();
+        }
+        if (!Array.isArray(user.roles)) {
+            user.roles = [];
+        }
         if (!user.roles.includes(targetRole)) {
             user.roles.push(targetRole);
         }
@@ -628,23 +738,40 @@ const verifyKycApplication = async (req, res) => {
         let stateId = null;
         let districtId = null;
         let mandalId = null;
-        if (app.state) {
-            const stateRecord = await StateMaster_1.StateMaster.findOne({ name: { $regex: new RegExp(`^${app.state}$`, "i") } });
-            if (stateRecord) {
-                stateId = stateRecord._id;
-                if (app.district) {
-                    const districtRecord = await DistrictMaster_1.DistrictMaster.findOne({ stateId: stateRecord._id, name: { $regex: new RegExp(`^${app.district}$`, "i") } });
-                    if (districtRecord) {
-                        districtId = districtRecord._id;
-                        if (app.mandal) {
-                            const mandalRecord = await MandalMaster_1.MandalMaster.findOne({ stateId: stateRecord._id, districtId: districtRecord._id, name: { $regex: new RegExp(`^${app.mandal}$`, "i") } });
-                            if (mandalRecord) {
-                                mandalId = mandalRecord._id;
+        try {
+            if (app.state && String(app.state).trim()) {
+                const safeState = escapeRegex(String(app.state).trim());
+                const stateRecord = await StateMaster_1.StateMaster.findOne({
+                    name: { $regex: new RegExp(`^${safeState}$`, "i") },
+                });
+                if (stateRecord) {
+                    stateId = stateRecord._id;
+                    if (app.district && String(app.district).trim()) {
+                        const safeDistrict = escapeRegex(String(app.district).trim());
+                        const districtRecord = await DistrictMaster_1.DistrictMaster.findOne({
+                            stateId: stateRecord._id,
+                            name: { $regex: new RegExp(`^${safeDistrict}$`, "i") },
+                        });
+                        if (districtRecord) {
+                            districtId = districtRecord._id;
+                            if (app.mandal && String(app.mandal).trim()) {
+                                const safeMandal = escapeRegex(String(app.mandal).trim());
+                                const mandalRecord = await MandalMaster_1.MandalMaster.findOne({
+                                    stateId: stateRecord._id,
+                                    districtId: districtRecord._id,
+                                    name: { $regex: new RegExp(`^${safeMandal}$`, "i") },
+                                });
+                                if (mandalRecord) {
+                                    mandalId = mandalRecord._id;
+                                }
                             }
                         }
                     }
                 }
             }
+        }
+        catch (locErr) {
+            console.warn("Could not resolve territory master IDs:", locErr);
         }
         user.territory = {
             state: app.state || "",
@@ -715,7 +842,7 @@ const verifyKycApplication = async (req, res) => {
             if (app.bankDetails?.accountNumber) {
                 bankAccounts.push({
                     id: `BANK-${Date.now()}`,
-                    accountName: app.bankDetails.accountHolderName || app.ownerName,
+                    accountName: app.bankDetails.accountHolderName || app.ownerName || "Default Account",
                     accountNumber: app.bankDetails.accountNumber,
                     bankName: app.bankDetails.bankName || "N/A",
                     ifscCode: app.bankDetails.ifscCode || "N/A",
@@ -724,84 +851,101 @@ const verifyKycApplication = async (req, res) => {
                 });
             }
             const existingVendor = await Vendor_1.Vendor.findOne({ userId: user._id });
-            const validLocation = app.location && app.location.coordinates && app.location.coordinates.length === 2
+            const validLocation = app.location &&
+                app.location.coordinates &&
+                app.location.coordinates.length === 2
                 ? app.location
                 : undefined;
-            const vendorSubCategories = Array.isArray(app.approvedSubcategories) && app.approvedSubcategories.length > 0
+            const vendorSubCategories = Array.isArray(app.approvedSubcategories) &&
+                app.approvedSubcategories.length > 0
                 ? app.approvedSubcategories
                 : app.subCategory
-                    ? String(app.subCategory).split(',').map((s) => s.trim()).filter(Boolean)
+                    ? String(app.subCategory)
+                        .split(",")
+                        .map((s) => s.trim())
+                        .filter(Boolean)
                     : [];
             const updateObj = {
                 $set: {
                     ...profileFields,
-                    category: app.primaryCategory || app.category || 'Food & Restaurant',
-                    primaryCategory: app.primaryCategory || app.category || 'Food & Restaurant',
-                    subCategory: vendorSubCategories[0] || app.subCategory || '',
+                    category: assignedCat,
+                    primaryCategory: assignedCat,
+                    subCategory: vendorSubCategories[0] || app.subCategory || "",
                     approvedSubcategories: vendorSubCategories,
                     subCategories: vendorSubCategories,
-                    kycStatus: 'Verified',
-                    status: 'active',
-                    marketplaceStatus: 'Approved',
+                    kycStatus: "Verified",
+                    status: "active",
+                    marketplaceStatus: "Approved",
                     isMarketplaceListed: true,
-                    gstNumber: app.gstNumber,
-                    panNumber: app.panNumber,
+                    gstNumber: app.gstNumber || "",
+                    panNumber: app.panNumber || "",
                     documents: existingVendor?.documents?.length
                         ? existingVendor.documents
                         : finalDocuments,
                     bankAccounts: existingVendor?.bankAccounts?.length
                         ? existingVendor.bankAccounts
                         : bankAccounts,
-                }
+                },
             };
             if (validLocation) {
                 updateObj.$set.location = validLocation;
-            }
-            else {
-                updateObj.$unset = { location: "" };
             }
             const savedVendor = await Vendor_1.Vendor.findOneAndUpdate({ userId: user._id }, updateObj, { upsert: true, new: true });
             if (savedVendor) {
                 await assignTerritoryAndMapFranchises("vendor", savedVendor);
                 // Auto-initialize and approve VendorCategoryAccess for vendor's primary category vertical
-                const vendorCatStr = (savedVendor.primaryCategory || savedVendor.category || savedVendor.storeType || '').toLowerCase();
-                let matchedParent = null;
-                if (vendorCatStr) {
-                    matchedParent = await Category_1.default.findOne({
-                        level: 1,
-                        $or: [
-                            { slug: { $regex: new RegExp(vendorCatStr, 'i') } },
-                            { name: { $regex: new RegExp(vendorCatStr, 'i') } },
-                        ],
-                    });
-                }
-                if (!matchedParent) {
-                    matchedParent = await Category_1.default.findOne({ level: 1 });
-                }
-                if (matchedParent) {
-                    const reqCaps = app.requestedCapabilities && Array.isArray(app.requestedCapabilities) && app.requestedCapabilities.length > 0
-                        ? app.requestedCapabilities
-                        : ['pooja_store', 'general_store', 'retail_store'];
-                    await VendorCategoryAccess_1.default.findOneAndUpdate({ vendorId: savedVendor._id, parentCategoryId: matchedParent._id }, {
-                        $set: {
+                try {
+                    const vendorCatStr = (savedVendor.primaryCategory ||
+                        savedVendor.category ||
+                        savedVendor.storeType ||
+                        "").toLowerCase().trim();
+                    let matchedParent = null;
+                    if (vendorCatStr) {
+                        const safeCat = escapeRegex(vendorCatStr);
+                        matchedParent = await Category_1.default.findOne({
+                            level: 1,
+                            $or: [
+                                { slug: { $regex: new RegExp(safeCat, "i") } },
+                                { name: { $regex: new RegExp(safeCat, "i") } },
+                            ],
+                        });
+                    }
+                    if (!matchedParent) {
+                        matchedParent = await Category_1.default.findOne({ level: 1 });
+                    }
+                    if (matchedParent) {
+                        const reqCaps = app.requestedCapabilities &&
+                            Array.isArray(app.requestedCapabilities) &&
+                            app.requestedCapabilities.length > 0
+                            ? app.requestedCapabilities
+                            : ["pooja_store", "general_store", "retail_store"];
+                        await VendorCategoryAccess_1.default.findOneAndUpdate({
                             vendorId: savedVendor._id,
-                            storeId: savedVendor._id,
                             parentCategoryId: matchedParent._id,
-                            requestedCapabilities: reqCaps,
-                            approvedCapabilities: reqCaps,
-                            status: 'approved',
-                            approvedItemTypes: ['product', 'service'],
-                            restrictions: {
-                                canCreateProducts: true,
-                                canCreateServices: true,
-                                canJoinFestivalCombos: true,
-                                canAcceptBulkOrders: true,
-                                canSellWholesale: true,
-                                canOfferSubscriptions: true,
+                        }, {
+                            $set: {
+                                vendorId: savedVendor._id,
+                                storeId: savedVendor._id,
+                                parentCategoryId: matchedParent._id,
+                                requestedCapabilities: reqCaps,
+                                approvedCapabilities: reqCaps,
+                                status: "approved",
+                                approvedItemTypes: ["product", "service"],
+                                restrictions: {
+                                    canCreateProducts: true,
+                                    canCreateServices: true,
+                                    canJoinFestivalCombos: true,
+                                    canAcceptBulkOrders: true,
+                                    canSellWholesale: true,
+                                    canOfferSubscriptions: true,
+                                },
+                                approvedAt: new Date(),
                             },
-                            approvedAt: new Date(),
-                        },
-                    }, { upsert: true, new: true });
+                        }, { upsert: true, new: true });
+                    }
+                }
+                catch (vcaErr) {
+                    console.error("Error setting up VendorCategoryAccess:", vcaErr);
                 }
             }
         }
@@ -1019,7 +1163,7 @@ const verifyKycApplication = async (req, res) => {
                     mobile: user.phone || app.mobile,
                     email: user.email,
                     address: app.address || 'Address Pending',
-                    pincode: app.pincode || '500001',
+                    pincode: app.pincode || user?.pincode || '',
                     storeType: 'restaurant',
                     categories: ['Food & Dining'],
                     marketplaceStatus: 'Approved',
@@ -1032,13 +1176,21 @@ const verifyKycApplication = async (req, res) => {
                     .toLowerCase()
                     .replace(/[^a-z0-9]/g, '-')
                     .replace(/-+/g, '-') + '-' + Math.floor(1000 + Math.random() * 9000);
+                const normalizeBusinessType = (bt) => {
+                    const raw = String(bt || '').toUpperCase().trim();
+                    if (raw === 'CAFE_BAKERY' || raw === 'CAFE' || raw === 'BAKERY')
+                        return 'CAFE_BAKERY_BEVERAGES';
+                    if (['RESTAURANT', 'STREET_FOOD', 'CAFE_BAKERY_BEVERAGES', 'CAFE_BAKERY', 'SWEETS_DESSERTS'].includes(raw))
+                        return raw;
+                    return 'RESTAURANT';
+                };
                 restaurant = new RestaurantProfile_1.RestaurantProfile({
                     userId: user._id,
                     vendorId: vendor._id,
                     storeId: vendor._id,
                     restaurantName: app.restaurantName || app.businessName,
                     slug: slugName,
-                    businessType: app.foodBusinessType || 'RESTAURANT',
+                    businessType: normalizeBusinessType(app.foodBusinessType),
                     legalBusinessName: app.businessName || user.name,
                     phone: app.mobile || user.phone,
                     email: app.email || user.email,
@@ -1049,7 +1201,7 @@ const verifyKycApplication = async (req, res) => {
                     locality: app.mandal || 'Locality Pending',
                     city: app.district || 'Hyderabad',
                     state: app.state || 'Telangana',
-                    pincode: app.pincode || '500001',
+                    pincode: app.pincode || user?.pincode || '',
                     location: { type: 'Point', coordinates: [78.4867, 17.385] },
                     verificationStatus: 'APPROVED',
                     accountStatus: 'ACTIVE',
@@ -1105,28 +1257,25 @@ const verifyKycApplication = async (req, res) => {
                     ? Number(onboardingRewards[rewardRoleKey])
                     : 0;
                 if (configuredAmount > 0) {
-                    const session = await mongoose_1.default.startSession();
                     try {
-                        await session.withTransaction(async () => {
-                            const label = rewardRoleKey.replace("_", " ").toUpperCase();
-                            await WalletEngine_1.WalletEngine.credit(referral.referrerUserId, configuredAmount, {
-                                category: "Referral Bonus",
-                                source: "referral",
-                                remarks: `${label} referral onboarding approved`,
-                                description: `${label} referral onboarding approved`,
-                                referenceId: referral._id,
-                                referenceType: "REFERRAL"
-                            }, session);
-                            referral.status = "rewarded";
-                            referral.rewardAmount = configuredAmount;
-                            await referral.save({ session });
-                            await User_1.User.findByIdAndUpdate(referral.referrerUserId, {
-                                $inc: { successfulReferrals: 1 }
-                            }).session(session);
+                        const label = rewardRoleKey.replace("_", " ").toUpperCase();
+                        await WalletEngine_1.WalletEngine.credit(referral.referrerUserId, configuredAmount, {
+                            category: "Referral Bonus",
+                            source: "referral",
+                            remarks: `${label} referral onboarding approved`,
+                            description: `${label} referral onboarding approved`,
+                            referenceId: referral._id,
+                            referenceType: "REFERRAL"
+                        });
+                        referral.status = "rewarded";
+                        referral.rewardAmount = configuredAmount;
+                        await referral.save();
+                        await User_1.User.findByIdAndUpdate(referral.referrerUserId, {
+                            $inc: { successfulReferrals: 1 }
                         });
                     }
-                    finally {
-                        await session.endSession();
+                    catch (rwErr) {
+                        console.error("Error crediting referral onboarding reward:", rwErr);
                     }
                 }
                 else {

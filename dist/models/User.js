@@ -84,6 +84,8 @@ const UserSchema = new mongoose_1.Schema({
     dateOfBirth: { type: String, default: "" },
     gender: { type: String, default: "" },
     bio: { type: String, default: "" },
+    address: { type: String, default: "" },
+    pincode: { type: String, default: "" },
     territory: {
         state: { type: String, default: "" },
         district: { type: String, default: "" },

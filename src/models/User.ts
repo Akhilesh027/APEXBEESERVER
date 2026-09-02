@@ -33,6 +33,8 @@ export interface IUser extends Document {
   dateOfBirth?: string;
   gender?: string;
   bio?: string;
+  address?: string;
+  pincode?: string;
   territory?: {
     state?: string;
     district?: string;
@@ -148,6 +150,8 @@ const UserSchema = new Schema<IUser>(
     dateOfBirth: { type: String, default: "" },
     gender: { type: String, default: "" },
     bio: { type: String, default: "" },
+    address: { type: String, default: "" },
+    pincode: { type: String, default: "" },
 
     territory: {
       state: { type: String, default: "" },

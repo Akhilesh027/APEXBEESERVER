@@ -43,7 +43,7 @@ class InvoiceService {
             mobile: vendor.mobile || '+91 9876543210',
             address: vendor.address || 'Vendor Store Address',
             state: vendor.state || 'Telangana',
-            pincode: vendor.pincode || '500001',
+            pincode: vendor.pincode || '',
             gstNumber: vendor.gstNumber || 'N/A'
         };
         const invoice = await SubscriptionInvoice_1.SubscriptionInvoice.create({

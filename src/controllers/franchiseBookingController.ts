@@ -268,7 +268,7 @@ export const verifyFranchiseBookingPayment = async (req: Request, res: Response)
         phone,
         roles: ["customer"],
         address: address || "Address Pending",
-        pincode: pincode || "500001",
+        pincode: pincode || "",
       });
     }
 
@@ -289,7 +289,7 @@ export const verifyFranchiseBookingPayment = async (req: Request, res: Response)
         district: district ? String(district).trim() : "",
         mandal: mandal ? String(mandal).trim() : "",
         address: address || "Address Pending",
-        pincode: pincode || "500001",
+        pincode: pincode || "",
         status: "pending_verification",
         kycStatus: "Pending Verification",
         securityDeposit: {
@@ -306,7 +306,7 @@ export const verifyFranchiseBookingPayment = async (req: Request, res: Response)
       franchise.state = String(state).trim();
       franchise.district = district ? String(district).trim() : franchise.district;
       franchise.mandal = mandal ? String(mandal).trim() : franchise.mandal;
-      franchise.pincode = pincode || franchise.pincode || "500001";
+      franchise.pincode = pincode || franchise.pincode || "";
       franchise.securityDeposit = {
         amountPaid: paidAmt,
         paidAt: new Date(),
@@ -335,7 +335,7 @@ export const verifyFranchiseBookingPayment = async (req: Request, res: Response)
         district: district ? String(district).trim() : "",
         mandal: mandal ? String(mandal).trim() : "",
         village: village ? String(village).trim() : "",
-        pincode: pincode || "500001",
+        pincode: pincode || "",
         franchiseId: franchise._id,
         franchiseStatus: "ACTIVE",
         lockedAt: now,
@@ -424,7 +424,7 @@ export const verifyFranchiseBookingPayment = async (req: Request, res: Response)
             district: district ? String(district).trim() : "",
             mandal: mandal ? String(mandal).trim() : "",
             address: address || "Address Pending",
-            pincode: pincode || "500001",
+            pincode: pincode || "",
             panNumber: applicantDetails.panNumber || "",
             aadhaarNumber: applicantDetails.aadhaarNumber || "",
             gstNumber: applicantDetails.gstNumber || "",

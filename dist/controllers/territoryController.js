@@ -186,9 +186,40 @@ const createTerritory = async (req, res) => {
             : advType === "percentage"
                 ? Math.round((fee * advVal) / 100)
                 : advVal;
+        let finalFtid = ftid;
+        let finalCodeNumber = paddedNumber;
+        let counter = parseInt(paddedNumber, 10) || 1;
+        let existing = await Territory_1.Territory.findOne({ ftid: finalFtid });
+        while (existing) {
+            counter++;
+            finalCodeNumber = String(counter).padStart(3, "0");
+            if (level === "State") {
+                finalFtid = `APX-SF-${finalCodeNumber}`;
+            }
+            else if (level === "District") {
+                const sfNum = parentFtid.replace("APX-SF-", "").replace("APX-SF", "");
+                finalFtid = `APX-SF${sfNum}-DF-${finalCodeNumber}`;
+            }
+            else if (level === "Mandal") {
+                const parentParts = parentFtid.replace("APX-", "").replace(/-/g, "");
+                finalFtid = `APX-${parentParts}-MF-${finalCodeNumber}`;
+            }
+            else if (level === "Village") {
+                const parentParts = parentFtid.replace("APX-", "").replace(/-/g, "");
+                finalFtid = `APX-${parentParts}-VF-${finalCodeNumber}`;
+            }
+            else if (level === "Pincode") {
+                const parentParts = parentFtid.replace("APX-", "").replace(/-/g, "");
+                finalFtid = `APX-${parentParts}-PIN-${finalCodeNumber}`;
+            }
+            else {
+                finalFtid = `APX-TR-${finalCodeNumber}`;
+            }
+            existing = await Territory_1.Territory.findOne({ ftid: finalFtid });
+        }
         const territory = await Territory_1.Territory.create({
-            ftid,
-            codeNumber: paddedNumber,
+            ftid: finalFtid,
+            codeNumber: finalCodeNumber,
             level,
             name,
             state: state.trim(),

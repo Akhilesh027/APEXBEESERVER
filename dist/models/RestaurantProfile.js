@@ -43,7 +43,7 @@ const RestaurantProfileSchema = new mongoose_1.Schema({
     slug: { type: String, required: true, unique: true, lowercase: true, trim: true },
     businessType: {
         type: String,
-        enum: ['RESTAURANT', 'STREET_FOOD', 'CAFE_BAKERY_BEVERAGES', 'SWEETS_DESSERTS'],
+        enum: ['RESTAURANT', 'STREET_FOOD', 'CAFE_BAKERY_BEVERAGES', 'CAFE_BAKERY', 'SWEETS_DESSERTS'],
         default: 'RESTAURANT',
         required: true,
     },
