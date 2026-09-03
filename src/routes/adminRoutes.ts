@@ -2,6 +2,7 @@ import { Router } from 'express';
 import {
   getApplications,
   getApplicationById,
+  updateApplicationDetails,
   approveApplication,
   rejectApplication,
   reviewApplication,
@@ -60,6 +61,8 @@ const router = Router();
 // Restrict all routes under admin to users with 'admin' role
 router.get('/applications', protect, restrictTo('admin'), getApplications);
 router.get('/applications/:id', protect, restrictTo('admin'), getApplicationById);
+router.put('/applications/:id', protect, restrictTo('admin'), updateApplicationDetails);
+router.patch('/applications/:id', protect, restrictTo('admin'), updateApplicationDetails);
 router.patch('/applications/:id/approve', protect, restrictTo('admin'), approveApplication);
 router.patch('/applications/:id/reject', protect, restrictTo('admin'), rejectApplication);
 router.patch('/applications/:id/review', protect, restrictTo('admin'), reviewApplication);

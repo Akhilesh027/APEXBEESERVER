@@ -668,13 +668,109 @@ export const getApplicationById = async (
   }
 };
 
+export const updateApplicationDetails = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const updates = req.body || {};
+
+    const app = await BusinessApplication.findById(id);
+    if (!app) {
+      res.status(404).json({ success: false, message: "Application not found" });
+      return;
+    }
+
+    if (updates.businessName !== undefined) app.businessName = updates.businessName;
+    if (updates.ownerName !== undefined) app.ownerName = updates.ownerName;
+    if (updates.mobile !== undefined) app.mobile = updates.mobile;
+    if (updates.email !== undefined) app.email = updates.email;
+    if (updates.address !== undefined) app.address = updates.address;
+    if (updates.pincode !== undefined) app.pincode = String(updates.pincode).trim();
+    if (updates.state !== undefined) app.state = updates.state;
+    if (updates.district !== undefined) app.district = updates.district;
+    if (updates.mandal !== undefined) app.mandal = updates.mandal;
+    if (updates.village !== undefined) app.village = updates.village;
+    if (updates.gstNumber !== undefined) app.gstNumber = updates.gstNumber;
+    if (updates.panNumber !== undefined) app.panNumber = updates.panNumber;
+    if (updates.aadhaarNumber !== undefined) app.aadhaarNumber = updates.aadhaarNumber;
+    if (updates.fssaiNumber !== undefined) app.fssaiNumber = updates.fssaiNumber;
+    if (updates.experience !== undefined) app.experience = updates.experience;
+    if (updates.investmentCapacity !== undefined) app.investmentCapacity = updates.investmentCapacity;
+    if (updates.franchiseLevel !== undefined) app.franchiseLevel = updates.franchiseLevel;
+    if (updates.serviceType !== undefined) app.serviceType = updates.serviceType;
+    if (updates.adminRemarks !== undefined) app.adminRemarks = updates.adminRemarks;
+
+    const assignedCat = updates.primaryCategory || updates.category || (app as any).primaryCategory || (app as any).category;
+    if (assignedCat) {
+      (app as any).primaryCategory = assignedCat;
+      (app as any).category = assignedCat;
+    }
+    if (updates.subCategory) (app as any).subCategory = updates.subCategory;
+    if (Array.isArray(updates.approvedSubcategories)) (app as any).approvedSubcategories = updates.approvedSubcategories;
+
+    await app.save();
+
+    // Sync with User document if exists
+    if (app.userId) {
+      const userDoc = await User.findById(app.userId);
+      if (userDoc) {
+        if (updates.ownerName) userDoc.name = updates.ownerName;
+        if (updates.email) userDoc.email = updates.email;
+        if (updates.mobile) userDoc.phone = updates.mobile;
+        if (updates.address) (userDoc as any).address = updates.address;
+        if (updates.pincode) (userDoc as any).pincode = String(updates.pincode).trim();
+        await userDoc.save();
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Application details updated successfully",
+      application: app,
+    });
+  } catch (error: any) {
+    console.error("Update application error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error updating application details",
+      error: error.message,
+    });
+  }
+};
+
 export const approveApplication = async (
   req: Request,
   res: Response
 ): Promise<void> => {
   try {
     const { id } = req.params;
-    const { adminRemarks, primaryCategory, category, subCategory, approvedSubcategories } = req.body;
+    const {
+      adminRemarks,
+      businessName,
+      ownerName,
+      mobile,
+      email,
+      address,
+      pincode,
+      state,
+      district,
+      mandal,
+      village,
+      gstNumber,
+      panNumber,
+      aadhaarNumber,
+      fssaiNumber,
+      experience,
+      investmentCapacity,
+      franchiseLevel,
+      serviceType,
+      primaryCategory,
+      category,
+      subCategory,
+      approvedSubcategories
+    } = req.body;
 
     const app = await BusinessApplication.findById(id);
 
@@ -683,9 +779,25 @@ export const approveApplication = async (
       return;
     }
 
-    if (adminRemarks) {
-      app.adminRemarks = adminRemarks;
-    }
+    if (adminRemarks !== undefined) app.adminRemarks = adminRemarks;
+    if (businessName !== undefined) app.businessName = businessName;
+    if (ownerName !== undefined) app.ownerName = ownerName;
+    if (mobile !== undefined) app.mobile = mobile;
+    if (email !== undefined) app.email = email;
+    if (address !== undefined) app.address = address;
+    if (pincode !== undefined) app.pincode = String(pincode).trim();
+    if (state !== undefined) app.state = state;
+    if (district !== undefined) app.district = district;
+    if (mandal !== undefined) app.mandal = mandal;
+    if (village !== undefined) app.village = village;
+    if (gstNumber !== undefined) app.gstNumber = gstNumber;
+    if (panNumber !== undefined) app.panNumber = panNumber;
+    if (aadhaarNumber !== undefined) app.aadhaarNumber = aadhaarNumber;
+    if (fssaiNumber !== undefined) app.fssaiNumber = fssaiNumber;
+    if (experience !== undefined) app.experience = experience;
+    if (investmentCapacity !== undefined) app.investmentCapacity = investmentCapacity;
+    if (franchiseLevel !== undefined) app.franchiseLevel = franchiseLevel;
+    if (serviceType !== undefined) app.serviceType = serviceType;
 
     const assignedCat = primaryCategory || category || (app as any).primaryCategory || (app as any).category || "Food & Restaurant";
     (app as any).primaryCategory = assignedCat;
@@ -709,6 +821,13 @@ export const approveApplication = async (
     }
 
     if (user) {
+      if (ownerName) user.name = ownerName;
+      if (email) user.email = email;
+      if (mobile) user.phone = mobile;
+      if (address) (user as any).address = address;
+      if (pincode) (user as any).pincode = String(pincode).trim();
+      await user.save();
+
       await createNotificationCompat({
         userId: user._id,
         title: "Application Pre-Approved! 📄",
@@ -739,6 +858,24 @@ export const verifyKycApplication = async (
     const { id } = req.params;
     const {
       adminRemarks,
+      businessName,
+      ownerName,
+      mobile,
+      email,
+      address,
+      pincode,
+      state,
+      district,
+      mandal,
+      village,
+      gstNumber,
+      panNumber,
+      aadhaarNumber,
+      fssaiNumber,
+      experience,
+      investmentCapacity,
+      franchiseLevel,
+      serviceType,
       primaryCategory,
       category,
       subCategory,
@@ -774,6 +911,26 @@ export const verifyKycApplication = async (
       });
       return;
     }
+
+    // Apply any edited field overrides from req.body
+    if (businessName !== undefined) app.businessName = businessName;
+    if (ownerName !== undefined) app.ownerName = ownerName;
+    if (mobile !== undefined) app.mobile = mobile;
+    if (email !== undefined) app.email = email;
+    if (address !== undefined) app.address = address;
+    if (pincode !== undefined) app.pincode = String(pincode).trim();
+    if (state !== undefined) app.state = state;
+    if (district !== undefined) app.district = district;
+    if (mandal !== undefined) app.mandal = mandal;
+    if (village !== undefined) app.village = village;
+    if (gstNumber !== undefined) app.gstNumber = gstNumber;
+    if (panNumber !== undefined) app.panNumber = panNumber;
+    if (aadhaarNumber !== undefined) app.aadhaarNumber = aadhaarNumber;
+    if (fssaiNumber !== undefined) app.fssaiNumber = fssaiNumber;
+    if (experience !== undefined) app.experience = experience;
+    if (investmentCapacity !== undefined) app.investmentCapacity = investmentCapacity;
+    if (franchiseLevel !== undefined) app.franchiseLevel = franchiseLevel;
+    if (serviceType !== undefined) app.serviceType = serviceType;
 
     // Apply category / capability overrides from req.body if provided
     const assignedCat =
