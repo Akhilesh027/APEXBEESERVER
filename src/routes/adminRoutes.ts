@@ -15,6 +15,7 @@ import {
   getVendorProducts,
   updateVendorDocumentStatus,
   updateVendorStatus,
+  updateAdminVendorProfile,
   updateVendorCategoryGovernance,
   getServiceProviderKycs,
   updateServiceProviderKycStatus,
@@ -74,6 +75,8 @@ router.get('/vendors', protect, restrictTo('admin'), getVendors);
 router.get('/vendors/:userId/products', protect, restrictTo('admin'), getVendorProducts);
 router.patch('/vendors/:userId/documents/:docId', protect, restrictTo('admin'), updateVendorDocumentStatus);
 router.patch('/vendors/:userId/status', protect, restrictTo('admin'), updateVendorStatus);
+router.put('/vendors/:userId/profile', protect, restrictTo('admin'), updateAdminVendorProfile);
+router.patch('/vendors/:userId/profile', protect, restrictTo('admin'), updateAdminVendorProfile);
 router.put('/vendors/:userId/category-governance', protect, restrictTo('admin'), updateVendorCategoryGovernance);
 router.get('/service-providers/kyc', protect, restrictTo('admin'), getServiceProviderKycs);
 router.patch('/service-providers/kyc/:id', protect, restrictTo('admin'), updateServiceProviderKycStatus);

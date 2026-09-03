@@ -1875,13 +1875,33 @@ export const getVendors = async (
     const rawVendors = await Vendor.find().sort({ createdAt: -1 });
     const userIds = rawVendors.map(v => v.userId).filter(Boolean);
 
-    const applications = await BusinessApplication.find({ userId: { $in: userIds } });
+    const [applications, users] = await Promise.all([
+      BusinessApplication.find({ userId: { $in: userIds } }),
+      User.find({ _id: { $in: userIds } }).select('-passwordHash')
+    ]);
+
     const appMap = new Map();
     applications.forEach(a => appMap.set(String(a.userId), a));
+
+    const userMap = new Map();
+    users.forEach(u => userMap.set(String(u._id), u));
 
     const vendors = rawVendors.map(v => {
       const vObj: any = v.toObject();
       const app = appMap.get(String(v.userId));
+      const usr = userMap.get(String(v.userId));
+
+      vObj.pincode = vObj.pincode || app?.pincode || (usr as any)?.pincode || '';
+      vObj.address = vObj.address || app?.address || (usr as any)?.address || '';
+      vObj.state = vObj.state || app?.state || usr?.territory?.state || '';
+      vObj.district = vObj.district || app?.district || usr?.territory?.district || '';
+      vObj.mandal = vObj.mandal || app?.mandal || usr?.territory?.mandal || '';
+      vObj.mobile = vObj.mobile || app?.mobile || usr?.phone || '';
+      vObj.email = vObj.email || app?.email || usr?.email || '';
+      vObj.gstNumber = vObj.gstNumber || app?.gstNumber || '';
+      vObj.panNumber = vObj.panNumber || app?.panNumber || '';
+      vObj.fssaiNumber = vObj.fssaiNumber || app?.fssaiNumber || '';
+
       if (app) {
         vObj.primaryCategory = vObj.primaryCategory || app.primaryCategory || app.category || vObj.category;
         vObj.category = vObj.primaryCategory || vObj.category;
@@ -1901,6 +1921,165 @@ export const getVendors = async (
     console.error("Get admin vendors error:", error);
     res.status(500).json({
       message: "Server error retrieving vendors",
+      error: error.message,
+    });
+  }
+};
+
+export const updateAdminVendorProfile = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const { userId } = req.params;
+    const updates = req.body;
+
+    let vendor = await Vendor.findOne({ userId });
+    if (!vendor && mongoose.Types.ObjectId.isValid(userId)) {
+      vendor = await Vendor.findById(userId);
+    }
+
+    if (!vendor) {
+      res.status(404).json({ success: false, message: "Vendor profile not found" });
+      return;
+    }
+
+    // Update basic vendor details
+    if (updates.businessName !== undefined) vendor.businessName = updates.businessName;
+    if (updates.ownerName !== undefined) vendor.ownerName = updates.ownerName;
+    if (updates.email !== undefined) vendor.email = updates.email;
+    if (updates.mobile !== undefined) vendor.mobile = updates.mobile;
+    if (updates.address !== undefined) vendor.address = updates.address;
+    if (updates.pincode !== undefined) vendor.pincode = String(updates.pincode).trim();
+    if (updates.state !== undefined) vendor.state = updates.state;
+    if (updates.district !== undefined) vendor.district = updates.district;
+    if (updates.mandal !== undefined) vendor.mandal = updates.mandal;
+    if (updates.village !== undefined) vendor.village = updates.village;
+    if (updates.gstNumber !== undefined) vendor.gstNumber = updates.gstNumber;
+    if (updates.panNumber !== undefined) vendor.panNumber = updates.panNumber;
+    if (updates.fssaiNumber !== undefined) vendor.fssaiNumber = updates.fssaiNumber;
+    if (updates.whatsappNumber !== undefined) vendor.whatsappNumber = updates.whatsappNumber;
+
+    // Delivery & store configuration
+    if (updates.storeType !== undefined) vendor.storeType = updates.storeType;
+    if (updates.deliveryMode !== undefined) vendor.deliveryMode = updates.deliveryMode;
+    if (updates.deliveryRadiusKm !== undefined) vendor.deliveryRadiusKm = Number(updates.deliveryRadiusKm);
+    if (updates.estimatedDeliveryMinutes !== undefined) vendor.estimatedDeliveryMinutes = Number(updates.estimatedDeliveryMinutes);
+    if (updates.minOrder !== undefined) vendor.minOrder = Number(updates.minOrder);
+    if (updates.deliveryCharge !== undefined) vendor.deliveryCharge = Number(updates.deliveryCharge);
+    if (updates.liveStatus !== undefined) vendor.liveStatus = updates.liveStatus;
+
+    // Category and subcategories
+    if (updates.category !== undefined) vendor.category = updates.category;
+    if (updates.primaryCategory !== undefined) vendor.primaryCategory = updates.primaryCategory;
+    if (updates.subCategory !== undefined) vendor.subCategory = updates.subCategory;
+    if (Array.isArray(updates.approvedSubcategories)) {
+      vendor.approvedSubcategories = updates.approvedSubcategories;
+      vendor.subCategories = updates.approvedSubcategories;
+    }
+    if (Array.isArray(updates.categories)) vendor.categories = updates.categories;
+
+    // Status and governance
+    if (updates.status !== undefined) vendor.status = updates.status;
+    if (updates.marketplaceStatus !== undefined) vendor.marketplaceStatus = updates.marketplaceStatus;
+    if (updates.verifiedBadge !== undefined) vendor.verifiedBadge = !!updates.verifiedBadge;
+    if (updates.isMarketplaceListed !== undefined) vendor.isMarketplaceListed = !!updates.isMarketplaceListed;
+
+    // Coordinates / Location
+    if (updates.location && Array.isArray(updates.location.coordinates)) {
+      vendor.location = {
+        type: "Point",
+        coordinates: [Number(updates.location.coordinates[0]), Number(updates.location.coordinates[1])]
+      };
+    } else if (updates.coordinates && Array.isArray(updates.coordinates) && updates.coordinates.length === 2) {
+      vendor.location = {
+        type: "Point",
+        coordinates: [Number(updates.coordinates[0]), Number(updates.coordinates[1])]
+      };
+    } else if (updates.latitude !== undefined && updates.longitude !== undefined && !isNaN(Number(updates.latitude)) && !isNaN(Number(updates.longitude))) {
+      vendor.location = {
+        type: "Point",
+        coordinates: [Number(updates.longitude), Number(updates.latitude)]
+      };
+    }
+
+    // Store Design & Policies
+    if (updates.storeDesign || updates.description || updates.refundPolicy || updates.replacementPolicy || updates.deliveryPolicy) {
+      vendor.storeDesign = {
+        ...vendor.storeDesign,
+        ...(updates.storeDesign || {}),
+        ...(updates.description ? { description: updates.description } : {}),
+        ...(updates.refundPolicy ? { refundPolicy: updates.refundPolicy } : {}),
+        ...(updates.replacementPolicy ? { replacementPolicy: updates.replacementPolicy } : {}),
+        ...(updates.deliveryPolicy ? { deliveryPolicy: updates.deliveryPolicy } : {}),
+      };
+      if (updates.refundPolicy) vendor.refundPolicy = updates.refundPolicy;
+      if (updates.replacementPolicy) vendor.replacementPolicy = updates.replacementPolicy;
+    }
+
+    const saved = await vendor.save();
+
+    // Synchronize with User account
+    try {
+      const uId = vendor.userId;
+      if (uId) {
+        const userDoc = await User.findById(uId);
+        if (userDoc) {
+          if (updates.ownerName) userDoc.name = updates.ownerName;
+          if (updates.email) userDoc.email = updates.email;
+          if (updates.mobile) userDoc.phone = updates.mobile;
+          if (updates.address) (userDoc as any).address = updates.address;
+          if (updates.pincode) (userDoc as any).pincode = String(updates.pincode).trim();
+          if (updates.state || updates.district || updates.mandal) {
+            userDoc.territory = {
+              ...userDoc.territory,
+              state: updates.state !== undefined ? updates.state : userDoc.territory?.state,
+              district: updates.district !== undefined ? updates.district : userDoc.territory?.district,
+              mandal: updates.mandal !== undefined ? updates.mandal : userDoc.territory?.mandal,
+            };
+          }
+          await userDoc.save();
+        }
+      }
+    } catch (syncErr) {
+      console.warn("Syncing User doc warning:", syncErr);
+    }
+
+    // Synchronize with BusinessApplication if exists
+    try {
+      const app = await BusinessApplication.findOne({ userId: vendor.userId });
+      if (app) {
+        if (updates.businessName) app.businessName = updates.businessName;
+        if (updates.ownerName) app.ownerName = updates.ownerName;
+        if (updates.mobile) app.mobile = updates.mobile;
+        if (updates.email) app.email = updates.email;
+        if (updates.address) app.address = updates.address;
+        if (updates.pincode) app.pincode = String(updates.pincode).trim();
+        if (updates.state) app.state = updates.state;
+        if (updates.district) app.district = updates.district;
+        if (updates.mandal) app.mandal = updates.mandal;
+        if (updates.gstNumber) app.gstNumber = updates.gstNumber;
+        if (updates.panNumber) app.panNumber = updates.panNumber;
+        if (updates.fssaiNumber) app.fssaiNumber = updates.fssaiNumber;
+        if (updates.primaryCategory || updates.category) app.primaryCategory = updates.primaryCategory || updates.category;
+        if (updates.subCategory) app.subCategory = updates.subCategory;
+        if (Array.isArray(updates.approvedSubcategories)) app.approvedSubcategories = updates.approvedSubcategories;
+        await app.save();
+      }
+    } catch (appErr) {
+      console.warn("Syncing BusinessApplication warning:", appErr);
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Vendor profile updated successfully by admin",
+      vendor: saved,
+    });
+  } catch (error: any) {
+    console.error("Update admin vendor profile error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error updating vendor profile",
       error: error.message,
     });
   }
