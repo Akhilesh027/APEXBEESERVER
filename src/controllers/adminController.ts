@@ -2163,15 +2163,13 @@ export const updateAdminVendorProfile = async (
     // Store Design & Policies
     if (updates.storeDesign || updates.description || updates.refundPolicy || updates.replacementPolicy || updates.deliveryPolicy) {
       vendor.storeDesign = {
-        ...vendor.storeDesign,
+        ...(vendor.storeDesign || {}),
         ...(updates.storeDesign || {}),
-        ...(updates.description ? { description: updates.description } : {}),
-        ...(updates.refundPolicy ? { refundPolicy: updates.refundPolicy } : {}),
-        ...(updates.replacementPolicy ? { replacementPolicy: updates.replacementPolicy } : {}),
-        ...(updates.deliveryPolicy ? { deliveryPolicy: updates.deliveryPolicy } : {}),
+        ...(updates.description !== undefined ? { description: updates.description } : {}),
+        ...(updates.refundPolicy !== undefined ? { refundPolicy: updates.refundPolicy } : {}),
+        ...(updates.replacementPolicy !== undefined ? { replacementPolicy: updates.replacementPolicy } : {}),
+        ...(updates.deliveryPolicy !== undefined ? { deliveryPolicy: updates.deliveryPolicy } : {}),
       };
-      if (updates.refundPolicy) vendor.refundPolicy = updates.refundPolicy;
-      if (updates.replacementPolicy) vendor.replacementPolicy = updates.replacementPolicy;
     }
 
     const saved = await vendor.save();
