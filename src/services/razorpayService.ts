@@ -3,11 +3,19 @@ import https from 'https';
 
 export class RazorpayService {
   private static getKeyId(): string {
-    return process.env.RAZORPAY_KEY_ID || 'rzp_test_TTsnL7mJseMdFz';
+    const key = process.env.RAZORPAY_KEY_ID;
+    if (!key) {
+      throw new Error('RAZORPAY_KEY_ID environment variable is not defined');
+    }
+    return key;
   }
 
   private static getKeySecret(): string {
-    return process.env.RAZORPAY_KEY_SECRET || 'kuz633zUvZU1eGDal8TyAIpo';
+    const secret = process.env.RAZORPAY_KEY_SECRET;
+    if (!secret) {
+      throw new Error('RAZORPAY_KEY_SECRET environment variable is not defined');
+    }
+    return secret;
   }
 
   /**

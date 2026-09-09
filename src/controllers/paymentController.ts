@@ -9,7 +9,7 @@ import { WalletEngine } from '../services/WalletEngine';
  */
 export const getRazorpayConfig = async (req: AuthRequest, res: Response) => {
   try {
-    const keyId = process.env.RAZORPAY_KEY_ID || 'rzp_test_TTsnL7mJseMdFz';
+    const keyId = process.env.RAZORPAY_KEY_ID || '';
     return res.status(200).json({
       success: true,
       keyId,
