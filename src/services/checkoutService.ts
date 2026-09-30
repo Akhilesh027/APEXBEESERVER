@@ -8,6 +8,7 @@ import { CouponService } from './couponService';
 import { TransactionalOutbox } from './TransactionalOutbox';
 import { notificationEmitter } from '../modules/notifications/events/notificationEmitter';
 import { NotificationHelper } from './notificationHelper';
+import { SmsService } from './smsService';
 import crypto from 'crypto';
 
 export interface CheckoutInput {
@@ -129,7 +130,7 @@ export class CheckoutService {
         ? { expectedDelivery: 'Self Pickup at Store', shippingMethod: 'In-Store Self Pickup' }
         : { expectedDelivery: 'Standard Delivery', shippingMethod: 'Home Delivery' },
       pickupVerification: input.fulfillment?.type === 'pickup'
-        ? { otp: Math.floor(1000 + Math.random() * 9000).toString(), verified: false }
+        ? { otp: Math.floor(100000 + Math.random() * 900000).toString(), verified: false }
         : undefined,
       orderSummary: mergedOrderSummary,
       preOrder: input.preOrder,
@@ -325,6 +326,15 @@ export class CheckoutService {
       NotificationHelper.notifyOrderPlaced(order).catch((err) => {
         console.error('[CheckoutService] Failed to dispatch multi-channel order notifications:', err);
       });
+
+      // Dispatch DLT Order Placed SMS
+      const customerPhone = order.shippingAddress?.phone || order.shippingAddress?.mobile;
+      const customerName = order.shippingAddress?.fullName || order.shippingAddress?.name || 'Customer';
+      if (customerPhone && order.orderNumber && order.totalAmount) {
+        SmsService.sendOrderPlacedSms(customerPhone, customerName, order.orderNumber, order.totalAmount).catch((err) => {
+          console.error('[CheckoutService] Failed to dispatch Order Placed SMS:', err);
+        });
+      }
     } catch (notifErr) {
       console.warn('[CheckoutService] Failed to emit order.placed notification:', notifErr);
     }

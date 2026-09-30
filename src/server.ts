@@ -147,6 +147,9 @@ app.use("/api/territories", territoryRoutes);
 app.use('/api/business-relationships', businessRelationshipRoutes);
 app.use('/api/leads', leadRoutes);
 app.use('/api/commission-rules', commissionRuleRoutes);
+import feePricingRoutes from './routes/feePricingRoutes';
+app.use('/api/fee-pricing', feePricingRoutes);
+app.use('/api/admin/fee-pricing', feePricingRoutes);
 app.use("/api/referrals", referralRoutes);
 app.use("/api/referral", referralRoutes);
 app.use("/api/wallet", walletRoutes);
@@ -489,4 +492,4 @@ if (process.env.NODE_ENV !== 'test') {
 }
 
 export { app };
-// Trigger reload 51
+// Trigger reload 54

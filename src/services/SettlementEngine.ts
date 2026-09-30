@@ -26,7 +26,7 @@ export class SettlementEngine {
     }).session(session || null);
     if (existing) return existing;
     const created = await ReferralTransaction.create([doc], { session });
-    
+
     const tx = created[0];
     await WalletEngine.hold(tx.recipientUserId, tx.amount, {
       category: "Referral Bonus",
@@ -51,8 +51,8 @@ export class SettlementEngine {
 
     const s = created[0];
     const category = s.settlementType === 'vendor' ? "Vendor Earnings" :
-                     s.settlementType === 'franchise' ? "Franchise Commission" :
-                     s.settlementType === 'entrepreneur' ? "Entrepreneur Commission" : "System Commission";
+      s.settlementType === 'franchise' ? "Franchise Commission" :
+        s.settlementType === 'entrepreneur' ? "Entrepreneur Commission" : "System Commission";
     await WalletEngine.hold(s.recipientId, s.amount, {
       category,
       source: `${s.settlementType}_settlement`,
@@ -97,6 +97,60 @@ export class SettlementEngine {
       }
     }
   }
+  /**
+   * Calculate commission distribution for Mandal Franchiser assignment.
+   * @param amount Total amount paid by the mandal franchiser.
+   * @returns Object with commission amounts for each level and related franchisers.
+   */
+  static calculateMandalFranchiserCommission(amount: number) {
+    const level1   = (amount * 10) / 100; // 10%
+    const level2   = (amount * 3)  / 100; // 3%
+    const level3   = (amount * 2)  / 100; // 2%
+    const district = (amount * 10) / 100; // Dist. Franchiser 10%
+    const state    = (amount * 5)  / 100; // State Franchiser 5%
+    return { level1, level2, level3, district, state };
+  }
+  /**
+   * Calculate commission distribution for District Franchiser assignment.
+   * @param amount Total amount paid by the district franchiser.
+   * @returns Object with commission amounts for each level and state franchiser.
+   */
+  static calculateDistrictFranchiserCommission(amount: number) {
+    const level1 = (amount * 15) / 100; // 15%
+    const level2 = (amount * 3) / 100; // 3%
+    const level3 = (amount * 2) / 100; // 2%
+    const state = (amount * 10) / 100; // State Franchiser 10%
+    return { level1, level2, level3, state };
+  }
+
+  /**
+   * Calculate commission distribution for State Franchiser assignment.
+   * @param amount Total amount paid by the state franchiser.
+   * @returns Object with commission amounts for each level.
+   */
+  static calculateStateFranchiserCommission(amount: number) {
+    const level1 = (amount * 15) / 100; // 15%
+    const level2 = (amount * 3) / 100; // 3%
+    const level3 = (amount * 2) / 100; // 2%
+    return { level1, level2, level3 };
+  }
+
+  /**
+   * Calculate commission distribution for Vendor Enrollment.
+   * @param amount Total amount paid for vendor enrollment.
+   * @returns Object with commission amounts for each level and territory franchisers.
+   */
+  static calculateVendorEnrollmentCommission(amount: number) {
+    const level1   = (amount * 10) / 100; // Level 1 - 10%
+    const level2   = (amount * 3)  / 100; // Level 2 - 3%
+    const level3   = (amount * 2)  / 100; // Level 3 - 2%
+    const mandal   = (amount * 10) / 100; // Mandal Franchiser - 10%
+    const district = (amount * 5)  / 100; // Dist. Franchiser - 5%
+    const state    = (amount * 3)  / 100; // State Franchiser - 3%
+    return { level1, level2, level3, mandal, district, state };
+  }
+
+
 
   /**
    * Creates ReferralTransactions and CommissionSettlements in "placed" status.
@@ -148,13 +202,13 @@ export class SettlementEngine {
         let querySettings = ReferralSettings.findOne({});
         if (session) querySettings = querySettings.session(session);
         const settings = await querySettings || new ReferralSettings();
-        
+
         if (settings.enabled) {
           const hierarchy = customer.referralHierarchy;
           const l1Recipient = (hierarchy && hierarchy.level1UserId) ? hierarchy.level1UserId : this.COMPANY_ID;
           const l2Recipient = (hierarchy && hierarchy.level2UserId) ? hierarchy.level2UserId : this.COMPANY_ID;
           const l3Recipient = (hierarchy && hierarchy.level3UserId) ? hierarchy.level3UserId : this.COMPANY_ID;
-          
+
           const l1Amount = (settings.firstOrderRewards && settings.firstOrderRewards.level1 !== undefined && settings.firstOrderRewards.level1 !== 0)
             ? settings.firstOrderRewards.level1
             : 50;
@@ -388,7 +442,6 @@ export class SettlementEngine {
           }
         }
 
-        // 2. Franchise & Company splits
         if (distributionPool > 0 || totalPlatformFee > 0) {
           const statePercent = (shares.find((s: any) => s.type === "state" && s.isActive !== false)?.percent || 0);
           const districtPercent = (shares.find((s: any) => s.type === "district" && s.isActive !== false)?.percent || 0);
@@ -396,7 +449,7 @@ export class SettlementEngine {
           const entrepreneurPercent = (shares.find((s: any) => s.type === "entrepreneur" && s.isActive !== false)?.percent || 0);
           const wishLinkPercent = (shares.find((s: any) => s.type === "wishlink" && s.isActive !== false)?.percent || 0);
           const referralPoolPercent = (shares.find((s: any) => s.type === "referralPool" && s.isActive !== false)?.percent || 0);
-          const companyPercent = (shares.find((s: any) => s.type === "company" && s.isActive !== false)?.percent || 0) || 
+          const companyPercent = (shares.find((s: any) => s.type === "company" && s.isActive !== false)?.percent || 0) ||
             (100 - (statePercent + districtPercent + mandalPercent + entrepreneurPercent + wishLinkPercent + referralPoolPercent));
 
           const getSplitAmount = (type: string, percent: number) => {
@@ -450,7 +503,7 @@ export class SettlementEngine {
                   mandalFranchiseId: mandalFranchise ? mandalFranchise.userId : null,
                   entrepreneurId: entrepreneur ? entrepreneur.userId : null
                 };
-                
+
                 await this.createCommissionSettlementUnique({
                   orderId: order._id,
                   productId: product._id,
@@ -538,8 +591,8 @@ export class SettlementEngine {
       }
 
       const category = s.settlementType === 'vendor' ? "Vendor Earnings" :
-                       s.settlementType === 'franchise' ? "Franchise Commission" :
-                       s.settlementType === 'entrepreneur' ? "Entrepreneur Commission" : "System Commission";
+        s.settlementType === 'franchise' ? "Franchise Commission" :
+          s.settlementType === 'entrepreneur' ? "Entrepreneur Commission" : "System Commission";
 
       // FIX 4: Use s._id as referenceId so each ledger entry is uniquely traceable
       await WalletEngine.hold(s.recipientId, s.amount, {
@@ -582,8 +635,8 @@ export class SettlementEngine {
         const order = await Order.findById(tx.orderId).session(sess);
         if (!order) continue;
         if (
-          ['Returned', 'Cancelled'].includes(order.orderStatus) || 
-          order.refundStatus === 'Pending' || 
+          ['Returned', 'Cancelled'].includes(order.orderStatus) ||
+          order.refundStatus === 'Pending' ||
           order.refundStatus === 'Approved'
         ) {
           continue; // Skip returned/cancelled or return-pending orders
@@ -638,8 +691,8 @@ export class SettlementEngine {
         const order = await Order.findById(s.orderId).session(sess);
         if (!order) continue;
         if (
-          ['Returned', 'Cancelled'].includes(order.orderStatus) || 
-          order.refundStatus === 'Pending' || 
+          ['Returned', 'Cancelled'].includes(order.orderStatus) ||
+          order.refundStatus === 'Pending' ||
           order.refundStatus === 'Approved'
         ) {
           continue; // Skip returned/cancelled or return-pending orders
@@ -651,8 +704,8 @@ export class SettlementEngine {
         const txId = `TXN_${Date.now()}_${Math.floor(100000 + Math.random() * 900000)}`;
 
         const category = s.settlementType === 'vendor' ? "Vendor Earnings" :
-                         s.settlementType === 'franchise' ? "Franchise Commission" :
-                         s.settlementType === 'entrepreneur' ? "Entrepreneur Commission" : "System Commission";
+          s.settlementType === 'franchise' ? "Franchise Commission" :
+            s.settlementType === 'entrepreneur' ? "Entrepreneur Commission" : "System Commission";
 
         // Release the hold in WalletEngine
         await WalletEngine.release(s.recipientId, s.amount, {
@@ -796,8 +849,8 @@ export class SettlementEngine {
     for (const s of settlements) {
       if (s.status === "pending") {
         const category = s.settlementType === 'vendor' ? "Vendor Earnings" :
-                         s.settlementType === 'franchise' ? "Franchise Commission" :
-                         s.settlementType === 'entrepreneur' ? "Entrepreneur Commission" : "System Commission";
+          s.settlementType === 'franchise' ? "Franchise Commission" :
+            s.settlementType === 'entrepreneur' ? "Entrepreneur Commission" : "System Commission";
 
         // FIX 4: Use s._id as referenceId for reverse (must match the hold entry referenceId)
         await WalletEngine.reverse(s.recipientId, s.amount, {

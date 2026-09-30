@@ -41,8 +41,9 @@ async function run() {
   console.log("R1:", r1);
 
   if (r1.statusCode === 200) {
-    console.log("2. Verifying OTP 1234...");
-    const r2 = await postJson('https://server.apexbee.in/api/delivery/verify-otp', { phone: '9550379505', otp: '1234' });
+    const otpToUse = r1.body?.devOtp;
+    console.log("2. Verifying OTP...", otpToUse);
+    const r2 = await postJson('https://server.apexbee.in/api/delivery/verify-otp', { phone: '9550379505', otp: otpToUse });
     console.log("R2:", r2);
   }
 }

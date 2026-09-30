@@ -152,13 +152,15 @@ const runTests = async () => {
   const newOtpData: any = await newOtpRes.json();
   const newToken = newOtpData.verificationToken;
 
-  // Simulate correct OTP verification
+  // Simulate correct OTP verification with dynamically generated 6-digit OTP
+  const redisStored = await redis.get(`academy:otp:${testMobile}:${newToken}`);
+  const parsedOtp = JSON.parse(redisStored || '{}').code;
   const correctVerify = await fetch(`${API_BASE}/academy/otp/verify`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ mobile: testMobile, verificationToken: newToken, otp: '1234' }),
+    body: JSON.stringify({ mobile: testMobile, verificationToken: newToken, otp: parsedOtp }),
   });
-  assert(correctVerify.status === 200, 'Verify OTP with default static OTP returned success');
+  assert(correctVerify.status === 200, 'Verify OTP with real 6-digit OTP returned success');
 
   // Guest lead creation
   const leadRes1 = await fetch(`${API_BASE}/academy/leads`, {
@@ -178,6 +180,7 @@ const runTests = async () => {
   assert(leadData1.success && !!leadData1.data.leadId, 'Lead ID generated successfully');
 
   // Duplicate submission check (within 24 hours)
+  await redis.set(`academy:verified:${testMobile}`, 'true', 'EX', 600);
   const leadRes2 = await fetch(`${API_BASE}/academy/leads`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -188,7 +191,6 @@ const runTests = async () => {
       selectedInterests: ['start_apexbee_business'],
       consentAccepted: true,
       consentVersion: '1.0',
-      otp: '1234', // Bypass with test static OTP
     }),
   });
   const leadData2: any = await leadRes2.json();

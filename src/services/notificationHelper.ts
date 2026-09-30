@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { Notification } from '../modules/notifications/models/Notification';
 import { User } from '../models/User';
 import { EmailService } from './emailService';
+import { SmsService } from './smsService';
 import { sendRealtimeNotification } from '../modules/notifications/websocket/socketServer';
 
 export class NotificationHelper {
@@ -388,6 +389,20 @@ export class NotificationHelper {
         icon: 'check-circle',
         deepLink: portalUrl,
       });
+
+      // C. DLT SMS Dispatch
+      const applicantPhone = application.phone || application.mobile || user.phone || user.mobile;
+      if (applicantPhone) {
+        if (['franchise', 'district_franchise', 'mandal_franchise', 'state_franchise'].includes(targetRole.toLowerCase())) {
+          SmsService.sendFranchiseRegistrationSuccess(applicantPhone, ownerName).catch((err) => {
+            console.error('[NotificationHelper] Franchise approval SMS error:', err);
+          });
+        } else {
+          SmsService.sendVendorRegistrationSuccess(applicantPhone).catch((err) => {
+            console.error('[NotificationHelper] Vendor approval SMS error:', err);
+          });
+        }
+      }
 
       console.log(`[NotificationHelper] Sent approval notifications for: ${businessName} (${targetRole})`);
     } catch (error) {

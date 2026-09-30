@@ -58,6 +58,8 @@ import { CommissionSettlement } from "../models/CommissionSettlement";
 import { ReferralTransaction } from "../models/ReferralTransaction";
 import { ReferralSettings } from "../models/ReferralSettings";
 import { SettlementEngine } from "../services/SettlementEngine";
+import { AssignmentCommissionService } from "../services/AssignmentCommissionService";
+import { PricingCatalog } from "../models/PricingCatalog";
 import Product from "../models/Product";
 
 function escapeRegex(text: string): string {
@@ -165,15 +167,24 @@ const createServiceProviderDocuments = (app: any) => ({
 const remapExistingBusinessesForNewFranchise = async (franchise: any) => {
   const { _id, franchiseLevel, state, district, mandal } = franchise;
 
-  const query: any = { state };
+  const cleanState = (state || "").trim();
+  const cleanDistrict = (district || "").trim();
+  const cleanMandal = (mandal || "").trim();
 
-  if (franchiseLevel === "district") {
-    query.district = district;
+  const stateRegex = cleanState ? new RegExp(`^${cleanState.replace(/\s*state$/i, "").trim()}`, "i") : null;
+  const districtRegex = cleanDistrict ? new RegExp(`^${cleanDistrict.replace(/\s*district$/i, "").trim()}`, "i") : null;
+  const mandalRegex = cleanMandal ? new RegExp(`^${cleanMandal.replace(/\s*mandal$/i, "").trim()}`, "i") : null;
+
+  const query: any = {};
+  if (stateRegex) query.state = stateRegex;
+
+  if (franchiseLevel === "district" && districtRegex) {
+    query.district = districtRegex;
   }
 
   if (franchiseLevel === "mandal") {
-    query.district = district;
-    query.mandal = mandal;
+    if (districtRegex) query.district = districtRegex;
+    if (mandalRegex) query.mandal = mandalRegex;
   }
 
   const updateField =
@@ -183,23 +194,80 @@ const remapExistingBusinessesForNewFranchise = async (franchise: any) => {
         ? { districtFranchiseId: _id }
         : { mandalFranchiseId: _id };
 
+  // 1. Update TerritoryMapping
   await TerritoryMapping.updateMany(query, { $set: updateField });
 
-  const mappings = await TerritoryMapping.find(query);
-
-  for (const mapping of mappings) {
-    let Model: any = null;
-
-    if (mapping.businessType === "vendor") Model = Vendor;
-    if (mapping.businessType === "manufacturer") Model = Manufacturer;
-    if (mapping.businessType === "wholesaler") Model = Wholesaler;
-    if (mapping.businessType === "service_provider") Model = ServiceProvider;
-    if (mapping.businessType === "course_provider") Model = CourseProvider;
-    if (mapping.businessType === "delivery_partner") Model = DeliveryPartner;
-
-    if (Model) {
-      await Model.findByIdAndUpdate(mapping.businessId, { $set: updateField });
+  // 2. Link lower-level franchises to this newly added franchise
+  if (franchiseLevel === "state" && stateRegex) {
+    // Existing District franchises in this state should point to this State Franchise
+    await Franchise.updateMany(
+      { state: stateRegex, franchiseLevel: "district", _id: { $ne: _id } },
+      { $set: { parentFranchiseId: _id } }
+    );
+  } else if (franchiseLevel === "district" && districtRegex) {
+    // Existing Mandal franchises in this district should point to this District Franchise
+    await Franchise.updateMany(
+      { state: stateRegex, district: districtRegex, franchiseLevel: "mandal", _id: { $ne: _id } },
+      { $set: { parentFranchiseId: _id } }
+    );
+    // Link this District franchise to the State franchise if not already linked
+    const stateFranchise = await Franchise.findOne({
+      state: stateRegex,
+      franchiseLevel: "state",
+      _id: { $ne: _id }
+    }).sort({ createdAt: -1 });
+    if (stateFranchise) {
+      await Franchise.findByIdAndUpdate(_id, { $set: { parentFranchiseId: stateFranchise._id } });
     }
+  }
+
+  // 3. Update direct business models across the territory
+  const models = [Vendor, Manufacturer, Wholesaler, ServiceProvider, CourseProvider, DeliveryPartner, Entrepreneur];
+  for (const M of models) {
+    try {
+      await (M as any).updateMany(query, { $set: updateField });
+    } catch (e) {
+      console.warn(`[remapExistingBusinesses] Warning updating ${(M as any).modelName}:`, e);
+    }
+  }
+
+  // 4. Update Users in territory
+  const userQuery: any = {};
+  if (stateRegex) userQuery["territory.state"] = stateRegex;
+  if (franchiseLevel === "district" && districtRegex) userQuery["territory.district"] = districtRegex;
+  if (franchiseLevel === "mandal" && mandalRegex) userQuery["territory.mandal"] = mandalRegex;
+
+  const userUpdateField =
+    franchiseLevel === "state"
+      ? { "assignedFranchise.stateFranchiseId": _id }
+      : franchiseLevel === "district"
+        ? { "assignedFranchise.districtFranchiseId": _id }
+        : { "assignedFranchise.mandalFranchiseId": _id };
+
+  await User.updateMany(userQuery, { $set: userUpdateField });
+
+  // 5. Auto-assign Territories
+  try {
+    const filter: any = {};
+    if (stateRegex) filter.state = stateRegex;
+    if (franchiseLevel === "district" && districtRegex) filter.district = districtRegex;
+    if (franchiseLevel === "mandal" && mandalRegex) {
+      filter.district = districtRegex;
+      filter.mandal = mandalRegex;
+    }
+    const territories = await Territory.find(filter);
+    const territoryIds = territories.map(t => t._id);
+    if (territoryIds.length > 0) {
+      await Territory.updateMany(
+        { _id: { $in: territoryIds } },
+        { $set: { franchiseId: _id } }
+      );
+      await Franchise.findByIdAndUpdate(_id, {
+        $addToSet: { assignedTerritories: { $each: territoryIds } }
+      });
+    }
+  } catch (terrErr) {
+    console.warn("[remapExistingBusinesses] Warning auto-assigning territories:", terrErr);
   }
 };
 
@@ -1329,6 +1397,14 @@ export const verifyKycApplication = async (
         mandal: app.mandal || "",
       };
 
+      if (!Array.isArray(user.roles)) user.roles = [];
+      if (!user.roles.includes("franchise")) user.roles.push("franchise");
+      if (level === "state" && !user.roles.includes("state_franchise")) user.roles.push("state_franchise");
+      if (level === "district" && !user.roles.includes("district_franchise")) user.roles.push("district_franchise");
+      if (level === "mandal" && !user.roles.includes("mandal_franchise")) user.roles.push("mandal_franchise");
+      user.franchiseLevel = level;
+      user.status = "active";
+
       await user.save();
 
       if (franchise) {
@@ -1600,46 +1676,142 @@ export const verifyKycApplication = async (
         }
 
         referral.referralType = rewardRoleKey as any;
+        referral.status = "approved";
+        await referral.save();
+        await User.findByIdAndUpdate(referral.referrerUserId, {
+          $inc: { successfulReferrals: 1 }
+        });
+      }
 
-        // Fetch dynamic admin-configured onboarding rewards from DB
-        const refSettings = await ReferralSettings.findOne({});
-        const onboardingRewards = refSettings?.onboardingRewards as any;
-        const configuredAmount = onboardingRewards && typeof onboardingRewards[rewardRoleKey] === 'number'
-          ? Number(onboardingRewards[rewardRoleKey])
-          : 0;
+      // Automatically Execute Multi-Tier Commission Distribution based on Role & Territory
+      let feeServiceKey: string | null = null;
+      let effectiveLevel = (app.franchiseLevel || "").toLowerCase().trim();
 
-        if (configuredAmount > 0) {
-          try {
-            const label = rewardRoleKey.replace("_", " ").toUpperCase();
-            await WalletEngine.credit(
-              referral.referrerUserId,
-              configuredAmount,
-              {
-                category: "Referral Bonus",
-                source: "referral",
-                remarks: `${label} referral onboarding approved`,
-                description: `${label} referral onboarding approved`,
-                referenceId: referral._id,
-                referenceType: "REFERRAL"
+      if (targetRole === "franchise" || targetRole === "state_franchise" || targetRole === "district_franchise" || targetRole === "mandal_franchise") {
+        const fcRecord = await Franchise.findOne({ userId: user._id }).sort({ createdAt: -1 });
+        if (!effectiveLevel) {
+          effectiveLevel = (
+            fcRecord?.franchiseLevel ||
+            (user as any).franchiseLevel ||
+            (targetRole === "state_franchise" ? "state" : targetRole === "district_franchise" ? "district" : targetRole === "mandal_franchise" ? "mandal" : "") ||
+            ((app.mandal || user.territory?.mandal) ? "mandal" : (app.district || user.territory?.district) ? "district" : "state")
+          ).toLowerCase().trim();
+        }
+
+        if (effectiveLevel === "state" || targetRole === "state_franchise") feeServiceKey = "state_franchise_assign";
+        else if (effectiveLevel === "district" || targetRole === "district_franchise") feeServiceKey = "district_franchise_assign";
+        else feeServiceKey = "mandal_franchise_assign";
+      } else if (targetRole === "vendor" || targetRole === "food_partner") {
+        feeServiceKey = "vendor_enrollment";
+      }
+
+      if (feeServiceKey) {
+        try {
+          const cleanState = (app.state || user.territory?.state || "").trim();
+          const cleanDist = (app.district || user.territory?.district || "").trim();
+          const cleanMandal = (app.mandal || user.territory?.mandal || "").trim();
+
+          let finalAmount = 0;
+
+          if (targetRole === "franchise" || targetRole === "state_franchise" || targetRole === "district_franchise" || targetRole === "mandal_franchise") {
+            const fc = await Franchise.findOne({ userId: user._id }).sort({ createdAt: -1 });
+
+            // 1. Direct Territory lookup via Franchise assignedTerritories or franchiseId
+            try {
+              let matchedTerritory: any = null;
+              if (fc?.assignedTerritories && fc.assignedTerritories.length > 0) {
+                matchedTerritory = await Territory.findOne({ _id: { $in: fc.assignedTerritories } });
               }
-            );
+              if (!matchedTerritory && fc?._id) {
+                matchedTerritory = await Territory.findOne({ franchiseId: fc._id });
+              }
 
-            referral.status = "rewarded";
-            referral.rewardAmount = configuredAmount;
-            await referral.save();
+              // Fallback to geographical lookup
+              if (!matchedTerritory) {
+                const normState = cleanState.replace(/\s*state$/i, "").trim();
+                const normDist = cleanDist.replace(/\s*district$/i, "").trim();
+                const normMandal = cleanMandal.replace(/\s*mandal$/i, "").trim();
 
-            await User.findByIdAndUpdate(referral.referrerUserId, {
-              $inc: { successfulReferrals: 1 }
-            });
-          } catch (rwErr) {
-            console.error("Error crediting referral onboarding reward:", rwErr);
+                const terrQuery: any = {};
+                if (normState) terrQuery.state = new RegExp(`^${escapeRegex(normState)}`, "i");
+
+                if (effectiveLevel === "state" || targetRole === "state_franchise") {
+                  terrQuery.level = "State";
+                } else if (effectiveLevel === "district" || targetRole === "district_franchise") {
+                  terrQuery.level = "District";
+                  if (normDist) {
+                    terrQuery.$or = [
+                      { district: new RegExp(`^${escapeRegex(normDist)}`, "i") },
+                      { name: new RegExp(`^${escapeRegex(normDist)}`, "i") }
+                    ];
+                  }
+                } else {
+                  terrQuery.level = "Mandal";
+                  if (normDist) {
+                    terrQuery.$or = [
+                      { district: new RegExp(`^${escapeRegex(normDist)}`, "i") },
+                      { name: new RegExp(`^${escapeRegex(normDist)}`, "i") }
+                    ];
+                  }
+                  if (normMandal) {
+                    terrQuery.mandal = new RegExp(`^${escapeRegex(normMandal)}`, "i");
+                  }
+                }
+
+                matchedTerritory = await Territory.findOne(terrQuery);
+              }
+
+              if (matchedTerritory) {
+                if (matchedTerritory.annualFranchiseFee && matchedTerritory.annualFranchiseFee > 0) {
+                  finalAmount = matchedTerritory.annualFranchiseFee;
+                } else if (matchedTerritory.franchiseFeePerYear && matchedTerritory.franchiseFeePerYear > 0) {
+                  finalAmount = matchedTerritory.franchiseFeePerYear;
+                } else if (matchedTerritory.paymentDetails?.amountPaid && matchedTerritory.paymentDetails.amountPaid > 0) {
+                  const rawPaid = matchedTerritory.paymentDetails.amountPaid;
+                  finalAmount = (rawPaid % 118 === 0 || rawPaid % 1180 === 0) ? Math.round(rawPaid / 1.18) : rawPaid;
+                }
+              }
+            } catch (terrErr) {
+              console.warn("Could not lookup territory fee:", terrErr);
+            }
+
+            // 2. Check Franchise record for amountPaid in security deposit
+            if (!finalAmount && fc?.securityDeposit?.amountPaid && fc.securityDeposit.amountPaid > 0) {
+              const rawPaid = fc.securityDeposit.amountPaid;
+              finalAmount = (rawPaid % 118 === 0 || rawPaid % 1180 === 0) ? Math.round(rawPaid / 1.18) : rawPaid;
+            }
+
+            // 3. Check application investment capacity
+            if (!finalAmount && app.investmentCapacity && Number(app.investmentCapacity) > 0) {
+              finalAmount = Number(app.investmentCapacity);
+            }
           }
-        } else {
-          referral.rewardAmount = 0;
-          await referral.save();
-          await User.findByIdAndUpdate(referral.referrerUserId, {
-            $inc: { successfulReferrals: 1 }
+
+          // 4. Fallback to PricingCatalog or standard defaults if not set on territory
+          if (!finalAmount) {
+            const catalogItem = await PricingCatalog.findOne({ serviceKey: feeServiceKey });
+            const defaultAmount = feeServiceKey.includes("state") ? 500000 :
+                                  feeServiceKey.includes("district") ? 100000 :
+                                  feeServiceKey.includes("mandal") ? 25000 : 2999;
+            finalAmount = catalogItem ? catalogItem.amount : defaultAmount;
+          }
+
+          await AssignmentCommissionService.processFeeCommissionSettlement({
+            sourceUserId: user._id,
+            sourceRole: targetRole as any,
+            serviceKey: feeServiceKey,
+            amount: finalAmount,
+            referenceId: app._id,
+            location: {
+              state: app.state || user.territory?.state || (user as any).state || "",
+              district: app.district || user.territory?.district || (user as any).district || "",
+              mandal: app.mandal || user.territory?.mandal || (user as any).mandal || "",
+              franchiseLevel: (effectiveLevel || app.franchiseLevel) as any
+            },
+            notes: `Auto Settlement on Approval for ${app.businessName || user.name} (${feeServiceKey})`
           });
+        } catch (commErr) {
+          console.error(`[AssignmentCommissionService] Error executing auto-commission on approval:`, commErr);
         }
       }
     } catch (refError) {

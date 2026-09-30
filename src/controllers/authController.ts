@@ -9,6 +9,7 @@ import { AuthRequest } from '../middleware/auth';
 import { getRedisClient } from '../config/redis';
 import { generateMasterCustomerId, generateUniversalReferralCode, generateRoleReferenceId } from '../services/identityService';
 import { EmailService } from '../services/emailService';
+import { SmsService } from '../services/smsService';
 import { NotificationHelper } from '../services/notificationHelper';
 
 async function generateReferralCode(name: string): Promise<string> {
@@ -45,17 +46,32 @@ export const sendOtp = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    const isProd = ['production', 'staging'].includes(process.env.NODE_ENV || '');
-    const generatedOtp = isProd
-      ? Math.floor(100000 + Math.random() * 900000).toString()
-      : '1234';
+    // Always generate a dynamic random 6-digit OTP
+    const generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
 
     const redis = getRedisClient();
     const redisKey = `otp:${key}`;
     await redis.set(redisKey, generatedOtp, 'EX', 300);
 
-    console.log(`OTP generated for: ${key}`);
-    res.status(200).json({ success: true, message: 'OTP sent successfully' });
+    console.log(`OTP generated for: ${key} (${generatedOtp})`);
+
+    // Dispatch real SMS via DLT template if phone number is provided
+    if (phone) {
+      const purpose = (req.body.purpose || '').toLowerCase();
+      if (purpose === 'login') {
+        await SmsService.sendLoginOtp(phone, generatedOtp);
+      } else if (purpose === 'reset_password' || purpose === 'forgot_password') {
+        await SmsService.sendPasswordResetOtp(phone, generatedOtp);
+      } else {
+        await SmsService.sendRegistrationOtp(phone, generatedOtp);
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'OTP sent successfully',
+      devOtp: process.env.NODE_ENV !== 'production' ? generatedOtp : undefined
+    });
   } catch (error: any) {
     console.error('Send OTP error:', error);
     res.status(500).json({ message: 'Failed to send OTP', error: error.message });
@@ -74,9 +90,8 @@ export const verifyOtp = async (req: Request, res: Response): Promise<void> => {
     const redis = getRedisClient();
     const redisKey = `otp:${key}`;
     const savedOtp = await redis.get(redisKey);
-    const isDevFallback = process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'staging' && otp === '1234';
 
-    if (savedOtp === otp || isDevFallback) {
+    if (savedOtp && savedOtp === otp) {
       const verifiedKey = `verified:${key}`;
       await redis.set(verifiedKey, 'true', 'EX', 600);
       await redis.del(redisKey);
@@ -98,8 +113,7 @@ export const register = async (req: Request, res: Response): Promise<void> => {
     const redis = getRedisClient();
     const isVerifiedPhone = await redis.get(`verified:${phone}`);
     const isVerifiedEmail = await redis.get(`verified:${email}`);
-    const isDevFallback = process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'staging' && otp === '1234';
-    const isOtpVerified = isVerifiedPhone === 'true' || isVerifiedEmail === 'true' || isDevFallback;
+    const isOtpVerified = isVerifiedPhone === 'true' || isVerifiedEmail === 'true';
     if (!isOtpVerified) {
       res.status(400).json({ message: 'Phone/email verification is pending. Please verify OTP first.' });
       return;
@@ -260,6 +274,13 @@ export const register = async (req: Request, res: Response): Promise<void> => {
     NotificationHelper.notifyNewUserRegistration(savedUser, territory).catch((err) => {
       console.error('Failed to dispatch registration notifications:', err);
     });
+
+    // Dispatch DLT Registration Success SMS
+    if (savedUser.phone) {
+      SmsService.sendCustomerRegistrationSuccess(savedUser.phone, savedUser.name).catch((err) => {
+        console.error('Failed to dispatch registration success SMS:', err);
+      });
+    }
 
     res.status(201).json({
       token,
@@ -673,14 +694,13 @@ export const verifyVendorLoginOtp = async (req: Request, res: Response): Promise
     const redis = getRedisClient();
     const redisKey = `vendor_otp:${email}`;
     const savedOtp = await redis.get(redisKey);
-    const isDevFallback = process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'staging' && otp === '1234';
 
-    if (!savedOtp && !isDevFallback) {
+    if (!savedOtp) {
       res.status(400).json({ success: false, message: 'OTP has expired or was not requested. Please request a new OTP.' });
       return;
     }
 
-    if (savedOtp !== otp && !isDevFallback) {
+    if (savedOtp !== otp) {
       res.status(400).json({ success: false, message: 'Invalid OTP code. Please check your email and try again.' });
       return;
     }

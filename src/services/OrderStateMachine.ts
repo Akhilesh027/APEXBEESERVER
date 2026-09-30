@@ -55,6 +55,8 @@ export class OrderStateMachine {
   // changes that make sense, but reject illegal or duplicate transitions and enforce safety.
   private static readonly transitions: Record<string, string[]> = {
     'Placed': [
+      'Accepted',
+      'accepted',
       'Confirmed',
       'Packed',
       'Preparing',
@@ -70,6 +72,8 @@ export class OrderStateMachine {
       'Payment Rejected'
     ],
     'placed': [
+      'Accepted',
+      'accepted',
       'Confirmed',
       'Packed',
       'Preparing',
@@ -427,7 +431,13 @@ export class OrderStateMachine {
     session?: ClientSession
   ): Promise<IOrder> {
     const executeTransition = async (sessionToUse: ClientSession) => {
-      const order = await Order.findById(orderId).session(sessionToUse);
+      let order: any = null;
+      if (mongoose.Types.ObjectId.isValid(orderId)) {
+        order = await Order.findById(orderId).session(sessionToUse);
+      }
+      if (!order) {
+        order = await Order.findOne({ orderNumber: String(orderId) }).session(sessionToUse);
+      }
       if (!order) {
         throw new Error('Order not found');
       }

@@ -6,6 +6,7 @@ import { Vendor } from "../models/Vendor";
 import { User } from "../models/User";
 import { Territory } from "../models/Territory";
 import { Referral } from "../models/Referral";
+import { Franchise } from "../models/Franchise";
 import { NotificationHelper } from "../services/notificationHelper";
 
 const mapApplicationTypeToRole = (appType: string): string => {
@@ -283,35 +284,117 @@ export const getUserApplications = async (
 ): Promise<void> => {
   try {
     const { userId } = req.params;
+    const queryEmail = (req.query.email as string)?.trim();
+    const queryPhone = ((req.query.phone || req.query.mobile) as string)?.trim();
 
     const queryFilters: any[] = [];
-    if (userId) {
-      queryFilters.push({ userId });
-      if (mongoose.Types.ObjectId.isValid(userId)) {
-        queryFilters.push({ userId: new mongoose.Types.ObjectId(userId) });
+
+    // Helper to register an email filter and lookup matching user
+    const addEmailFilter = async (em: string) => {
+      if (!em) return;
+      const clean = em.trim();
+      queryFilters.push({ email: new RegExp(`^${clean}$`, "i") });
+      const u = await User.findOne({ email: new RegExp(`^${clean}$`, "i") });
+      if (u) {
+        queryFilters.push({ userId: u._id });
+        if (u.phone) queryFilters.push({ mobile: u.phone.trim() });
+      }
+    };
+
+    // Helper to register a phone filter and lookup matching user
+    const addPhoneFilter = async (ph: string) => {
+      if (!ph) return;
+      const clean = ph.trim();
+      queryFilters.push({ mobile: clean });
+      const u = await User.findOne({ phone: clean });
+      if (u) {
+        queryFilters.push({ userId: u._id });
+        if (u.email) queryFilters.push({ email: new RegExp(`^${u.email.trim()}$`, "i") });
+      }
+    };
+
+    if (userId && userId !== "all" && userId !== "undefined" && userId !== "null") {
+      const decodedParam = decodeURIComponent(userId).trim();
+
+      if (mongoose.Types.ObjectId.isValid(decodedParam)) {
+        const objId = new mongoose.Types.ObjectId(decodedParam);
+        queryFilters.push({ userId: objId });
+        queryFilters.push({ userId: decodedParam });
+        const user = await User.findById(objId);
+        if (user) {
+          if (user.email) queryFilters.push({ email: new RegExp(`^${user.email.trim()}$`, "i") });
+          if (user.phone) queryFilters.push({ mobile: user.phone.trim() });
+        }
+      } else if (decodedParam.includes("@")) {
+        await addEmailFilter(decodedParam);
+      } else if (/^\d{10}$/.test(decodedParam)) {
+        await addPhoneFilter(decodedParam);
+      } else {
+        queryFilters.push({ userId: decodedParam });
       }
     }
 
-    // Also look up user in DB to find their email/phone
-    if (userId && mongoose.Types.ObjectId.isValid(userId)) {
-      const user = await User.findById(userId);
-      if (user) {
-        if (user.email) queryFilters.push({ email: new RegExp(`^${user.email.trim()}$`, "i") });
-        if (user.phone) queryFilters.push({ mobile: user.phone.trim() });
-      }
+    if (queryEmail) {
+      await addEmailFilter(queryEmail);
+    }
+
+    if (queryPhone) {
+      await addPhoneFilter(queryPhone);
     }
 
     if ((req as any).user) {
-      if ((req as any).user._id) queryFilters.push({ userId: (req as any).user._id });
-      if ((req as any).user.email) queryFilters.push({ email: new RegExp(`^${(req as any).user.email.trim()}$`, "i") });
-      if ((req as any).user.phone) queryFilters.push({ mobile: (req as any).user.phone.trim() });
+      const authedUser = (req as any).user;
+      if (authedUser._id) queryFilters.push({ userId: authedUser._id });
+      if (authedUser.email) queryFilters.push({ email: new RegExp(`^${authedUser.email.trim()}$`, "i") });
+      if (authedUser.phone) queryFilters.push({ mobile: authedUser.phone.trim() });
     }
 
-    const applications = await BusinessApplication.find(
-      queryFilters.length > 0 ? { $or: queryFilters } : { userId }
-    ).sort({
-      createdAt: -1,
-    });
+    let applications: any[] = [];
+    if (queryFilters.length > 0) {
+      applications = await BusinessApplication.find({ $or: queryFilters }).sort({
+        createdAt: -1,
+      });
+
+      // Auto-heal / backfill: check if applicant has a Franchise record without BusinessApplication
+      try {
+        const franchiseFilters = queryFilters.filter(f => f.email || f.mobile || f.userId);
+        if (franchiseFilters.length > 0) {
+          const franchises = await Franchise.find({ $or: franchiseFilters });
+          for (const fc of franchises) {
+            const hasApp = applications.some((a) =>
+              String(a.applicationType).toLowerCase().includes("franchise") ||
+              String(a.roleId).toLowerCase().includes("franchise")
+            );
+            if (!hasApp) {
+              const newApp = await BusinessApplication.create({
+                userId: fc.userId,
+                applicationType: "franchise",
+                roleId: "franchise",
+                businessName: fc.businessName || `${fc.ownerName}'s Franchise`,
+                ownerName: fc.ownerName,
+                mobile: fc.mobile,
+                email: fc.email,
+                state: fc.state,
+                district: fc.district || "",
+                mandal: fc.mandal || "",
+                address: fc.address || "Address Pending",
+                pincode: fc.pincode || "",
+                franchiseLevel: fc.franchiseLevel || "mandal",
+                investmentCapacity: String(fc.securityDeposit?.amountPaid || ""),
+                status: fc.status === "active" ? "approved" : "pre_approved",
+                kycStatus: fc.kycStatus === "Approved" ? "verified" : "pending" as any,
+                assignedFranchise: {
+                  mandalFranchiseId: fc._id,
+                },
+              });
+              applications.unshift(newApp);
+            }
+          }
+        }
+      } catch (autoErr) {
+        console.warn("[Auto-backfill Franchise Application Error]:", autoErr);
+      }
+    }
 
     const normalizedApps = applications.map((app: any) => ({
       _id: app._id,
@@ -328,6 +411,11 @@ export const getUserApplications = async (
       state: app.state,
       district: app.district,
       mandal: app.mandal,
+      address: app.address,
+      pincode: app.pincode,
+      primaryCategory: app.primaryCategory || app.category || "",
+      category: app.category || app.primaryCategory || "",
+      subCategory: app.subCategory || "",
       restaurantName: app.restaurantName || app.businessName,
       foodBusinessType: app.foodBusinessType || "RESTAURANT",
       fssaiNumber: app.fssaiNumber || "",

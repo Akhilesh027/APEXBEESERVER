@@ -106,7 +106,7 @@ export class WalletEngine {
     return this.runInTransaction(session, async (sess) => {
       const walletBefore = await this.getOrCreateWallet(userId, sess);
       const txId = this.generateTxId();
-      const opKey = params.operationKey || (params.referenceId ? `${params.referenceType || params.category || 'credit'}_${params.referenceId}` : undefined);
+      const opKey = params.operationKey || (params.referenceId ? `${userId}_${params.referenceType || params.category || 'credit'}_${params.referenceId}` : undefined);
 
       const newEntry: any = {
         transactionId: txId,
@@ -194,7 +194,7 @@ export class WalletEngine {
     return this.runInTransaction(session, async (sess) => {
       const walletBefore = await this.getOrCreateWallet(userId, sess);
       const txId = this.generateTxId();
-      const opKey = params.operationKey || (params.referenceId ? `${params.referenceType || params.category || 'hold'}_${params.referenceId}` : undefined);
+      const opKey = params.operationKey || (params.referenceId ? `${userId}_${params.referenceType || params.category || 'hold'}_${params.referenceId}` : undefined);
 
       if (opKey) {
         const existingTx = await WalletTransaction.findOne({ operationKey: opKey }).session(sess);
@@ -288,7 +288,7 @@ export class WalletEngine {
   ): Promise<IWallet> {
     return this.runInTransaction(session, async (sess) => {
       const walletBefore = await this.getOrCreateWallet(userId, sess);
-      const opKey = params.operationKey || (params.referenceId ? `release_${params.referenceId}` : undefined);
+      const opKey = params.operationKey || (params.referenceId ? `${userId}_release_${params.referenceId}` : undefined);
 
       // 1. Attempt positional atomic update on matching pending entry in legacy array
       let result = await Wallet.findOneAndUpdate(

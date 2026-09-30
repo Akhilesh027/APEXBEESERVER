@@ -38,11 +38,7 @@ export interface IBusinessApplication extends Document {
     districtFranchiseId?: mongoose.Types.ObjectId;
     mandalFranchiseId?: mongoose.Types.ObjectId;
   };
-  kycStatus: {
-  type: String,
-  enum: ["not_uploaded", "pending", "verified", "rejected"],
-  default: "not_uploaded"
-}
+  kycStatus?: "not_uploaded" | "pending" | "verified" | "rejected";
   documents?: {
     aadhaar?: string;
     pan?: string;
@@ -88,20 +84,25 @@ const BusinessApplicationSchema = new Schema<IBusinessApplication>(
     email: { type: String, required: true },
 
     state: { type: String, required: true },
-    district: { type: String, required: true },
-    mandal: { type: String, required: true },
+    district: { type: String, default: "" },
+    mandal: { type: String, default: "" },
     village: { type: String, default: "" },
     stateId: { type: Schema.Types.ObjectId, ref: "StateMaster", default: null },
     districtId: { type: Schema.Types.ObjectId, ref: "DistrictMaster", default: null },
     mandalId: { type: Schema.Types.ObjectId, ref: "MandalMaster", default: null },
 
-    address: { type: String, required: true },
-    pincode: { type: String, required: true },
-assignedFranchise: {
-  stateFranchiseId: { type: Schema.Types.ObjectId, ref: "Franchise", default: null },
-  districtFranchiseId: { type: Schema.Types.ObjectId, ref: "Franchise", default: null },
-  mandalFranchiseId: { type: Schema.Types.ObjectId, ref: "Franchise", default: null },
-},
+    address: { type: String, default: "" },
+    pincode: { type: String, default: "" },
+    assignedFranchise: {
+      stateFranchiseId: { type: Schema.Types.ObjectId, ref: "Franchise", default: null },
+      districtFranchiseId: { type: Schema.Types.ObjectId, ref: "Franchise", default: null },
+      mandalFranchiseId: { type: Schema.Types.ObjectId, ref: "Franchise", default: null },
+    },
+    kycStatus: {
+      type: String,
+      enum: ["not_uploaded", "pending", "verified", "rejected"],
+      default: "not_uploaded",
+    },
     gstNumber: { type: String, default: "" },
     panNumber: { type: String, default: "" },
     experience: { type: String, default: "" },

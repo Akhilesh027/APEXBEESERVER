@@ -1,7 +1,10 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth';
+import { User } from '../models/User';
+import { Order } from '../models/Order';
 import { RazorpayService } from '../services/razorpayService';
 import { WalletEngine } from '../services/WalletEngine';
+import { SmsService } from '../services/smsService';
 
 /**
  * GET /api/payment/config
@@ -85,6 +88,24 @@ export const verifyOrderPayment = async (req: AuthRequest, res: Response) => {
         message: 'Invalid Razorpay payment signature'
       });
     }
+
+    // Dispatch DLT Payment Success SMS if order is known
+    try {
+      const orderDoc = await Order.findOne({
+        $or: [
+          { 'paymentDetails.orderId': razorpayOrderId },
+          { orderNumber: req.body.orderNumber || '' }
+        ]
+      });
+      if (orderDoc) {
+        const customerPhone = orderDoc.shippingAddress?.phone || orderDoc.shippingAddress?.mobile;
+        if (customerPhone) {
+          SmsService.sendPaymentSuccessSms(customerPhone, orderDoc.totalAmount, orderDoc.orderNumber).catch((err) => {
+            console.error('[PaymentController] Payment Success SMS error:', err);
+          });
+        }
+      }
+    } catch {}
 
     return res.status(200).json({
       success: true,
@@ -194,6 +215,16 @@ export const verifyWalletDeposit = async (req: AuthRequest, res: Response) => {
     } catch (schedErr) {
       console.warn('[PaymentController] Note: SubscriptionScheduler notice during wallet deposit:', schedErr);
     }
+
+    // Dispatch DLT Wallet Credit SMS
+    try {
+      const user = await User.findById(userId);
+      if (user?.phone) {
+        SmsService.sendWalletCreditSms(user.phone, numAmount, wallet.availableBalance).catch((err) => {
+          console.error('[PaymentController] Wallet credit SMS error:', err);
+        });
+      }
+    } catch {}
 
     return res.status(200).json({
       success: true,

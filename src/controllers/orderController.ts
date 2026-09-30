@@ -91,7 +91,7 @@ const autoAssignDeliveryPartner = async (order: any, excludedPartnerIds: string[
       order.deliveryType = 'Platform';
 
       if (!order.deliveryVerification || !order.deliveryVerification.otp) {
-        const otpCode = Math.floor(1000 + Math.random() * 9000).toString();
+        const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
         order.deliveryVerification = {
           otp: otpCode,
           otpExpires: new Date(Date.now() + 24 * 60 * 60 * 1000),
@@ -100,7 +100,7 @@ const autoAssignDeliveryPartner = async (order: any, excludedPartnerIds: string[
         };
       }
 
-      const pickupOtpCode = Math.floor(1000 + Math.random() * 9000).toString();
+      const pickupOtpCode = Math.floor(100000 + Math.random() * 900000).toString();
       order.pickupVerification = {
         otp: pickupOtpCode,
         verified: false
@@ -196,9 +196,9 @@ const handleManualAssignment = async (order: any, agentId: string) => {
     await assignment.save();
 
     // Generate and save OTP on Order if not present
-    let otpCode = '1234';
+    let otpCode = '';
     if (!order.deliveryVerification || !order.deliveryVerification.otp) {
-      otpCode = Math.floor(1000 + Math.random() * 9000).toString();
+      otpCode = Math.floor(100000 + Math.random() * 900000).toString();
       order.deliveryVerification = {
         otp: otpCode,
         otpExpires: new Date(Date.now() + 24 * 60 * 60 * 1000),
@@ -211,7 +211,7 @@ const handleManualAssignment = async (order: any, agentId: string) => {
 
     if (!order.pickupVerification || !order.pickupVerification.otp) {
       order.pickupVerification = {
-        otp: Math.floor(1000 + Math.random() * 9000).toString(),
+        otp: Math.floor(100000 + Math.random() * 900000).toString(),
         verified: false
       };
     }
@@ -760,7 +760,22 @@ export const acceptOrderWithPrepTime = async (req: Request, res: Response) => {
     const { id } = req.params;
     const prepMinutes = Math.max(5, Math.min(180, Number(req.body.prepMinutes) || Number(req.body.estimatedDeliveryMinutes) || Number(req.body.preparationTimeMinutes) || 20));
 
-    const order = await Order.findById(id);
+    let order: any = null;
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      order = await Order.findById(id);
+    }
+    if (!order) {
+      order = await Order.findOne({ orderNumber: id });
+    }
+    if (!order) {
+      order = await Order.findOne({
+        $or: [
+          { orderNumber: new RegExp(`^${id}$`, "i") },
+          { "orderSummary.orderNumber": id }
+        ]
+      });
+    }
+
     if (!order) {
       return res.status(404).json({ success: false, message: 'Order not found' });
     }
@@ -899,11 +914,13 @@ export const getOrders = async (req: Request, res: Response) => {
 
 export const getOrderById = async (req: Request, res: Response) => {
   try {
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
-      return res.status(400).json({ success: false, message: "Invalid ID format" });
+    let order: any = null;
+    if (mongoose.Types.ObjectId.isValid(req.params.id)) {
+      order = await Order.findById(req.params.id);
     }
-
-    const order = await Order.findById(req.params.id);
+    if (!order) {
+      order = await Order.findOne({ orderNumber: req.params.id });
+    }
     if (!order) {
       return res.status(404).json({ success: false, message: "Resource not found" });
     }
@@ -944,11 +961,13 @@ export const getOrderById = async (req: Request, res: Response) => {
 
 export const updateOrder = async (req: Request, res: Response) => {
   try {
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
-      return res.status(400).json({ success: false, message: "Invalid ID format" });
+    let currentOrder: any = null;
+    if (mongoose.Types.ObjectId.isValid(req.params.id)) {
+      currentOrder = await Order.findById(req.params.id);
     }
-
-    const currentOrder = await Order.findById(req.params.id);
+    if (!currentOrder) {
+      currentOrder = await Order.findOne({ orderNumber: req.params.id });
+    }
     if (!currentOrder) {
       return res.status(404).json({ success: false, message: "Resource not found" });
     }

@@ -4,7 +4,9 @@ import { AuthRequest } from "../middleware/auth";
 import { Wallet } from "../models/Wallet";
 import { WalletEngine } from '../services/WalletEngine';
 import { Franchise } from "../models/Franchise";
+import { User } from "../models/User";
 import { NotificationHelper } from "../services/notificationHelper";
+import { SmsService } from "../services/smsService";
 
 // POST /api/wallet/withdrawals
 export const createWithdrawalRequest = async (req: AuthRequest, res: Response) => {
@@ -314,11 +316,17 @@ export const requestWithdrawalOtp = async (req: AuthRequest, res: Response) => {
       otpStore.set(cacheKey, otp);
     }
 
-    // Return the generated OTP in response for testing/client simulation simulation
+    // Send SMS OTP to user's registered phone
+    const user = await User.findById(userId);
+    if (user?.phone) {
+      await SmsService.sendLoginOtp(user.phone, otp);
+    }
+
+    // Return response with dev fallback for testing
     res.status(200).json({
       success: true,
       message: "SMS Verification OTP code sent to your registered phone number",
-      otp // client can print this in test console log
+      devOtp: process.env.NODE_ENV !== 'production' ? otp : undefined
     });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
@@ -358,8 +366,7 @@ export const verifyWithdrawalOtp = async (req: AuthRequest, res: Response) => {
       cachedOtp = otpStore.get(cacheKey) || '';
     }
 
-    // Allow mock/standard bypass '123456' for local testing
-    if (inputOtp !== '123456' && cachedOtp !== inputOtp) {
+    if (!cachedOtp || cachedOtp !== inputOtp) {
       return res.status(400).json({ success: false, message: "Invalid or expired verification OTP code" });
     }
 
@@ -410,6 +417,14 @@ export const verifyWithdrawalOtp = async (req: AuthRequest, res: Response) => {
         netAmount: net
       }
     });
+
+    // Dispatch DLT Wallet Withdrawal Confirmation SMS
+    const user = await User.findById(userId);
+    if (user?.phone) {
+      SmsService.sendWalletWithdrawalSms(user.phone, reqAmount).catch((err) => {
+        console.error('Failed to send wallet withdrawal SMS:', err);
+      });
+    }
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
   }

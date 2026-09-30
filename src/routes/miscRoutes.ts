@@ -22,10 +22,14 @@ import {
   createTrainingVideo,
   getTrainingVideos,
   triggerLocationSeed,
-  updatePanIndiaProducts
+  updatePanIndiaProducts,
+  testSendSms
 } from "../controllers/miscController";
 
 const router = Router();
+
+// Test SMS Route
+router.post("/sms/test", testSendSms);
 
 // Test Seeding & Product Scope Routes
 router.get("/seed-location-test", triggerLocationSeed);

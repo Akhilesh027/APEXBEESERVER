@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import mongoose from "mongoose";
+import jwt from "jsonwebtoken";
 import { Territory } from "../models/Territory";
 import { Franchise } from "../models/Franchise";
 import { User } from "../models/User";
@@ -99,12 +100,18 @@ export const createFranchiseBookingOrder = async (req: Request, res: Response) =
         : advVal;
 
     const isAdvance = String(paymentMode).toUpperCase() === "ADVANCE";
-    const payableAmount = req.body.amount && Number(req.body.amount) > 0
+    const basePayableAmount = req.body.baseAmount && Number(req.body.baseAmount) > 0
+      ? Number(req.body.baseAmount)
+      : req.body.amount && Number(req.body.amount) > 0
       ? Number(req.body.amount)
       : isAdvance ? minAdvance : annualFee;
-    const balanceAmount = isAdvance ? Math.max(0, annualFee - payableAmount) : 0;
 
-    if (payableAmount <= 0) {
+    const gstRate = 18;
+    const gstAmount = Math.round((basePayableAmount * gstRate) / 100);
+    const totalPayableWithGst = basePayableAmount + gstAmount;
+    const balanceAmount = isAdvance ? Math.max(0, annualFee - basePayableAmount) : 0;
+
+    if (totalPayableWithGst <= 0) {
       return res.status(400).json({
         success: false,
         message: "Calculated payable booking amount is invalid",
@@ -123,23 +130,30 @@ export const createFranchiseBookingOrder = async (req: Request, res: Response) =
       mandal: mandal ? String(mandal).trim() : "",
       paymentMode: isAdvance ? "ADVANCE" : "FULL",
       annualFee,
-      payableAmount,
+      basePayableAmount,
+      gstRate,
+      gstAmount,
+      payableAmount: totalPayableWithGst,
       balanceAmount,
       territoryId: territory?._id ? String(territory._id) : "",
     };
 
-    const razorpayOrder = await RazorpayService.createOrder(payableAmount, receipt, notes);
+    const razorpayOrder = await RazorpayService.createOrder(totalPayableWithGst, receipt, notes);
 
     return res.status(200).json({
       success: true,
       orderId: razorpayOrder.id,
-      amount: payableAmount,
+      amount: totalPayableWithGst,
       currency: "INR",
       keyId: razorpayOrder.keyId,
       receipt: razorpayOrder.receipt,
       pricing: {
         annualFee,
-        payableAmount,
+        basePayableAmount,
+        gstRate,
+        gstAmount,
+        payableAmount: totalPayableWithGst,
+        totalPayable: totalPayableWithGst,
         balanceAmount,
         paymentMode: isAdvance ? "ADVANCE" : "FULL",
         advancePercentage: advType === "percentage" ? advVal : undefined,
@@ -257,19 +271,27 @@ export const verifyFranchiseBookingPayment = async (req: Request, res: Response)
     const paidAmt = Number(amountPaid || 0);
 
     // 1. Find or create User
-    let user = await User.findOne({ email });
-    if (!user && phone) {
-      user = await User.findOne({ phone });
+    const cleanEmail = String(email || "").trim().toLowerCase();
+    const cleanPhone = String(phone || "").trim();
+
+    let user = await User.findOne({ email: new RegExp(`^${cleanEmail}$`, "i") });
+    if (!user && cleanPhone) {
+      user = await User.findOne({ phone: cleanPhone });
     }
     if (!user) {
       user = await User.create({
         name,
-        email,
-        phone,
-        roles: ["customer"],
+        email: cleanEmail,
+        phone: cleanPhone,
+        roles: ["customer", "franchise"],
         address: address || "Address Pending",
         pincode: pincode || "",
       });
+    } else {
+      if (!user.roles?.includes("franchise" as any)) {
+        user.roles = [...(user.roles || ["customer"]), "franchise" as any];
+        await user.save();
+      }
     }
 
     // 2. Find or create Franchise partner record
@@ -281,8 +303,8 @@ export const verifyFranchiseBookingPayment = async (req: Request, res: Response)
         userId: user._id,
         businessName: businessName || `${name}'s Franchise`,
         ownerName: name,
-        email,
-        mobile: phone,
+        email: cleanEmail,
+        mobile: cleanPhone,
         franchiseCode,
         franchiseLevel: String(level).toLowerCase() as any,
         state: String(state).trim(),
@@ -350,8 +372,8 @@ export const verifyFranchiseBookingPayment = async (req: Request, res: Response)
         currentFranchisee: {
           franchiseId: franchise._id,
           name,
-          phone,
-          email,
+          phone: cleanPhone,
+          email: cleanEmail,
           assignedAt: now,
         },
         status: "Active",
@@ -372,8 +394,8 @@ export const verifyFranchiseBookingPayment = async (req: Request, res: Response)
       territory.currentFranchisee = {
         franchiseId: franchise._id,
         name,
-        phone,
-        email,
+        phone: cleanPhone,
+        email: cleanEmail,
         assignedAt: now,
       };
       territory.franchiseHistory = territory.franchiseHistory || [];
@@ -392,34 +414,46 @@ export const verifyFranchiseBookingPayment = async (req: Request, res: Response)
     });
 
     // Create or update BusinessApplication with status: "pre_approved" (payment done, KYC required)
+    let savedApplication: any = null;
     try {
       if (user) {
         let application = await BusinessApplication.findOne({
-          userId: user._id,
+          $or: [
+            { userId: user._id },
+            { email: new RegExp(`^${cleanEmail}$`, "i") },
+            ...(cleanPhone ? [{ mobile: cleanPhone }] : []),
+          ],
           applicationType: "franchise",
         });
 
         if (application) {
+          application.userId = user._id;
           application.status = "pre_approved";
           application.kycStatus = "pending" as any;
-          application.businessName = businessName || application.businessName;
+          application.businessName = businessName || application.businessName || `${name}'s Franchise`;
+          application.ownerName = name || application.ownerName;
+          application.mobile = cleanPhone || application.mobile;
+          application.email = cleanEmail || application.email;
           application.state = String(state).trim();
           application.district = district ? String(district).trim() : application.district;
           application.mandal = mandal ? String(mandal).trim() : application.mandal;
+          application.address = address || application.address || "Address Pending";
+          application.pincode = pincode || application.pincode || "";
           application.franchiseLevel = String(level).toLowerCase();
+          application.investmentCapacity = String(paidAmt);
           application.assignedFranchise = {
             mandalFranchiseId: franchise._id,
           };
-          await application.save();
+          savedApplication = await application.save();
         } else {
-          await BusinessApplication.create({
+          savedApplication = await BusinessApplication.create({
             userId: user._id,
             applicationType: "franchise",
             roleId: "franchise",
             businessName: businessName || `${name}'s Franchise`,
             ownerName: name,
-            mobile: phone,
-            email,
+            mobile: cleanPhone,
+            email: cleanEmail,
             state: String(state).trim(),
             district: district ? String(district).trim() : "",
             mandal: mandal ? String(mandal).trim() : "",
@@ -456,7 +490,7 @@ export const verifyFranchiseBookingPayment = async (req: Request, res: Response)
       });
 
       await EmailService.sendFranchiseBookingConfirmation({
-        to: email,
+        to: cleanEmail,
         name,
         territoryName: `${territory.name} [${territory.ftid}]`,
         level,
@@ -468,11 +502,45 @@ export const verifyFranchiseBookingPayment = async (req: Request, res: Response)
       console.warn("[Franchise Booking Notification Warning]:", nErr);
     }
 
+    // Issue JWT token for applicant
+    const token = jwt.sign(
+      { id: user._id, email: user.email, roles: user.roles },
+      process.env.JWT_SECRET || "supersecretjwtkeyforapexbeebusinessoperatingnetwork",
+      { expiresIn: "30d" }
+    );
+
     return res.status(200).json({
       success: true,
       message: `Congratulations! ${territory.level} territory "${territory.name}" [${territory.ftid}] is successfully booked and locked in your name.`,
       territory,
       franchise,
+      application: savedApplication ? {
+        _id: savedApplication._id,
+        userId: savedApplication.userId,
+        role: "franchise",
+        roleId: "franchise",
+        applicationType: "franchise",
+        status: savedApplication.status,
+        createdAt: savedApplication.createdAt,
+        businessName: savedApplication.businessName,
+        ownerName: savedApplication.ownerName,
+        mobile: savedApplication.mobile,
+        email: savedApplication.email,
+        state: savedApplication.state,
+        district: savedApplication.district,
+        mandal: savedApplication.mandal,
+        address: savedApplication.address,
+        pincode: savedApplication.pincode,
+        documents: savedApplication.documents || {},
+      } : undefined,
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        roles: user.roles,
+      },
+      token,
       receipt: {
         ftid: territory.ftid,
         territoryName: territory.name,

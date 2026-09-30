@@ -136,13 +136,9 @@ export const sendAcademyOtp = async (req: Request, res: Response) => {
       return res.status(429).json({ success: false, message: 'Too many OTP requests for this mobile number. Please try again later.' });
     }
 
-    // 2. Generate random 4-digit code and token
+    // 2. Generate random 6-digit code and token
     const verificationToken = new mongoose.Types.ObjectId().toString();
-    let otpCode = '1234';
-
-    if (!allowStaticOtp()) {
-      otpCode = String(1000 + Math.floor(Math.random() * 9000));
-    }
+    const otpCode = String(100000 + Math.floor(Math.random() * 900000));
 
     // 3. Save to Redis (5 minutes expiry)
     const redisKey = `academy:otp:${normalized}:${verificationToken}`;
@@ -178,14 +174,6 @@ export const verifyAcademyOtp = async (req: Request, res: Response) => {
 
     const normalized = normalizePhone(mobile);
     const redis = getRedisClient();
-
-    // Static bypass for development / tests
-    if (allowStaticOtp() && otp === '1234') {
-      const verifiedKey = `academy:verified:${normalized}`;
-      await redis.set(verifiedKey, 'true', 'EX', 600);
-      return res.status(200).json({ success: true, message: 'OTP verified successfully' });
-    }
-
     if (!verificationToken) {
       return res.status(400).json({ success: false, message: 'verificationToken is required' });
     }
@@ -290,11 +278,6 @@ export const createAcademyLead = async (req: Request, res: Response) => {
     } else {
       const isVerifiedToken = await redis.get(verifiedKey);
       isVerified = isVerifiedToken === 'true';
-    }
-
-    // Static bypass for development / tests
-    if (!isVerified && allowStaticOtp() && req.body.otp === '1234') {
-      isVerified = true;
     }
 
     if (!isVerified) {

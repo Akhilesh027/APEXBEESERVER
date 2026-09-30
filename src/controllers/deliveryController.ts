@@ -13,6 +13,7 @@ import { Vendor } from '../models/Vendor';
 import { RestaurantProfile } from '../models/RestaurantProfile';
 import LocalShopSubscription from '../models/LocalShopSubscription';
 import { WalletEngine } from '../services/WalletEngine';
+import { SmsService } from '../services/smsService';
 import { AuthRequest } from '../middleware/auth';
 
 const generateToken = (id: string, email: string, roles: RoleType[]): string => {
@@ -52,8 +53,17 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    tempOtpStore.set(phone, '1234');
-    res.status(200).json({ success: true, message: 'OTP sent successfully' });
+    // Always generate dynamic random 6-digit OTP
+    const generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
+
+    tempOtpStore.set(phone, generatedOtp);
+    await SmsService.sendLoginOtp(phone, generatedOtp);
+
+    res.status(200).json({
+      success: true,
+      message: 'OTP sent successfully',
+      devOtp: process.env.NODE_ENV !== 'production' ? generatedOtp : undefined
+    });
   } catch (error: any) {
     res.status(500).json({ message: 'Login failed', error: error.message });
   }
@@ -69,7 +79,7 @@ export const verifyOtp = async (req: Request, res: Response): Promise<void> => {
     }
 
     const savedOtp = tempOtpStore.get(phone);
-    if (otp !== '1234' && savedOtp !== otp) {
+    if (!savedOtp || savedOtp !== otp) {
       res.status(400).json({ message: 'Invalid OTP code' });
       return;
     }
@@ -562,6 +572,15 @@ export const reachedCustomer = async (req: AuthRequest, res: Response): Promise<
         timeline: order.timeline,
         orderStatusObj: order.orderStatusObj
       });
+
+      // Dispatch Delivery OTP via SMS to Customer
+      const customerPhone = order.shippingAddress?.phone || order.shippingAddress?.mobile;
+      const otp = order.deliveryVerification?.otp;
+      if (customerPhone && otp) {
+        SmsService.sendDeliveryOtp(customerPhone, otp).catch((err) => {
+          console.error('[reachedCustomer] Failed to dispatch Delivery OTP SMS:', err);
+        });
+      }
     }
     if (assignment) {
       await DeliveryAssignment.findByIdAndUpdate(assignment._id, {
@@ -1012,7 +1031,28 @@ export const getPayouts = async (req: AuthRequest, res: Response): Promise<void>
 };
 
 export const resendDeliveryOtp = async (req: AuthRequest, res: Response): Promise<void> => {
-  res.status(200).json({ success: true, message: 'OTP resent' });
+  try {
+    const { id } = req.params;
+    const { order } = await findOrderAndAssignment(id);
+    if (!order) {
+      res.status(404).json({ success: false, message: 'Order not found' });
+      return;
+    }
+
+    const customerPhone = order.shippingAddress?.phone || order.shippingAddress?.mobile;
+    const otp = order.deliveryVerification?.otp;
+
+    if (!customerPhone || !otp) {
+      res.status(400).json({ success: false, message: 'Customer phone or delivery OTP is missing for this order.' });
+      return;
+    }
+
+    await SmsService.sendDeliveryOtp(customerPhone, otp);
+    res.status(200).json({ success: true, message: `Delivery verification OTP resent to +91 ${customerPhone}` });
+  } catch (err: any) {
+    console.error('[resendDeliveryOtp] Error:', err);
+    res.status(500).json({ success: false, message: 'Failed to resend OTP', error: err.message });
+  }
 };
 
 export const getDeliveryAgents = async (req: AuthRequest, res: Response): Promise<void> => {

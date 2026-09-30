@@ -4,6 +4,7 @@ import { Notification } from '../models/Notification';
 import { NotificationPreference } from '../models/NotificationPreference';
 import { User } from '../../../models/User';
 import { sendRealtimeNotification } from '../websocket/socketServer';
+import { SmsService } from '../../../services/smsService';
 
 export class NotificationService {
   /**
@@ -227,13 +228,16 @@ ${html}
   private static async dispatchSMS(recipient: any, template: any, payload: Record<string, any>, notification: any) {
     try {
       const smsBody = this.compileTemplate(template.channels.sms.textTemplate || template.bodyTemplate, payload);
-      const phone = recipient.phone || recipient.mobile || 'Unknown';
+      const phone = recipient.phone || recipient.mobile || '';
+      const templateId = template.channels?.sms?.templateId || '1777179067259405148';
 
-      console.log(`\n------------------------------------------------------
-[SMS GATEWAY SEND]
-To: +91 ${phone}
-Message: ${smsBody}
-------------------------------------------------------`);
+      if (phone) {
+        await SmsService.sendSms({
+          phone,
+          message: smsBody,
+          templateId
+        });
+      }
 
       notification.deliveryTimeline.push({ status: 'sent', channel: 'sms', timestamp: new Date() });
       notification.deliveryTimeline.push({ status: 'delivered', channel: 'sms', timestamp: new Date() });
