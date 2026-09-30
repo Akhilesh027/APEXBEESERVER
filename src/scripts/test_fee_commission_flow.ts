@@ -182,12 +182,12 @@ async function runSimulation() {
     const stateWallet = await Wallet.findOne({ userId: stateFranchiseUser._id });
 
     console.log("VERIFIED WALLET BALANCES:");
-    console.log(`- Level 1 Referrer (${l1User.name}): Expected ₹1,000 | Actual: ₹${l1Wallet?.balance}`);
-    console.log(`- Level 2 Referrer (${l2User.name}): Expected ₹300   | Actual: ₹${l2Wallet?.balance}`);
-    console.log(`- Level 3 Referrer (${l3User.name}): Expected ₹200   | Actual: ₹${l3Wallet?.balance}`);
-    console.log(`- Mandal Franchiser (${mandalFranchiseUser.name}): Expected ₹1,000 | Actual: ₹${mandalWallet?.balance}`);
-    console.log(`- District Franchiser (${districtFranchiseUser.name}): Expected ₹500 | Actual: ₹${distWallet?.balance}`);
-    console.log(`- State Franchiser (${stateFranchiseUser.name}): Expected ₹300 | Actual: ₹${stateWallet?.balance}`);
+    console.log(`- Level 1 Referrer (${l1User.name}): Expected ₹1,000 | Actual: ₹${l1Wallet?.availableBalance}`);
+    console.log(`- Level 2 Referrer (${l2User.name}): Expected ₹300   | Actual: ₹${l2Wallet?.availableBalance}`);
+    console.log(`- Level 3 Referrer (${l3User.name}): Expected ₹200   | Actual: ₹${l3Wallet?.availableBalance}`);
+    console.log(`- Mandal Franchiser (${mandalFranchiseUser.name}): Expected ₹1,000 | Actual: ₹${mandalWallet?.availableBalance}`);
+    console.log(`- District Franchiser (${districtFranchiseUser.name}): Expected ₹500 | Actual: ₹${distWallet?.availableBalance}`);
+    console.log(`- State Franchiser (${stateFranchiseUser.name}): Expected ₹300 | Actual: ₹${stateWallet?.availableBalance}`);
 
     // ==================================================================
     // TEST 2: MANDAL FRANCHISE ASSIGN FEE (₹25,000)

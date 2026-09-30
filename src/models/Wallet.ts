@@ -19,6 +19,7 @@ export interface ILedgerEntry {
 export interface IWallet extends Document {
   userId: mongoose.Types.ObjectId;
   availableBalance: number;
+  balance?: number;
   pendingBalance: number;
   holdBalance: number;
   withdrawnBalance: number;
@@ -59,8 +60,16 @@ const WalletSchema = new Schema<IWallet>(
     totalDebits: { type: Number, default: 0 },
     version: { type: Number, default: 0, required: true },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true },
+  }
 );
+
+WalletSchema.virtual('balance').get(function (this: IWallet) {
+  return this.availableBalance;
+});
 
 export const Wallet = mongoose.model<IWallet>('Wallet', WalletSchema);
 export default Wallet;

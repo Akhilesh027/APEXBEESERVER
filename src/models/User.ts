@@ -27,6 +27,7 @@ export interface IUser extends Document {
   phone: string;
   mobile?: string;
   roles: RoleType[];
+  franchiseLevel?: "state" | "district" | "mandal" | string;
   status?: string;
   isVerified?: boolean;
   profileImage?: string;
@@ -143,6 +144,11 @@ const UserSchema = new Schema<IUser>(
         required: true,
       },
     ],
+
+    franchiseLevel: {
+      type: String,
+      enum: ["state", "district", "mandal"],
+    },
 
     status: { type: String, default: "active" },
     isVerified: { type: Boolean, default: false },
