@@ -17,6 +17,7 @@ import {
   getProductsByVendor,
   duplicateProduct,
   archiveProduct,
+  toggleProductStatus,
   getAiProductSuggestions,
   getInventoryMovements,
   createInventoryMovement,
@@ -49,6 +50,7 @@ router.post('/', protect, restrictTo('vendor', 'wholesaler', 'manufacturer', 'ad
 router.put('/:id', protect, restrictTo('vendor', 'wholesaler', 'manufacturer', 'admin'), productUpload, assertVendorCategoryAccess, validateCategoryProductPayload, updateProduct);
 router.post('/:id/duplicate', protect, restrictTo('vendor', 'wholesaler', 'manufacturer', 'admin'), assertVendorCategoryAccess, duplicateProduct);
 
+router.patch('/:id/toggle-status', protect, restrictTo('vendor', 'wholesaler', 'manufacturer', 'admin'), toggleProductStatus);
 router.patch('/:id/archive', protect, restrictTo('vendor', 'wholesaler', 'manufacturer', 'admin'), archiveProduct);
 router.delete('/:id', protect, restrictTo('vendor', 'wholesaler', 'manufacturer', 'admin'), deleteProduct);
 router.post('/bulk-update', protect, restrictTo('vendor', 'wholesaler', 'manufacturer', 'admin'), bulkUpdateProducts);

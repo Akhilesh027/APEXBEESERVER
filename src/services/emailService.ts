@@ -154,6 +154,46 @@ export class EmailService {
   }
 
   /**
+   * Send User Registration / Verification OTP Email
+   */
+  public static async sendVerificationOtp(email: string, otp: string, purpose?: string): Promise<boolean> {
+    const isRegister = purpose === 'register';
+    const isReset = purpose === 'reset_password' || purpose === 'forgot_password';
+    const title = isRegister ? 'Account Registration' : isReset ? 'Password Reset' : 'Account Verification';
+    const actionText = isRegister 
+      ? 'complete your account registration' 
+      : isReset 
+        ? 'reset your account password' 
+        : 'verify your account';
+
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff;">
+        <div style="background: linear-gradient(135deg, #0A1128 0%, #1c2b5e 100%); padding: 30px 20px; text-align: center; border-radius: 12px 12px 0 0;">
+          <h1 style="color: #F3BA12; margin: 0; font-size: 26px; font-weight: 900;">ApexBee</h1>
+          <p style="color: #ffffff; opacity: 0.9; margin-top: 6px; font-size: 13px;">${title} Verification</p>
+        </div>
+        <div style="padding: 24px 20px; text-align: center; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 12px 12px; background-color: #f8fafc;">
+          <p style="color: #334155; font-size: 14px; margin-bottom: 12px;">Hello,</p>
+          <p style="color: #475569; font-size: 14px; margin-bottom: 20px;">Use the following One-Time Password (OTP) code to ${actionText} on ApexBee:</p>
+          <div style="font-size: 32px; font-weight: 900; letter-spacing: 8px; color: #0A1128; background: #e2e8f0; padding: 14px 28px; border-radius: 10px; display: inline-block; font-family: monospace;">
+            ${otp}
+          </div>
+          <p style="color: #64748b; font-size: 12px; margin-top: 20px;">This OTP code is valid for <strong>5 minutes</strong>. For your security, please do not share this code with anyone.</p>
+          <p style="color: #94a3b8; font-size: 11px; text-align: center; margin-top: 24px; line-height: 1.5;">
+            If you did not request this verification code, please ignore this email or contact support at info@apexbee.in
+          </p>
+        </div>
+      </div>
+    `;
+
+    return this.sendMail({
+      to: email,
+      subject: `Your ApexBee ${title} Code: ${otp}`,
+      html,
+    });
+  }
+
+  /**
    * 2. Send New User Welcome Email
    */
   public static async sendWelcomeEmail(email: string, userName: string): Promise<boolean> {

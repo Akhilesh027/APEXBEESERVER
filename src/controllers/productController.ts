@@ -660,9 +660,9 @@ export const getAllProducts = async (req: Request, res: Response) => {
     if (status === 'all') {
       // Admin query for all products: do not restrict by status or active state
     } else {
-      if (status && status !== 'draft' && status !== 'pending' && status !== 'rejected') {
+      if (status && status !== 'draft' && status !== 'pending' && status !== 'rejected' && status !== 'Inactive' && status !== 'inactive') {
         andConditions.push({ status: { $in: liveStatuses } });
-      } else if (!status && !sellerId) {
+      } else if (!status) {
         andConditions.push({ status: { $in: liveStatuses } });
       } else if (status) {
         andConditions.push({ status: status });
@@ -670,14 +670,12 @@ export const getAllProducts = async (req: Request, res: Response) => {
 
       if (isActive !== undefined) {
         andConditions.push({ isActive: isActive === 'true' });
-      } else if (!sellerId) {
+      } else {
         andConditions.push({ isActive: true });
       }
 
-      if (!sellerId) {
-        andConditions.push({ isArchived: { $ne: true } });
-        andConditions.push({ moderationStatus: { $ne: 'rejected' } });
-      }
+      andConditions.push({ isArchived: { $ne: true } });
+      andConditions.push({ moderationStatus: { $ne: 'rejected' } });
     }
 
     // 4. Category filtering
@@ -1920,6 +1918,86 @@ export const archiveProduct = async (req: Request, res: Response) => {
   } catch (error: any) {
     res.status(500).json({
       message: 'Failed to archive product',
+      error: error.message
+    });
+  }
+};
+
+export const toggleProductStatus = async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      res.status(400).json({ success: false, message: 'Invalid product ID' });
+      return;
+    }
+
+    const product = await Product.findById(req.params.id);
+    if (!product) {
+      res.status(404).json({ success: false, message: 'Product not found' });
+      return;
+    }
+
+    const authUser = (req as any).user;
+    const vendor = await Vendor.findOne({ $or: [{ userId: authUser.id }, { _id: authUser.id }] });
+    const vendorIds = [
+      authUser.id?.toString(),
+      authUser._id?.toString(),
+      vendor?._id?.toString(),
+      vendor?.userId?.toString()
+    ].filter(Boolean);
+
+    const isOwner = vendorIds.includes(product.sellerId?.toString()) ||
+                    vendorIds.includes(product.createdBy?.toString());
+    const isAdmin = authUser.roles?.includes('admin');
+
+    if (!isOwner && !isAdmin) {
+      res.status(403).json({ success: false, message: 'Not authorized to change this product status' });
+      return;
+    }
+
+    // Determine target active state
+    let targetActive: boolean;
+    if (typeof req.body.isActive === 'boolean') {
+      targetActive = req.body.isActive;
+    } else if (typeof req.body.status === 'string') {
+      targetActive = ['live', 'active', 'on', 'approved'].includes(req.body.status.toLowerCase());
+    } else {
+      targetActive = !product.isActive;
+    }
+
+    product.isActive = targetActive;
+
+    if (!targetActive) {
+      // Vendor switched OFF product
+      product.status = 'Inactive';
+    } else {
+      // Vendor switched ON product
+      if (product.moderationStatus === 'rejected') {
+        res.status(400).json({
+          success: false,
+          message: 'Cannot activate a rejected product. Please edit and submit for review.'
+        });
+        return;
+      }
+      product.status = 'Live';
+    }
+
+    await product.save();
+
+    const populatedProduct = await populateProduct(Product.findById(product._id));
+
+    res.json({
+      success: true,
+      message: targetActive
+        ? 'Product is now Online & visible in ApexBee store'
+        : 'Product is now Turned OFF & hidden from users',
+      product: populatedProduct || product,
+      isActive: product.isActive,
+      status: product.status
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update product status',
       error: error.message
     });
   }

@@ -8,12 +8,14 @@ import {
   changePassword,
   googleAuth,
   sendVendorLoginOtp,
-  verifyVendorLoginOtp
+  verifyVendorLoginOtp,
+  checkUserExists
 } from '../controllers/authController';
 import { protect } from '../middleware/auth';
 
 const router = Router();
 
+router.post('/check-exists', checkUserExists);
 router.post('/send-otp', sendOtp);
 router.post('/verify-otp', verifyOtp);
 router.post('/vendor-send-otp', sendVendorLoginOtp);

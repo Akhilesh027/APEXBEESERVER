@@ -40,10 +40,73 @@ const generateToken = (id: string, email: string, roles: RoleType[]): string => 
 export const sendOtp = async (req: Request, res: Response): Promise<void> => {
   try {
     const { phone, email } = req.body;
+    const purpose = (req.body.purpose || '').toLowerCase();
     const key = phone || email;
     if (!key) {
       res.status(400).json({ message: 'Phone or email is required' });
       return;
+    }
+
+    // PRE-CHECK: If registering, check if user already exists BEFORE generating/sending OTP
+    if (purpose === 'register' || req.body.isRegister) {
+      const cleanEmail = email ? email.toString().trim().toLowerCase() : '';
+      const cleanPhone = phone ? phone.toString().trim() : '';
+
+      const orConditions: any[] = [];
+      if (cleanEmail) {
+        orConditions.push({ email: cleanEmail });
+      }
+      if (cleanPhone) {
+        const last10 = cleanPhone.replace(/\D/g, '').slice(-10);
+        orConditions.push(
+          { phone: cleanPhone },
+          { mobile: cleanPhone }
+        );
+        if (last10 && last10.length === 10) {
+          orConditions.push(
+            { phone: last10 },
+            { mobile: last10 },
+            { phone: `+91${last10}` },
+            { mobile: `+91${last10}` }
+          );
+        }
+      }
+
+      if (orConditions.length > 0) {
+        const userExists = await User.findOne({ $or: orConditions });
+        if (userExists) {
+          const userEmail = (userExists.email || '').toLowerCase().trim();
+          const userPhone = (userExists.phone || '').trim();
+          const userMobile = (userExists.mobile || '').trim();
+          const last10Input = cleanPhone ? cleanPhone.replace(/\D/g, '').slice(-10) : '';
+
+          const emailMatches = Boolean(cleanEmail && userEmail && userEmail === cleanEmail);
+          const phoneMatches = Boolean(
+            cleanPhone && (
+              userPhone === cleanPhone ||
+              userMobile === cleanPhone ||
+              (last10Input && (userPhone.endsWith(last10Input) || userMobile.endsWith(last10Input)))
+            )
+          );
+
+          let errMsg = 'User with this email or phone number already exists';
+          if (emailMatches && phoneMatches) {
+            errMsg = 'User with this email and phone number already exists';
+          } else if (emailMatches) {
+            errMsg = 'User with this email already exists';
+          } else if (phoneMatches) {
+            errMsg = 'User with this phone number already exists';
+          }
+
+          res.status(400).json({
+            success: false,
+            message: errMsg,
+            emailExists: emailMatches,
+            phoneExists: phoneMatches
+          });
+          return;
+        }
+      }
     }
 
     // Always generate a dynamic random 6-digit OTP
@@ -57,7 +120,6 @@ export const sendOtp = async (req: Request, res: Response): Promise<void> => {
 
     // Dispatch real SMS via DLT template if phone number is provided
     if (phone) {
-      const purpose = (req.body.purpose || '').toLowerCase();
       if (purpose === 'login') {
         await SmsService.sendLoginOtp(phone, generatedOtp);
       } else if (purpose === 'reset_password' || purpose === 'forgot_password') {
@@ -65,6 +127,13 @@ export const sendOtp = async (req: Request, res: Response): Promise<void> => {
       } else {
         await SmsService.sendRegistrationOtp(phone, generatedOtp);
       }
+    }
+
+    // Also dispatch Email OTP if valid email is provided
+    if (email && typeof email === 'string' && email.includes('@')) {
+      EmailService.sendVerificationOtp(email.trim(), generatedOtp, purpose).catch((err) => {
+        console.error('[Send OTP] Email dispatch error:', err);
+      });
     }
 
     res.status(200).json({
@@ -75,6 +144,80 @@ export const sendOtp = async (req: Request, res: Response): Promise<void> => {
   } catch (error: any) {
     console.error('Send OTP error:', error);
     res.status(500).json({ message: 'Failed to send OTP', error: error.message });
+  }
+};
+
+export const checkUserExists = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { email, phone } = req.body;
+    const cleanEmail = email ? email.toString().trim().toLowerCase() : '';
+    const cleanPhone = phone ? phone.toString().trim() : '';
+
+    const orConditions: any[] = [];
+    if (cleanEmail) {
+      orConditions.push({ email: cleanEmail });
+    }
+    if (cleanPhone) {
+      const last10 = cleanPhone.replace(/\D/g, '').slice(-10);
+      orConditions.push({ phone: cleanPhone }, { mobile: cleanPhone });
+      if (last10 && last10.length === 10) {
+        orConditions.push(
+          { phone: last10 },
+          { mobile: last10 },
+          { phone: `+91${last10}` },
+          { mobile: `+91${last10}` }
+        );
+      }
+    }
+
+    if (orConditions.length === 0) {
+      res.status(400).json({ success: false, message: 'Email or phone number is required' });
+      return;
+    }
+
+    const existingUser = await User.findOne({ $or: orConditions });
+    if (existingUser) {
+      const userEmail = (existingUser.email || '').toLowerCase().trim();
+      const userPhone = (existingUser.phone || '').trim();
+      const userMobile = (existingUser.mobile || '').trim();
+      const last10Input = cleanPhone ? cleanPhone.replace(/\D/g, '').slice(-10) : '';
+
+      const emailMatches = Boolean(cleanEmail && userEmail && userEmail === cleanEmail);
+      const phoneMatches = Boolean(
+        cleanPhone && (
+          userPhone === cleanPhone ||
+          userMobile === cleanPhone ||
+          (last10Input && (userPhone.endsWith(last10Input) || userMobile.endsWith(last10Input)))
+        )
+      );
+
+      let errMsg = 'User with this email or phone number already exists';
+      if (emailMatches && phoneMatches) {
+        errMsg = 'User with this email and phone number already exists';
+      } else if (emailMatches) {
+        errMsg = 'User with this email already exists';
+      } else if (phoneMatches) {
+        errMsg = 'User with this phone number already exists';
+      }
+
+      res.status(200).json({
+        success: true,
+        exists: true,
+        emailExists: emailMatches,
+        phoneExists: phoneMatches,
+        message: errMsg
+      });
+      return;
+    }
+
+    res.status(200).json({
+      success: true,
+      exists: false,
+      message: 'Available'
+    });
+  } catch (error: any) {
+    console.error('Check user exists error:', error);
+    res.status(500).json({ success: false, message: 'Server error checking user existence', error: error.message });
   }
 };
 
@@ -120,9 +263,48 @@ export const register = async (req: Request, res: Response): Promise<void> => {
     }
 
     // Check if user already exists
-    const userExists = await User.findOne({ $or: [{ email }, { phone }] });
+    const cleanEmail = email ? email.toString().trim().toLowerCase() : '';
+    const cleanPhone = phone ? phone.toString().trim() : '';
+    const last10 = cleanPhone.replace(/\D/g, '').slice(-10);
+    const regCheckConditions: any[] = [];
+    if (cleanEmail) regCheckConditions.push({ email: cleanEmail });
+    if (cleanPhone) {
+      regCheckConditions.push({ phone: cleanPhone }, { mobile: cleanPhone });
+      if (last10 && last10.length === 10) {
+        regCheckConditions.push(
+          { phone: last10 },
+          { mobile: last10 },
+          { phone: `+91${last10}` },
+          { mobile: `+91${last10}` }
+        );
+      }
+    }
+    const userExists = await User.findOne({ $or: regCheckConditions });
     if (userExists) {
-      res.status(400).json({ message: 'User with this email or phone already exists' });
+      const userEmail = (userExists.email || '').toLowerCase().trim();
+      const userPhone = (userExists.phone || '').trim();
+      const userMobile = (userExists.mobile || '').trim();
+      const last10Input = cleanPhone ? cleanPhone.replace(/\D/g, '').slice(-10) : '';
+
+      const emailMatches = Boolean(cleanEmail && userEmail && userEmail === cleanEmail);
+      const phoneMatches = Boolean(
+        cleanPhone && (
+          userPhone === cleanPhone ||
+          userMobile === cleanPhone ||
+          (last10Input && (userPhone.endsWith(last10Input) || userMobile.endsWith(last10Input)))
+        )
+      );
+
+      let errMsg = 'User with this email or phone already exists';
+      if (emailMatches && phoneMatches) {
+        errMsg = 'User with this email and phone number already exists';
+      } else if (emailMatches) {
+        errMsg = 'User with this email already exists';
+      } else if (phoneMatches) {
+        errMsg = 'User with this phone number already exists';
+      }
+
+      res.status(400).json({ success: false, message: errMsg });
       return;
     }
 
