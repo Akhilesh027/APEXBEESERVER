@@ -199,6 +199,8 @@ export const createCategory = async (req: Request, res: Response) => {
       sortOrder: Number(sortOrder) || 0,
     });
 
+    invalidateCategoriesCache();
+
     res.status(201).json({
       message: 'Category created successfully',
       category,
@@ -211,11 +213,29 @@ export const createCategory = async (req: Request, res: Response) => {
   }
 };
 
+let cachedCategories: any = null;
+let cachedCategoriesExpiry = 0;
+
+export const invalidateCategoriesCache = () => {
+  cachedCategories = null;
+  cachedCategoriesExpiry = 0;
+};
+
 export const getCategories = async (_req: Request, res: Response) => {
   try {
+    const now = Date.now();
+    if (cachedCategories && now < cachedCategoriesExpiry) {
+      return res.json({ success: true, categories: cachedCategories });
+    }
+
     const categories = await Category.find()
+      .select('name slug level parentId image banner sortOrder isActive')
       .populate('parentId', 'name slug level')
-      .sort({ level: 1, sortOrder: 1, createdAt: -1 });
+      .sort({ level: 1, sortOrder: 1, createdAt: -1 })
+      .lean();
+
+    cachedCategories = categories;
+    cachedCategoriesExpiry = now + 5 * 60 * 1000; // 5 minutes cache
 
     res.json({ success: true, categories });
   } catch (error: any) {
@@ -418,6 +438,7 @@ export const updateCategory = async (req: Request, res: Response) => {
       sortOrder === undefined ? category.sortOrder : Number(sortOrder) || 0;
 
     await category.save();
+    invalidateCategoriesCache();
 
     res.json({
       message: 'Category updated successfully',
@@ -449,6 +470,7 @@ export const deleteCategory = async (req: Request, res: Response) => {
       return res.status(404).json({ message: 'Category not found' });
     }
 
+    invalidateCategoriesCache();
     res.status(200).json({ message: 'Category deleted successfully' });
   } catch (error: any) {
     res.status(500).json({

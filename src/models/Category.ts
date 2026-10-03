@@ -106,6 +106,8 @@ const CategorySchema = new Schema<ICategory>(
 CategorySchema.index({ name: 1 });
 CategorySchema.index({ isActive: 1 });
 CategorySchema.index({ isSeasonal: 1 });
+CategorySchema.index({ parentId: 1 });
+CategorySchema.index({ level: 1, sortOrder: 1, createdAt: -1 });
 
 export const Category = mongoose.model<ICategory>('Category', CategorySchema);
 export default Category;

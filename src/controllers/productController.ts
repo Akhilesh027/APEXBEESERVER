@@ -132,6 +132,14 @@ const populateProduct = (query: any) => {
     .populate('childCategoryId', 'name slug level brands attributes');
 };
 
+const populateProductList = (query: any) => {
+  return query
+    .populate('sellerId', 'name email mobile roles shopName storeName businessName storeLogo profilePicture logo pincode pinCode mandal district location')
+    .populate('categoryId', 'name slug level image')
+    .populate('subCategoryId', 'name slug level')
+    .populate('childCategoryId', 'name slug level');
+};
+
 const roundMoney = (val: number) => Math.round((val + Number.EPSILON) * 100) / 100;
 
 const buildAdminPricing = (body: any) => {
@@ -583,7 +591,7 @@ export const getAllProducts = async (req: Request, res: Response) => {
         // Fetch active vendors and filter by coordinate distance <= deliveryRadiusKm (or max 20km)
         const allActiveVendors = await Vendor.find({
           status: { $in: ['active', 'Approved', 'approved', 'ACTIVE', 'Active'] }
-        }).select('_id userId location pincode mandal district deliveryRadiusKm');
+        }).select('_id userId location pincode mandal district deliveryRadiusKm').lean();
 
         matchingVendors = allActiveVendors.filter(v => {
           const vLng = v.location?.coordinates?.[0];
@@ -600,9 +608,9 @@ export const getAllProducts = async (req: Request, res: Response) => {
       } else {
         const vendorLocationOr: any[] = [];
         if (pincode) {
-          vendorLocationOr.push({ pincode: String(pincode).trim() });
-          vendorLocationOr.push({ pinCode: String(pincode).trim() });
-          vendorLocationOr.push({ address: { $regex: String(pincode).trim(), $options: 'i' } });
+          const cleanPin = String(pincode).trim();
+          vendorLocationOr.push({ pincode: cleanPin });
+          vendorLocationOr.push({ pinCode: cleanPin });
         }
         if (mandal) {
           const cleanMandal = mandal.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
@@ -618,7 +626,7 @@ export const getAllProducts = async (req: Request, res: Response) => {
           matchingVendors = await Vendor.find({
             status: { $in: ['active', 'Approved', 'approved', 'ACTIVE', 'Active'] },
             $or: vendorLocationOr
-          }).select('_id userId');
+          }).select('_id userId').lean();
         }
       }
 
@@ -685,7 +693,7 @@ export const getAllProducts = async (req: Request, res: Response) => {
 
       let foundCategory = null;
       if (mongoose.Types.ObjectId.isValid(catParam)) {
-        foundCategory = await Category.findById(catParam);
+        foundCategory = await Category.findById(catParam).select('_id').lean();
       }
       if (!foundCategory && cleanParam) {
         const regex = new RegExp(cleanParam.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&'), 'i');
@@ -695,13 +703,13 @@ export const getAllProducts = async (req: Request, res: Response) => {
             { slug: catParam.toLowerCase() },
             { slug: cleanParam.toLowerCase().replace(/[^a-z0-9]+/g, '-') }
           ]
-        });
+        }).select('_id').lean();
       }
 
       if (foundCategory) {
-        const childCats = await Category.find({ parentId: foundCategory._id }).select('_id');
+        const childCats = await Category.find({ parentId: foundCategory._id }).select('_id').lean();
         const childCatIds = childCats.map((c) => c._id);
-        const grandChildCats = await Category.find({ parentId: { $in: childCatIds } }).select('_id');
+        const grandChildCats = await Category.find({ parentId: { $in: childCatIds } }).select('_id').lean();
         const allCatIds = [foundCategory._id, ...childCatIds, ...grandChildCats.map((c) => c._id)];
 
         andConditions.push({
@@ -748,12 +756,17 @@ export const getAllProducts = async (req: Request, res: Response) => {
     let query = Product.find(filter)
       .sort({ createdAt: -1 })
       .skip((pageNum - 1) * limitNum)
-      .limit(limitNum);
+      .limit(limitNum)
+      .lean();
 
-    const rawProducts = await populateProduct(query.select(selectString));
+    const rawProducts = await populateProductList(query.select(selectString));
 
     const sellerIds = rawProducts.flatMap((p: any) => [p.sellerId?._id, p.sellerId, p.createdBy]).filter(Boolean);
-    const vendors = await Vendor.find({ $or: [{ userId: { $in: sellerIds } }, { _id: { $in: sellerIds } }] });
+    const vendors = sellerIds.length > 0
+      ? await Vendor.find({ $or: [{ userId: { $in: sellerIds } }, { _id: { $in: sellerIds } }] })
+          .select('_id userId businessName ownerName shopName storeName location pincode mandal district state deliveryMode storeDesign')
+          .lean()
+      : [];
     const vendorMap = new Map();
     vendors.forEach((v: any) => {
       if (v.userId) vendorMap.set(v.userId.toString(), v);
@@ -761,7 +774,7 @@ export const getAllProducts = async (req: Request, res: Response) => {
     });
 
     const products = rawProducts.map((p: any) => {
-      const productObj = p.toObject ? p.toObject() : p;
+      const productObj = p;
       const sellerIdStr = (p.sellerId?._id || p.sellerId || '').toString();
       const createdByStr = (p.createdBy?._id || p.createdBy || '').toString();
       const vendor = vendorMap.get(sellerIdStr) || vendorMap.get(createdByStr);
@@ -896,9 +909,11 @@ export const getMyProducts = async (req: Request, res: Response) => {
       return;
     }
 
-    const products = await populateProduct(Product.find({ sellerId, isArchived: { $ne: true } })).sort({
-      createdAt: -1,
-    });
+    const products = await populateProductList(
+      Product.find({ sellerId, isArchived: { $ne: true } })
+        .sort({ createdAt: -1 })
+        .lean()
+    );
 
     res.json({ products });
   } catch (error: any) {

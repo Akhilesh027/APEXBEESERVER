@@ -171,6 +171,15 @@ ProductSchema.index({ moderationStatus: 1 });
 ProductSchema.index({ isActive: 1 });
 ProductSchema.index({ seedKey: 1 }, { unique: true, sparse: true });
 ProductSchema.index({ catalogueSource: 1 });
+ProductSchema.index({ status: 1, isActive: 1, isArchived: 1, createdAt: -1 });
+ProductSchema.index({ categoryId: 1, status: 1, isActive: 1, createdAt: -1 });
+ProductSchema.index({ sellerId: 1, isArchived: 1, createdAt: -1 });
+ProductSchema.index({ createdAt: -1 });
+ProductSchema.index({ status: 1 });
+ProductSchema.index({ isArchived: 1 });
+ProductSchema.index({ sellerId: 1 });
+ProductSchema.index({ deliveryScope: 1 });
+ProductSchema.index({ isPanIndia: 1 });
 
 export const Product = mongoose.model<IProduct>('Product', ProductSchema);
 export default Product;
