@@ -624,18 +624,36 @@ export const getReferralLeaderboard = async (req: Request, res: Response) => {
       const tx = transactions[i];
       const isCurrentUser = tx.recipientUserId.toString() === userId.toString();
 
-      const userInfo = await User.findById(tx.recipientUserId, "name email referralCode");
+      const userInfo = await User.findById(tx.recipientUserId, "name email referralCode role");
       if (userInfo) {
+        // Exclude system/company accounts like ApexBee System
+        const nameLower = (userInfo.name || "").toLowerCase();
+        const emailLower = (userInfo.email || "").toLowerCase();
+        const codeLower = (userInfo.referralCode || "").toLowerCase();
+        const isSystemAccount =
+          nameLower.includes("apexbee") ||
+          nameLower.includes("system") ||
+          emailLower.includes("apexbee") ||
+          emailLower.includes("system") ||
+          codeLower === "system" ||
+          codeLower === "apexbee" ||
+          (userInfo as any).role === "system" ||
+          (userInfo as any).role === "company";
+
+        if (isSystemAccount) {
+          continue;
+        }
+
         if (isCurrentUser) {
-          userRank = i + 1;
+          userRank = populated.length + 1;
           userEarnings = tx.totalEarnings;
           userCount = tx.referralCount;
         }
 
         // Add to leaderboard if within top 20
-        if (i < 20) {
+        if (populated.length < 20) {
           populated.push({
-            rank: i + 1,
+            rank: populated.length + 1,
             name: userInfo.name,
             email: userInfo.email,
             referralCode: userInfo.referralCode,

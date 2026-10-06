@@ -106,6 +106,10 @@ export const getCustomerRestaurantsListing = async (req: Request, res: Response)
           activeOfferSummary: offers[0] ? `${offers[0].discountValue}% OFF` : null,
           locality: r.locality,
           city: r.city,
+          district: (r as any).district || '',
+          mandal: (r as any).mandal || '',
+          state: r.state || '',
+          address: r.address || '',
           pincode: r.pincode || (r as any).zipcode || (r as any).address?.pincode,
         };
       })

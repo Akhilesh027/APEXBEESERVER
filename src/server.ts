@@ -154,6 +154,7 @@ app.use("/api/referrals", referralRoutes);
 app.use("/api/referral", referralRoutes);
 app.use("/api/wallet", walletRoutes);
 app.use("/api/payment", paymentRoutes);
+app.use("/api/razorpay", paymentRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/reviews", productReviewRoutes);
 app.use("/api/product/reviews", productReviewRoutes);
