@@ -1712,12 +1712,12 @@ export const verifyKycApplication = async (
           const cleanMandal = (app.mandal || user.territory?.mandal || "").trim();
 
           let finalAmount = 0;
+          let matchedTerritory: any = null;
 
           if (targetRole === "franchise" || targetRole === "state_franchise" || targetRole === "district_franchise" || targetRole === "mandal_franchise") {
             const fc = await Franchise.findOne({ userId: user._id }).sort({ createdAt: -1 });
 
             // 1. Direct Territory lookup via Franchise assignedTerritories or franchiseId
-            let matchedTerritory: any = null;
             try {
               if (fc?.assignedTerritories && fc.assignedTerritories.length > 0) {
                 matchedTerritory = await Territory.findOne({ _id: { $in: fc.assignedTerritories } });
