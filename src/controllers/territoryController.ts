@@ -851,3 +851,50 @@ export const getTerritoryAvailability = async (req: Request, res: Response) => {
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
+export const getTerritoryByPincode = async (req: Request, res: Response) => {
+  try {
+    const rawPin = req.params.pincode;
+    const pincode = String(rawPin || "").trim();
+
+    if (!pincode) {
+      return res.status(400).json({ success: false, message: "Pincode is required" });
+    }
+
+    // 1. Direct search by level "Pincode" or pincode field
+    let territory = await Territory.findOne({
+      $or: [
+        { pincode },
+        { name: pincode, level: "Pincode" },
+        { codeNumber: pincode }
+      ]
+    }).lean();
+
+    // 2. Generic fallback search in Territory
+    if (!territory) {
+      territory = await Territory.findOne({ pincode }).lean();
+    }
+
+    if (territory && territory.state) {
+      return res.json({
+        success: true,
+        territory: {
+          state: territory.state,
+          district: territory.district || "",
+          mandal: territory.mandal || "",
+          village: territory.village || "",
+          pincode: territory.pincode || pincode,
+          name: territory.name,
+          ftid: territory.ftid,
+        }
+      });
+    }
+
+    return res.status(404).json({
+      success: false,
+      message: `No territory mapped for PIN code ${pincode}`
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};

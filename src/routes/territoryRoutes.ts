@@ -10,11 +10,13 @@ import {
   getDistricts,
   getMandals,
   getTerritoryAvailability,
+  getTerritoryByPincode,
 } from "../controllers/territoryController";
 
 const router = Router();
 
 router.get("/availability", getTerritoryAvailability);
+router.get("/pincode/:pincode", getTerritoryByPincode);
 router.get("/states", getStates);
 router.get("/districts/:stateId", getDistricts);
 router.get("/mandals/:districtId", getMandals);
