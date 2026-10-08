@@ -1717,8 +1717,8 @@ export const verifyKycApplication = async (
             const fc = await Franchise.findOne({ userId: user._id }).sort({ createdAt: -1 });
 
             // 1. Direct Territory lookup via Franchise assignedTerritories or franchiseId
+            let matchedTerritory: any = null;
             try {
-              let matchedTerritory: any = null;
               if (fc?.assignedTerritories && fc.assignedTerritories.length > 0) {
                 matchedTerritory = await Territory.findOne({ _id: { $in: fc.assignedTerritories } });
               }
