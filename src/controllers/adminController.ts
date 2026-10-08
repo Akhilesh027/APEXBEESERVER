@@ -1762,28 +1762,37 @@ export const verifyKycApplication = async (
               }
 
               if (matchedTerritory) {
-                if (matchedTerritory.annualFranchiseFee && matchedTerritory.annualFranchiseFee > 0) {
-                  finalAmount = matchedTerritory.annualFranchiseFee;
-                } else if (matchedTerritory.franchiseFeePerYear && matchedTerritory.franchiseFeePerYear > 0) {
-                  finalAmount = matchedTerritory.franchiseFeePerYear;
-                } else if (matchedTerritory.paymentDetails?.amountPaid && matchedTerritory.paymentDetails.amountPaid > 0) {
+                // 1. If actual payment was made via payment gateway (Advance or Full), use actual amount received (excluding 18% GST)
+                if (matchedTerritory.paymentDetails?.amountPaid && matchedTerritory.paymentDetails.amountPaid > 0) {
                   const rawPaid = matchedTerritory.paymentDetails.amountPaid;
                   finalAmount = (rawPaid % 118 === 0 || rawPaid % 1180 === 0) ? Math.round(rawPaid / 1.18) : rawPaid;
+                } else if (fc?.securityDeposit?.amountPaid && fc.securityDeposit.amountPaid > 0) {
+                  const rawPaid = fc.securityDeposit.amountPaid;
+                  finalAmount = (rawPaid % 118 === 0 || rawPaid % 1180 === 0) ? Math.round(rawPaid / 1.18) : rawPaid;
+                }
+                // 2. Fallback only if no payment record exists and it's NOT an advance booking
+                else if (matchedTerritory.paymentStatus !== "PARTIAL_ADVANCE" && matchedTerritory.paymentDetails?.paymentType !== "ADVANCE") {
+                  if (matchedTerritory.annualFranchiseFee && matchedTerritory.annualFranchiseFee > 0) {
+                    finalAmount = matchedTerritory.annualFranchiseFee;
+                  } else if (matchedTerritory.franchiseFeePerYear && matchedTerritory.franchiseFeePerYear > 0) {
+                    finalAmount = matchedTerritory.franchiseFeePerYear;
+                  }
                 }
               }
             } catch (terrErr) {
               console.warn("Could not lookup territory fee:", terrErr);
             }
 
-            // 2. Check Franchise record for amountPaid in security deposit
+            // 2. Check Franchise record for amountPaid in security deposit if not yet resolved
             if (!finalAmount && fc?.securityDeposit?.amountPaid && fc.securityDeposit.amountPaid > 0) {
               const rawPaid = fc.securityDeposit.amountPaid;
               finalAmount = (rawPaid % 118 === 0 || rawPaid % 1180 === 0) ? Math.round(rawPaid / 1.18) : rawPaid;
             }
 
-            // 3. Check application investment capacity
+            // 3. Check application investment capacity only if not an advance booking
             if (!finalAmount && app.investmentCapacity && Number(app.investmentCapacity) > 0) {
-              finalAmount = Number(app.investmentCapacity);
+              const cap = Number(app.investmentCapacity);
+              finalAmount = (cap % 118 === 0 || cap % 1180 === 0) ? Math.round(cap / 1.18) : cap;
             }
           }
 
@@ -1794,6 +1803,12 @@ export const verifyKycApplication = async (
                                   feeServiceKey.includes("district") ? 100000 :
                                   feeServiceKey.includes("mandal") ? 25000 : 2999;
             finalAmount = catalogItem ? catalogItem.amount : defaultAmount;
+            
+            // If territory booking was specifically marked as Advance, calculate the advance proportion
+            if (matchedTerritory?.paymentStatus === "PARTIAL_ADVANCE" || matchedTerritory?.paymentDetails?.paymentType === "ADVANCE") {
+              const advPct = catalogItem?.minAdvancePercentage || (feeServiceKey.includes("state") ? 30 : feeServiceKey.includes("district") ? 25 : 20);
+              finalAmount = Math.round((finalAmount * advPct) / 100);
+            }
           }
 
           await AssignmentCommissionService.processFeeCommissionSettlement({

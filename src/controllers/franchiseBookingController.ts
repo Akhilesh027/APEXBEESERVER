@@ -367,6 +367,7 @@ export const verifyFranchiseBookingPayment = async (req: Request, res: Response)
           razorpayOrderId,
           amountPaid: paidAmt,
           paymentType: isFull ? "FULL" : "ADVANCE",
+          balanceAmount: isFull ? 0 : Math.max(0, (level === "State" ? 500000 : level === "District" ? 150000 : 25000) - Math.round(paidAmt / 1.18)),
           paidAt: now,
         },
         currentFranchisee: {
@@ -380,6 +381,7 @@ export const verifyFranchiseBookingPayment = async (req: Request, res: Response)
       });
     } else {
       // Lock existing territory
+      const existingFee = territory.annualFranchiseFee || territory.franchiseFeePerYear || (level === "State" ? 500000 : level === "District" ? 150000 : 25000);
       territory.franchiseId = franchise._id;
       territory.franchiseStatus = "ACTIVE";
       territory.lockedAt = now;
@@ -389,6 +391,7 @@ export const verifyFranchiseBookingPayment = async (req: Request, res: Response)
         razorpayOrderId,
         amountPaid: paidAmt,
         paymentType: isFull ? "FULL" : "ADVANCE",
+        balanceAmount: isFull ? 0 : Math.max(0, existingFee - Math.round(paidAmt / 1.18)),
         paidAt: now,
       };
       territory.currentFranchisee = {
