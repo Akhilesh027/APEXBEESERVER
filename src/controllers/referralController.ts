@@ -104,7 +104,7 @@ export const getReferralHistory = async (req: AuthRequest, res: Response): Promi
           reward: Number((r as any).reward || r.rewardAmount || 50),
           transactionType: "signup_bonus",
           rewardReason: "Direct Referral Signup Bonus",
-          status: r.status === "registered" || r.status === "rewarded" || r.status === "completed" ? "released" : "pending",
+          status: r.status === "registered" || r.status === "rewarded" || r.status === "approved" ? "released" : "pending",
           createdAt: r.createdAt || new Date()
         });
       }
