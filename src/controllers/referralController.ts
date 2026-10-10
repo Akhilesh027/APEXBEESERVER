@@ -4,6 +4,7 @@ import { User } from "../models/User";
 import { Referral } from "../models/Referral";
 import { ReferralSettings } from "../models/ReferralSettings";
 import { ReferralTransaction } from "../models/ReferralTransaction";
+import { Wallet } from "../models/Wallet";
 import { SettlementEngine } from "../services/SettlementEngine";
 import { WalletEngine } from "../services/WalletEngine";
 
@@ -113,6 +114,9 @@ export const getReferralNetwork = async (req: AuthRequest, res: Response): Promi
 
     res.status(200).json({
       success: true,
+      level1: level1Users,
+      level2: level2Users,
+      level3: level3Users,
       network: {
         level1: { count: level1Users.length, users: level1Users },
         level2: { count: level2Users.length, users: level2Users },
@@ -134,9 +138,10 @@ export const getReferralStats = async (req: AuthRequest, res: Response): Promise
       return;
     }
 
-    const [directCount, totalTransactions] = await Promise.all([
+    const [directCount, totalTransactions, wallet] = await Promise.all([
       Referral.countDocuments({ referrerUserId: userId }),
-      ReferralTransaction.find({ recipientUserId: userId })
+      ReferralTransaction.find({ recipientUserId: userId }),
+      Wallet.findOne({ userId })
     ]);
 
     const totalEarnings = totalTransactions
@@ -147,13 +152,61 @@ export const getReferralStats = async (req: AuthRequest, res: Response): Promise
       .filter(t => t.status === "pending" || t.status === "placed")
       .reduce((sum, t) => sum + (t.amount || 0), 0);
 
+    const level1 = { signupBonus: 0, firstPurchaseCommission: 0, productCommission: 0, totalEarned: 0 };
+    const level2 = { signupBonus: 0, firstPurchaseCommission: 0, productCommission: 0, totalEarned: 0 };
+    const level3 = { signupBonus: 0, firstPurchaseCommission: 0, productCommission: 0, totalEarned: 0 };
+    let firstPurchaseCommission = 0;
+    let productCommission = 0;
+    let signupBonus = 0;
+    let franchiseIncentives = 0;
+
+    totalTransactions.forEach(t => {
+      const amt = t.amount || 0;
+      const lvl = t.level || 1;
+      const isBonus = (t.transactionType || "").includes("bonus") || (t.rewardReason || "").toLowerCase().includes("signup");
+      const isFirstPurchase = (t.transactionType || "").includes("first_purchase") || (t.rewardReason || "").toLowerCase().includes("first");
+
+      if (lvl === 1) {
+        level1.totalEarned += amt;
+        if (isBonus) level1.signupBonus += amt;
+        else if (isFirstPurchase) level1.firstPurchaseCommission += amt;
+        else level1.productCommission += amt;
+      } else if (lvl === 2) {
+        level2.totalEarned += amt;
+        if (isBonus) level2.signupBonus += amt;
+        else if (isFirstPurchase) level2.firstPurchaseCommission += amt;
+        else level2.productCommission += amt;
+      } else if (lvl === 3) {
+        level3.totalEarned += amt;
+        if (isBonus) level3.signupBonus += amt;
+        else if (isFirstPurchase) level3.firstPurchaseCommission += amt;
+        else level3.productCommission += amt;
+      }
+
+      if (isBonus) signupBonus += amt;
+      else if (isFirstPurchase) firstPurchaseCommission += amt;
+      else productCommission += amt;
+    });
+
     res.status(200).json({
       success: true,
       stats: {
         totalReferrals: directCount,
         totalEarnings,
+        totalEarned: totalEarnings,
         pendingEarnings,
-        transactionCount: totalTransactions.length
+        transactionCount: totalTransactions.length,
+        availableBalance: wallet?.availableBalance || 0,
+        pendingBalance: wallet?.pendingBalance || pendingEarnings,
+        holdBalance: wallet?.holdBalance || 0,
+        withdrawnBalance: wallet?.withdrawnBalance || 0,
+        firstPurchaseCommission,
+        productCommission,
+        signupBonus,
+        franchiseIncentives,
+        level1,
+        level2,
+        level3
       }
     });
   } catch (error: any) {
