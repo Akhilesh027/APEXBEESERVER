@@ -243,7 +243,11 @@ export const getUserCommissions = async (req: AuthRequest, res: Response): Promi
       res.status(401).json({ success: false, message: "Unauthorized" });
       return;
     }
-    const commissions = await CommissionSettlement.find({ recipientId: userId }).sort({ createdAt: -1 });
+    const commissions = await CommissionSettlement.find({ recipientId: userId })
+      .populate("orderId", "orderNumber totalAmount createdAt customerName customerPhone")
+      .populate("productId", "title name")
+      .populate("vendorId", "name email storeName")
+      .sort({ createdAt: -1 });
     res.status(200).json({ success: true, commissions });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });

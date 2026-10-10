@@ -1,9 +1,11 @@
 import { Request, Response } from "express";
 import { AuthRequest } from "../middleware/auth";
+import mongoose from "mongoose";
 import { User } from "../models/User";
 import { Referral } from "../models/Referral";
 import { ReferralSettings } from "../models/ReferralSettings";
 import { ReferralTransaction } from "../models/ReferralTransaction";
+import { CommissionSettlement } from "../models/CommissionSettlement";
 import { Wallet } from "../models/Wallet";
 import { SettlementEngine } from "../services/SettlementEngine";
 import { WalletEngine } from "../services/WalletEngine";
@@ -83,12 +85,13 @@ export const getReferralHistory = async (req: AuthRequest, res: Response): Promi
       return;
     }
     const history = await ReferralTransaction.find({ recipientUserId: userId })
-      .populate("referredUserId", "name phone")
+      .populate("referredUserId", "name phone email")
+      .populate("orderId", "orderNumber totalAmount createdAt")
       .sort({ createdAt: -1 });
 
     const directRefs = await Referral.find({
       $or: [{ referrerUserId: userId }, { referrerId: userId }]
-    }).populate("referredUserId", "name phone");
+    }).populate("referredUserId", "name phone email");
 
     const historyReferredIds = new Set(history.map(h => String((h.referredUserId as any)?._id || h.referredUserId)));
     const syntheticBonusTxs: any[] = [];
@@ -126,6 +129,8 @@ export const getReferralNetwork = async (req: AuthRequest, res: Response): Promi
       return;
     }
 
+    const rootUser = await User.findById(userId).select("name email phone referralCode totalReferrals");
+
     // Level 1: direct
     const selectFields = "name email phone createdAt roles referredBy referralHierarchy referralCode totalReferrals";
     const level1Users = await User.find({
@@ -158,16 +163,164 @@ export const getReferralNetwork = async (req: AuthRequest, res: Response): Promi
       ]
     }).select(selectFields);
 
+    // Calculate commissions generated and orders placed by downline members
+    const allDownlineIds = [...l1Ids, ...l2Ids, ...level3Users.map(u => u._id)];
+    const commMap = new Map<string, number>();
+    const orderMap = new Map<string, number>();
+
+    const userObjId = new mongoose.Types.ObjectId(String(userId));
+    const allDownlineObjIds = allDownlineIds.map(id => new mongoose.Types.ObjectId(String(id)));
+    const allDownlineMatch = [...allDownlineIds.map(id => String(id)), ...allDownlineObjIds];
+
+    try {
+      const commsAgg = await ReferralTransaction.aggregate([
+        { 
+          $match: { 
+            recipientUserId: { $in: [userObjId, String(userId) as any] }, 
+            referredUserId: { $in: allDownlineMatch } 
+          } 
+        },
+        { $group: { _id: "$referredUserId", totalCommission: { $sum: "$amount" }, orderCount: { $sum: 1 } } }
+      ]);
+      commsAgg.forEach((c: any) => {
+        if (c._id) {
+          const idStr = String(c._id);
+          commMap.set(idStr, (commMap.get(idStr) || 0) + (c.totalCommission || 0));
+          orderMap.set(idStr, (orderMap.get(idStr) || 0) + (c.orderCount || 0));
+        }
+      });
+    } catch { }
+
+    try {
+      const settlementsAgg = await CommissionSettlement.aggregate([
+        {
+          $match: {
+            recipientId: { $in: [userObjId, String(userId) as any] },
+            $or: [
+              { vendorId: { $in: allDownlineMatch } },
+              { entrepreneurId: { $in: allDownlineMatch } }
+            ]
+          }
+        },
+        { $group: { _id: { $ifNull: ["$vendorId", "$entrepreneurId"] }, totalCommission: { $sum: "$amount" }, orderCount: { $sum: 1 } } }
+      ]);
+      settlementsAgg.forEach((s: any) => {
+        if (s._id) {
+          const idStr = String(s._id);
+          commMap.set(idStr, (commMap.get(idStr) || 0) + (s.totalCommission || 0));
+          orderMap.set(idStr, (orderMap.get(idStr) || 0) + (s.orderCount || 0));
+        }
+      });
+    } catch { }
+
+    try {
+      const directReferralsList = await Referral.find({
+        $or: [{ referrerUserId: userId }, { referrerId: userId }]
+      });
+      directReferralsList.forEach((dr: any) => {
+        const refId = String(dr.referredUserId || dr.referredId);
+        const rw = Number(dr.rewardAmount || (dr as any).reward || 0);
+        if (rw > 0 && (!commMap.get(refId) || commMap.get(refId) === 0)) {
+          commMap.set(refId, rw);
+        }
+      });
+    } catch { }
+
+    try {
+      const OrderModel = mongoose.models.Order || (User.db as any).model("Order");
+      if (OrderModel) {
+        const ordersAgg = await OrderModel.aggregate([
+          { 
+            $match: { 
+              $or: [
+                { customerId: { $in: allDownlineMatch } },
+                { userId: { $in: allDownlineMatch } }
+              ]
+            } 
+          },
+          { $group: { _id: { $ifNull: ["$customerId", "$userId"] }, orderCount: { $sum: 1 } } }
+        ]);
+        ordersAgg.forEach((o: any) => {
+          if (o._id) {
+            const idStr = String(o._id);
+            orderMap.set(idStr, Math.max(orderMap.get(idStr) || 0, o.orderCount || 0));
+          }
+        });
+      }
+    } catch { }
+
+    // Calculate root user's total commissions generated and orders placed
+    let rootTotalCommission = 0;
+    let rootTotalOrders = 0;
+
+    try {
+      const rootComms = await ReferralTransaction.aggregate([
+        { $match: { recipientUserId: { $in: [userObjId, String(userId) as any] } } },
+        { $group: { _id: null, total: { $sum: "$amount" }, count: { $sum: 1 } } }
+      ]);
+      if (rootComms.length > 0) {
+        rootTotalCommission += rootComms[0].total || 0;
+        rootTotalOrders += rootComms[0].count || 0;
+      }
+    } catch { }
+
+    try {
+      const rootSettlements = await CommissionSettlement.aggregate([
+        { $match: { recipientId: { $in: [userObjId, String(userId) as any] } } },
+        { $group: { _id: null, total: { $sum: "$amount" }, count: { $sum: 1 } } }
+      ]);
+      if (rootSettlements.length > 0) {
+        rootTotalCommission += rootSettlements[0].total || 0;
+        rootTotalOrders += rootSettlements[0].count || 0;
+      }
+    } catch { }
+
+    try {
+      const OrderModel = mongoose.models.Order || (User.db as any).model("Order");
+      if (OrderModel) {
+        const rootUserOrdersCount = await OrderModel.countDocuments({
+          $or: [
+            { customerId: { $in: [userObjId, String(userId) as any] } },
+            { userId: { $in: [userObjId, String(userId) as any] } }
+          ]
+        });
+        if (rootUserOrdersCount > 0) {
+          rootTotalOrders = Math.max(rootTotalOrders, rootUserOrdersCount);
+        }
+      }
+    } catch { }
+
+    const enrichUser = (u: any) => {
+      const raw = u.toObject ? u.toObject() : { ...u };
+      const sId = String(raw._id);
+      return {
+        ...raw,
+        totalCommissionGenerated: commMap.get(sId) || 0,
+        totalPurchases: orderMap.get(sId) || 0
+      };
+    };
+
+    const enrichedL1 = level1Users.map(enrichUser);
+    const enrichedL2 = level2Users.map(enrichUser);
+    const enrichedL3 = level3Users.map(enrichUser);
+
+    const enrichedRootUser = {
+      ...(rootUser?.toObject ? rootUser.toObject() : rootUser),
+      totalCommissionGenerated: rootTotalCommission,
+      totalPurchases: rootTotalOrders
+    };
+
     res.status(200).json({
       success: true,
-      level1: level1Users,
-      level2: level2Users,
-      level3: level3Users,
+      user: enrichedRootUser,
+      level1: enrichedL1,
+      level2: enrichedL2,
+      level3: enrichedL3,
       network: {
-        level1: { count: level1Users.length, users: level1Users },
-        level2: { count: level2Users.length, users: level2Users },
-        level3: { count: level3Users.length, users: level3Users },
-        totalTeam: level1Users.length + level2Users.length + level3Users.length
+        level1: { count: enrichedL1.length, users: enrichedL1 },
+        level2: { count: enrichedL2.length, users: enrichedL2 },
+        level3: { count: enrichedL3.length, users: enrichedL3 },
+        totalTeam: enrichedL1.length + enrichedL2.length + enrichedL3.length
       }
     });
   } catch (error: any) {
