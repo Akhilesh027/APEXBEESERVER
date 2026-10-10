@@ -86,7 +86,32 @@ export const getReferralHistory = async (req: AuthRequest, res: Response): Promi
       .populate("referredUserId", "name phone")
       .sort({ createdAt: -1 });
 
-    res.status(200).json({ success: true, history });
+    const directRefs = await Referral.find({
+      $or: [{ referrerUserId: userId }, { referrerId: userId }]
+    }).populate("referredUserId", "name phone");
+
+    const historyReferredIds = new Set(history.map(h => String((h.referredUserId as any)?._id || h.referredUserId)));
+    const syntheticBonusTxs: any[] = [];
+    directRefs.forEach((r) => {
+      const refUserId = String((r.referredUserId as any)?._id || r.referredUserId);
+      if (!historyReferredIds.has(refUserId)) {
+        syntheticBonusTxs.push({
+          _id: r._id,
+          recipientUserId: userId,
+          referredUserId: r.referredUserId,
+          level: 1,
+          amount: Number((r as any).reward || r.rewardAmount || 50),
+          reward: Number((r as any).reward || r.rewardAmount || 50),
+          transactionType: "signup_bonus",
+          rewardReason: "Direct Referral Signup Bonus",
+          status: r.status === "registered" || r.status === "rewarded" || r.status === "completed" ? "released" : "pending",
+          createdAt: r.createdAt || new Date()
+        });
+      }
+    });
+
+    const combinedHistory = [...history, ...syntheticBonusTxs];
+    res.status(200).json({ success: true, history: combinedHistory });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -102,15 +127,36 @@ export const getReferralNetwork = async (req: AuthRequest, res: Response): Promi
     }
 
     // Level 1: direct
-    const level1Users = await User.find({ "referralHierarchy.level1UserId": userId }).select("name email phone createdAt roles");
+    const selectFields = "name email phone createdAt roles referredBy referralHierarchy referralCode totalReferrals";
+    const level1Users = await User.find({
+      _id: { $ne: userId },
+      $or: [
+        { "referralHierarchy.level1UserId": userId },
+        { referredBy: userId }
+      ]
+    }).select(selectFields);
     const l1Ids = level1Users.map(u => u._id);
 
-    // Level 2
-    const level2Users = await User.find({ "referralHierarchy.level2UserId": userId }).select("name email phone createdAt roles");
+    // Level 2: referred by Level 1 members or level2UserId = userId
+    const level2Users = await User.find({
+      _id: { $nin: [userId, ...l1Ids] },
+      $or: [
+        { "referralHierarchy.level2UserId": userId },
+        { referredBy: { $in: l1Ids } },
+        { "referralHierarchy.level1UserId": { $in: l1Ids } }
+      ]
+    }).select(selectFields);
     const l2Ids = level2Users.map(u => u._id);
 
-    // Level 3
-    const level3Users = await User.find({ "referralHierarchy.level3UserId": userId }).select("name email phone createdAt roles");
+    // Level 3: referred by Level 2 members or level3UserId = userId
+    const level3Users = await User.find({
+      _id: { $nin: [userId, ...l1Ids, ...l2Ids] },
+      $or: [
+        { "referralHierarchy.level3UserId": userId },
+        { referredBy: { $in: l2Ids } },
+        { "referralHierarchy.level1UserId": { $in: l2Ids } }
+      ]
+    }).select(selectFields);
 
     res.status(200).json({
       success: true,
@@ -138,10 +184,11 @@ export const getReferralStats = async (req: AuthRequest, res: Response): Promise
       return;
     }
 
-    const [directCount, totalTransactions, wallet] = await Promise.all([
-      Referral.countDocuments({ referrerUserId: userId }),
+    const [directCount, totalTransactions, wallet, directReferralsList] = await Promise.all([
+      Referral.countDocuments({ $or: [{ referrerUserId: userId }, { referrerId: userId }] }),
       ReferralTransaction.find({ recipientUserId: userId }),
-      Wallet.findOne({ userId })
+      Wallet.findOne({ userId }),
+      Referral.find({ $or: [{ referrerUserId: userId }, { referrerId: userId }] })
     ]);
 
     const totalEarnings = totalTransactions
@@ -163,8 +210,19 @@ export const getReferralStats = async (req: AuthRequest, res: Response): Promise
     totalTransactions.forEach(t => {
       const amt = t.amount || 0;
       const lvl = t.level || 1;
-      const isBonus = (t.transactionType || "").includes("bonus") || (t.rewardReason || "").toLowerCase().includes("signup");
-      const isFirstPurchase = (t.transactionType || "").includes("first_purchase") || (t.rewardReason || "").toLowerCase().includes("first");
+      const typeStr = (t.transactionType || "").toLowerCase();
+      const reasonStr = (t.rewardReason || "").toLowerCase();
+
+      const isFirstPurchase = typeStr.includes("first") || reasonStr.includes("first");
+      const isBonus = !isFirstPurchase && (
+        typeStr.includes("signup") || 
+        typeStr.includes("onboarding") || 
+        typeStr.includes("welcome") || 
+        typeStr.includes("bonus") || 
+        reasonStr.includes("signup") || 
+        reasonStr.includes("onboarding") || 
+        reasonStr.includes("welcome")
+      );
 
       if (lvl === 1) {
         level1.totalEarned += amt;
@@ -187,6 +245,18 @@ export const getReferralStats = async (req: AuthRequest, res: Response): Promise
       else if (isFirstPurchase) firstPurchaseCommission += amt;
       else productCommission += amt;
     });
+
+    // If no direct signup bonus transactions recorded in ReferralTransaction yet, add any rewarded signups from Referral collection
+    if (signupBonus === 0 && directReferralsList.length > 0) {
+      directReferralsList.forEach(r => {
+        const reward = Number((r as any).reward || r.rewardAmount || 0);
+        if (reward > 0) {
+          signupBonus += reward;
+          level1.signupBonus += reward;
+          level1.totalEarned += reward;
+        }
+      });
+    }
 
     res.status(200).json({
       success: true,
