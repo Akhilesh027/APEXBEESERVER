@@ -366,36 +366,39 @@ export const getReferralStats = async (req: AuthRequest, res: Response): Promise
       const typeStr = (t.transactionType || "").toLowerCase();
       const reasonStr = (t.rewardReason || "").toLowerCase();
 
-      const isFirstPurchase = typeStr.includes("first") || reasonStr.includes("first");
-      const isBonus = !isFirstPurchase && (
+      const isProductFirstPurchase = typeStr.includes("first_purchase") || 
+                                     (typeStr.includes("first") && (typeStr.includes("product") || reasonStr.includes("product")));
+      const isBonus = !isProductFirstPurchase && (
         typeStr.includes("signup") || 
         typeStr.includes("onboarding") || 
         typeStr.includes("welcome") || 
         typeStr.includes("bonus") || 
+        typeStr.includes("first_order") ||
         reasonStr.includes("signup") || 
         reasonStr.includes("onboarding") || 
-        reasonStr.includes("welcome")
+        reasonStr.includes("welcome") ||
+        reasonStr.includes("first_order")
       );
 
       if (lvl === 1) {
         level1.totalEarned += amt;
         if (isBonus) level1.signupBonus += amt;
-        else if (isFirstPurchase) level1.firstPurchaseCommission += amt;
+        else if (isProductFirstPurchase) level1.firstPurchaseCommission += amt;
         else level1.productCommission += amt;
       } else if (lvl === 2) {
         level2.totalEarned += amt;
         if (isBonus) level2.signupBonus += amt;
-        else if (isFirstPurchase) level2.firstPurchaseCommission += amt;
+        else if (isProductFirstPurchase) level2.firstPurchaseCommission += amt;
         else level2.productCommission += amt;
       } else if (lvl === 3) {
         level3.totalEarned += amt;
         if (isBonus) level3.signupBonus += amt;
-        else if (isFirstPurchase) level3.firstPurchaseCommission += amt;
+        else if (isProductFirstPurchase) level3.firstPurchaseCommission += amt;
         else level3.productCommission += amt;
       }
 
       if (isBonus) signupBonus += amt;
-      else if (isFirstPurchase) firstPurchaseCommission += amt;
+      else if (isProductFirstPurchase) firstPurchaseCommission += amt;
       else productCommission += amt;
     });
 
