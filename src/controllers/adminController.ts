@@ -47,6 +47,7 @@ import { DeliveryPartner } from "../models/DeliveryPartner";
 import { TerritoryMapping } from "../models/TerritoryMapping";
 import { Territory } from "../models/Territory";
 import { Wallet } from "../models/Wallet";
+import { WalletTransaction } from "../models/WalletTransaction";
 import { StateMaster } from "../models/StateMaster";
 import { DistrictMaster } from "../models/DistrictMaster";
 import { MandalMaster } from "../models/MandalMaster";
@@ -4344,5 +4345,251 @@ export const getAdminLiveFoodOrders = async (req: Request, res: Response): Promi
     res.status(200).json({ success: true, orders });
   } catch (error: any) {
     res.status(500).json({ success: false, message: 'Failed to fetch admin live food orders', error: error.message });
+  }
+};
+
+// ==========================================
+// ALL TRANSACTIONS MANAGEMENT CONTROLLERS
+// ==========================================
+
+export const getAllTransactions = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { search, type, status, limit = 1000 } = req.query;
+
+    const wallets = await Wallet.find().populate('userId', 'name email phone roles referralCode');
+    const transactions: any[] = [];
+
+    for (const w of wallets) {
+      const user: any = w.userId;
+      const ownerName = user?.name || (w.userId ? "Member" : "Apexbee System");
+      const ownerEmail = user?.email || "";
+      const ownerPhone = user?.phone || "";
+      const ownerRole = Array.isArray(user?.roles) ? user.roles.join(', ') : (user?.role || "user");
+      const userId = user?._id || w.userId;
+
+      if (Array.isArray(w.ledgerEntries)) {
+        w.ledgerEntries.forEach((entry: any) => {
+          transactions.push({
+            id: entry._id?.toString() || entry.transactionId,
+            _id: entry._id?.toString(),
+            transactionId: entry.transactionId || `TXN-${entry._id?.toString().slice(-8).toUpperCase()}`,
+            walletId: w._id.toString(),
+            userId: userId?.toString(),
+            userName: ownerName,
+            userEmail: ownerEmail,
+            userPhone: ownerPhone,
+            userRole: ownerRole,
+            type: entry.type ? entry.type.toLowerCase() : 'credit',
+            direction: entry.type ? entry.type.toLowerCase() : 'credit',
+            amount: Number(entry.amount || 0),
+            category: entry.category || entry.source || 'General',
+            source: entry.source || 'wallet',
+            status: (entry.status || 'completed').toLowerCase(),
+            remarks: entry.remarks || entry.description || '',
+            description: entry.description || entry.remarks || '',
+            orderId: entry.referenceId ? entry.referenceId.toString() : '',
+            referenceType: entry.referenceType || '',
+            createdAt: entry.createdAt || entry.date || (w as any).createdAt || new Date(),
+          });
+        });
+      }
+    }
+
+    // Ingest standalone WalletTransaction records if present
+    try {
+      const standaloneTx = await WalletTransaction.find().populate('userId', 'name email phone roles').limit(200);
+      for (const st of standaloneTx) {
+        const txId = st.transactionId || st._id.toString();
+        if (!transactions.some(t => t.transactionId === txId || t.id === st._id.toString())) {
+          const user: any = st.userId;
+          transactions.push({
+            id: st._id.toString(),
+            _id: st._id.toString(),
+            transactionId: st.transactionId,
+            walletId: st.walletId?.toString(),
+            userId: user?._id?.toString() || st.userId?.toString(),
+            userName: user?.name || "Member",
+            userEmail: user?.email || "",
+            userPhone: user?.phone || "",
+            userRole: Array.isArray(user?.roles) ? user.roles.join(', ') : (user?.role || "user"),
+            type: (st.direction || 'credit').toLowerCase(),
+            direction: (st.direction || 'credit').toLowerCase(),
+            amount: Number(st.netAmount || st.grossAmount || (st as any).amount || 0),
+            category: st.type || 'General',
+            source: 'wallet_transaction',
+            status: (st.status || 'completed').toLowerCase(),
+            remarks: (st as any).notes || '',
+            description: (st as any).notes || '',
+            orderId: st.orderId ? st.orderId.toString() : '',
+            referenceType: 'ORDER',
+            createdAt: st.createdAt || new Date(),
+          });
+        }
+      }
+    } catch {}
+
+    // Sort newest first
+    transactions.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    // In-memory filter if search query provided
+    let filtered = transactions;
+    if (search && typeof search === 'string') {
+      const q = search.toLowerCase();
+      filtered = filtered.filter(t =>
+        (t.transactionId && t.transactionId.toLowerCase().includes(q)) ||
+        (t.userName && t.userName.toLowerCase().includes(q)) ||
+        (t.userEmail && t.userEmail.toLowerCase().includes(q)) ||
+        (t.userPhone && t.userPhone.includes(q)) ||
+        (t.orderId && t.orderId.toLowerCase().includes(q)) ||
+        (t.category && t.category.toLowerCase().includes(q)) ||
+        (t.remarks && t.remarks.toLowerCase().includes(q))
+      );
+    }
+    if (type && typeof type === 'string' && type !== 'all') {
+      filtered = filtered.filter(t => t.type === type.toLowerCase());
+    }
+    if (status && typeof status === 'string' && status !== 'all') {
+      filtered = filtered.filter(t => t.status === status.toLowerCase());
+    }
+
+    res.status(200).json({
+      success: true,
+      count: filtered.length,
+      transactions: filtered.slice(0, Number(limit)),
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: 'Failed to fetch transactions', error: error.message });
+  }
+};
+
+export const updateTransaction = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const { amount, type, category, status, remarks, description, orderId } = req.body;
+
+    const wallet = await Wallet.findOne({ "ledgerEntries._id": id });
+    if (!wallet) {
+      // Check in WalletTransaction
+      const wTx = await WalletTransaction.findById(id);
+      if (wTx) {
+        if (amount !== undefined) wTx.netAmount = Number(amount);
+        if (type !== undefined) wTx.direction = type.toLowerCase();
+        if (status !== undefined) wTx.status = status;
+        await wTx.save();
+        res.status(200).json({ success: true, message: "Transaction updated successfully", transaction: wTx });
+        return;
+      }
+      res.status(404).json({ success: false, message: "Transaction not found" });
+      return;
+    }
+
+    const entry = (wallet.ledgerEntries as any).id(id);
+    if (!entry) {
+      res.status(404).json({ success: false, message: "Ledger entry not found" });
+      return;
+    }
+
+    const oldAmount = Number(entry.amount || 0);
+    const oldType = String(entry.type || 'credit').toLowerCase();
+
+    if (amount !== undefined) entry.amount = Number(amount);
+    if (type !== undefined) entry.type = type.toLowerCase();
+    if (category !== undefined) entry.category = category;
+    if (status !== undefined) entry.status = status;
+    if (remarks !== undefined) entry.remarks = remarks;
+    if (description !== undefined) entry.description = description;
+    if (orderId !== undefined) entry.referenceId = orderId;
+
+    const newAmount = Number(entry.amount || 0);
+    const newType = String(entry.type || 'credit').toLowerCase();
+
+    // Adjust balance if amount or type was changed
+    if (oldAmount !== newAmount || oldType !== newType) {
+      if (oldType === 'credit') {
+        wallet.availableBalance -= oldAmount;
+      } else {
+        wallet.availableBalance += oldAmount;
+      }
+
+      if (newType === 'credit') {
+        wallet.availableBalance += newAmount;
+      } else {
+        wallet.availableBalance -= newAmount;
+      }
+
+      wallet.availableBalance = Math.max(0, Math.round(wallet.availableBalance * 100) / 100);
+    }
+
+    await wallet.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Transaction updated successfully",
+      entry,
+      walletBalance: wallet.availableBalance
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: 'Failed to update transaction', error: error.message });
+  }
+};
+
+export const deleteTransaction = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+
+    const wallet = await Wallet.findOne({ "ledgerEntries._id": id });
+    if (!wallet) {
+      const wTx = await WalletTransaction.findByIdAndDelete(id);
+      if (wTx) {
+        // Adjust wallet balance for standalone transaction
+        const wallet = await Wallet.findById(wTx.walletId);
+        if (wallet) {
+          const amt = Number(wTx.netAmount || wTx.grossAmount || (wTx as any).amount || 0);
+          const dir = (wTx.direction || 'credit').toLowerCase();
+          if (dir === 'credit') {
+            wallet.availableBalance = Math.max(0, wallet.availableBalance - amt);
+          } else {
+            wallet.availableBalance += amt;
+          }
+          await wallet.save();
+        }
+        res.status(200).json({ success: true, message: "Transaction deleted successfully" });
+        return;
+      }
+      res.status(404).json({ success: false, message: "Transaction not found" });
+      return;
+    }
+
+    const entry = (wallet.ledgerEntries as any).id(id);
+    if (!entry) {
+      res.status(404).json({ success: false, message: "Ledger entry not found" });
+      return;
+    }
+
+    const entryAmount = Number(entry.amount || 0);
+    const entryType = String(entry.type || 'credit').toLowerCase();
+
+    // Rollback balance effect
+    if (entryType === 'credit') {
+      wallet.availableBalance = Math.max(0, wallet.availableBalance - entryAmount);
+    } else {
+      wallet.availableBalance += entryAmount;
+    }
+    wallet.availableBalance = Math.round(wallet.availableBalance * 100) / 100;
+
+    (wallet.ledgerEntries as any).pull({ _id: id });
+    await wallet.save();
+
+    try {
+      await WalletTransaction.findOneAndDelete({ $or: [{ _id: id }, { transactionId: entry.transactionId }] });
+    } catch {}
+
+    res.status(200).json({
+      success: true,
+      message: "Transaction deleted successfully",
+      walletBalance: wallet.availableBalance
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: 'Failed to delete transaction', error: error.message });
   }
 };

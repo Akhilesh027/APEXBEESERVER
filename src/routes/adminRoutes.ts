@@ -49,7 +49,10 @@ import {
   cleanupExpiredReservations,
   getFeatureFlag,
   setFeatureFlag,
-  getMetrics
+  getMetrics,
+  getAllTransactions,
+  updateTransaction,
+  deleteTransaction
 } from '../controllers/adminController';
 import { requestVendorDocument } from '../controllers/vendorController';
 import { processReferralReleases } from '../controllers/referralController';
@@ -113,6 +116,12 @@ router.post('/entrepreneurs/:userId/release-commission', protect, restrictTo('ad
 router.get('/wallets', protect, restrictTo('admin'), getWallets);
 router.get('/reconciliation', protect, restrictTo('admin'), getReconciliationStats);
 router.get('/treasury-master', protect, restrictTo('admin'), getTreasuryMasterStats);
+
+// Transaction Management routes
+router.get('/transactions', protect, restrictTo('admin'), getAllTransactions);
+router.put('/transactions/:id', protect, restrictTo('admin'), updateTransaction);
+router.delete('/transactions/:id', protect, restrictTo('admin'), deleteTransaction);
+
 router.post('/settlements/release', protect, restrictTo('admin'), processReferralReleases);
 router.post('/inventory/cleanup-expired-reservations', protect, restrictTo('admin'), cleanupExpiredReservations);
 router.get('/feature-flags', protect, restrictTo('admin'), getFeatureFlag);

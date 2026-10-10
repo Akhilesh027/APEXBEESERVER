@@ -1,71 +1,58 @@
-import mongoose, { Schema, Document } from "mongoose";
+import mongoose, { Schema, Document } from 'mongoose';
 
 export interface IReferralTransaction extends Document {
   recipientUserId: mongoose.Types.ObjectId;
   referredUserId: mongoose.Types.ObjectId;
-  orderId: mongoose.Types.ObjectId;
-  level: number;
+  orderId?: mongoose.Types.ObjectId;
+  level?: number;
   amount: number;
-  transactionType: "first_order_bonus" | "product_commission" | "first_purchase_product_commission";
-  rewardReason: "first_order_bonus" | "product_commission" | "first_purchase_product_commission";
-  notes?: string;
-  status: "placed" | "pending" | "released" | "cancelled";
+  transactionType: string;
+  rewardReason?: string;
+  releaseDate?: Date;
+  status: 'placed' | 'pending' | 'released' | 'cancelled';
   released?: boolean;
   walletCredited?: boolean;
-  releasedBy?: mongoose.Types.ObjectId | string | null;
-  releaseDate: Date;
-  releasedAt?: Date | null;
+  releasedAt?: Date;
+  releasedBy?: mongoose.Types.ObjectId | string;
+  releasedTransactionId?: string;
   createdAt: Date;
   updatedAt: Date;
+  [key: string]: any;
 }
 
 const ReferralTransactionSchema = new Schema<IReferralTransaction>(
   {
-    recipientUserId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
-    referredUserId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
-    orderId: { type: Schema.Types.ObjectId, ref: "Order", required: true },
-    level: { type: Number, required: true },
-    amount: { type: Number, required: true },
+    recipientUserId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    referredUserId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    orderId: { type: Schema.Types.ObjectId, ref: 'Order', index: true },
+    level: { type: Number, default: 1 },
+    amount: { type: Number, required: true, min: 0 },
     transactionType: {
       type: String,
-      enum: ["first_order_bonus", "product_commission", "first_purchase_product_commission"],
-      required: true
+      required: true,
+      index: true,
     },
-    rewardReason: {
-      type: String,
-      enum: ["first_order_bonus", "product_commission", "first_purchase_product_commission"],
-      required: true
-    },
-    notes: { type: String, default: "" },
+    rewardReason: { type: String, default: '' },
+    releaseDate: { type: Date, index: true },
     status: {
       type: String,
-      enum: ["placed", "pending", "released", "cancelled"],
-      default: "placed",
-      index: true
+      enum: ['placed', 'pending', 'released', 'cancelled'],
+      default: 'placed',
+      index: true,
     },
     released: { type: Boolean, default: false },
     walletCredited: { type: Boolean, default: false },
-    releasedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
-    releaseDate: { type: Date, required: true },
-    releasedAt: { type: Date, default: null }
+    releasedAt: { type: Date },
+    releasedBy: { type: Schema.Types.Mixed },
+    releasedTransactionId: { type: String },
   },
-  { timestamps: true }
+  { timestamps: true, strict: false }
 );
 
-// Compound unique index to prevent duplicate payouts
-ReferralTransactionSchema.index(
-  { referredUserId: 1, orderId: 1, level: 1, transactionType: 1 },
-  { unique: true }
-);
-
-ReferralTransactionSchema.index(
-  { orderId: 1, recipientUserId: 1, level: 1, transactionType: 1 },
-  { unique: true }
-);
-
-ReferralTransactionSchema.index({ recipientUserId: 1, transactionType: 1, createdAt: -1 });
+ReferralTransactionSchema.index({ referredUserId: 1, orderId: 1, level: 1, transactionType: 1 });
 
 export const ReferralTransaction = mongoose.model<IReferralTransaction>(
-  "ReferralTransaction",
+  'ReferralTransaction',
   ReferralTransactionSchema
 );
+export default ReferralTransaction;

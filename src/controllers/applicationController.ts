@@ -212,8 +212,8 @@ export const createApplication = async (
       subCategory: (Array.isArray(req.body.approvedSubcategories) && req.body.approvedSubcategories.length > 0)
         ? req.body.approvedSubcategories[0]
         : (Array.isArray(req.body.subCategories) && req.body.subCategories.length > 0)
-        ? req.body.subCategories[0]
-        : (req.body.subCategory || req.body.subcategory || ""),
+          ? req.body.subCategories[0]
+          : (req.body.subCategory || req.body.subcategory || ""),
       approvedSubcategories: (() => {
         const raw = req.body.approvedSubcategories || req.body.subCategories || req.body.subcategories;
         if (Array.isArray(raw) && raw.length > 0) {

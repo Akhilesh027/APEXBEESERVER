@@ -323,7 +323,7 @@ export const getFranchiseTeam = async (req: AuthRequest, res: Response): Promise
       const mappings = await TerritoryMapping.find({ stateFranchiseId: franchise._id });
       const vendorIds = mappings.filter(m => m.businessType === 'vendor').map(m => m.businessId);
       const spIds = mappings.filter(m => m.businessType === 'service_provider').map(m => m.businessId);
-      
+
       if (vendorIds.length > 0) vendors = await Vendor.find({ _id: { $in: vendorIds } });
       if (spIds.length > 0) serviceProviders = await ServiceProvider.find({ _id: { $in: spIds } });
 
@@ -383,17 +383,17 @@ export const getFranchiseTeam = async (req: AuthRequest, res: Response): Promise
     const populatedEnts = await Promise.all(entrepreneurs.map(async (ent) => {
       const entSettlements = await CommissionSettlement.find({ recipientId: ent.userId }).populate('orderId');
       const entReferrals = await ReferralTransaction.find({ recipientUserId: ent.userId });
-      
+
       const settlementCommissions = entSettlements
         .filter(s => s.status === 'released')
         .reduce((sum, s) => sum + s.amount, 0);
       const referralCommissions = entReferrals
         .filter(r => r.status === 'released')
         .reduce((sum, r) => sum + r.amount, 0);
-        
+
       const commissionEarned = settlementCommissions + referralCommissions;
       const revenue = entSettlements.reduce((sum, s) => sum + ((s.orderId as any)?.totalAmount || 0), 0);
-      
+
       return {
         ...ent.toObject(),
         salesRevenue: revenue || 0,
@@ -430,12 +430,12 @@ export const getFranchiseTeam = async (req: AuthRequest, res: Response): Promise
     const level3 = populatedVendors.length;
 
     const teamRevenue = populatedSubs.reduce((acc, s) => acc + s.revenue, 0) +
-                        populatedEnts.reduce((acc, e) => acc + e.salesRevenue, 0) +
-                        populatedVendors.reduce((acc, v) => acc + v.sales, 0);
+      populatedEnts.reduce((acc, e) => acc + e.salesRevenue, 0) +
+      populatedVendors.reduce((acc, v) => acc + v.sales, 0);
 
     const teamCommissions = populatedSubs.reduce((acc, s) => acc + s.commissionEarned, 0) +
-                            populatedEnts.reduce((acc, e) => acc + e.commissionEarned, 0) +
-                            populatedVendors.reduce((acc, v) => acc + (v.sales * 0.02), 0);
+      populatedEnts.reduce((acc, e) => acc + e.commissionEarned, 0) +
+      populatedVendors.reduce((acc, v) => acc + (v.sales * 0.02), 0);
 
     const downlineUsers = [
       ...populatedSubs.map(sf => ({
@@ -547,8 +547,8 @@ export const getFranchisePerformance = async (req: AuthRequest, res: Response): 
 
     // Calculate actual sales from orders linked to settlements
     const settlements = await CommissionSettlement.find({ recipientId: franchise.userId });
-    const orderIds = settlements.map(s => s.orderId);
-    const uniqueOrderIds = Array.from(new Set(orderIds.map(id => id.toString())));
+    const orderIds = settlements.map(s => s.orderId).filter(Boolean);
+    const uniqueOrderIds = Array.from(new Set(orderIds.map(id => (id ? id.toString() : '')))).filter(Boolean);
     const orders = await Order.find({ _id: { $in: uniqueOrderIds } });
     const totalSales = orders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
 
@@ -657,9 +657,9 @@ export const getFranchiseNetwork = async (
             : {}),
           ...(currentFranchise.franchiseLevel === "mandal"
             ? {
-                district: currentFranchise.district,
-                mandal: currentFranchise.mandal,
-              }
+              district: currentFranchise.district,
+              mandal: currentFranchise.mandal,
+            }
             : {}),
         },
       ],
@@ -684,9 +684,9 @@ export const getFranchiseNetwork = async (
             : {}),
           ...(currentFranchise.franchiseLevel === "mandal"
             ? {
-                district: currentFranchise.district,
-                mandal: currentFranchise.mandal,
-              }
+              district: currentFranchise.district,
+              mandal: currentFranchise.mandal,
+            }
             : {}),
         },
       ],
@@ -796,10 +796,10 @@ export const getFranchiseNetwork = async (
           (t.pincode
             ? "Pincode"
             : t.mandal
-            ? "Mandal"
-            : t.district
-            ? "District"
-            : "State"),
+              ? "Mandal"
+              : t.district
+                ? "District"
+                : "State"),
         name:
           t.name ||
           t.pincode ||
@@ -1458,7 +1458,7 @@ export const getFranchiseDashboardAnalytics = async (req: AuthRequest, res: Resp
     const orders = await Order.find({
       sellerId: { $in: scopedVendorUserIds }
     });
-    
+
     const orderStatuses = {
       Placed: orders.filter(o => o.orderStatus === 'Placed').length,
       Confirmed: orders.filter(o => o.orderStatus === 'Confirmed').length,
@@ -1471,9 +1471,9 @@ export const getFranchiseDashboardAnalytics = async (req: AuthRequest, res: Resp
     };
 
     // 6. Revenue Calculations (valid actual orders only)
-    const revenueOrders = orders.filter(o => 
-      o.orderStatus !== 'Cancelled' && 
-      o.orderStatus !== 'Payment Rejected' && 
+    const revenueOrders = orders.filter(o =>
+      o.orderStatus !== 'Cancelled' &&
+      o.orderStatus !== 'Payment Rejected' &&
       (o.paymentStatus === 'Paid' || o.paymentStatus === 'Approved' || o.orderStatus === 'Delivered')
     );
 
@@ -1822,7 +1822,7 @@ export const getFranchiseDashboardAnalytics = async (req: AuthRequest, res: Resp
         commissionTrendData,
         mlmGrowthData,
         leaderboard,
-        
+
         // Extended metrics
         productsListed,
         liveProducts,
@@ -1918,7 +1918,7 @@ export const getFranchiseCommissions = async (req: AuthRequest, res: Response): 
       const vendorName = vendorUser?.sellerProfile?.businessName || vendorUser?.name || 'Vendor Partner';
       const formattedDate = formatDate(s.createdAt);
 
-      const isMlm = 
+      const isMlm =
         (franchise.franchiseLevel === 'state' && (s.districtFranchiseId || s.mandalFranchiseId)) ||
         (franchise.franchiseLevel === 'district' && s.mandalFranchiseId);
 
@@ -1926,7 +1926,7 @@ export const getFranchiseCommissions = async (req: AuthRequest, res: Response): 
         // MLM transaction
         const childId = s.mandalFranchiseId || s.districtFranchiseId;
         const childFran = childId ? franchiseMap.get(childId.toString()) : null;
-        const downlineName = childFran 
+        const downlineName = childFran
           ? `${childFran.businessName || childFran.ownerName} (${childFran.franchiseLevel})`
           : vendorName;
 

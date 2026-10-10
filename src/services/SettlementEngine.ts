@@ -818,7 +818,7 @@ export class SettlementEngine {
     }
 
     // Reset customer firstOrderQualified if a first order bonus is cancelled
-    const hasFirstOrderBonus = txs.some(tx => tx.transactionType === "first_order_bonus");
+    const hasFirstOrderBonus = txs.some((tx: any) => tx.transactionType === "first_order_bonus");
     if (hasFirstOrderBonus) {
       let queryOrder = Order.findById(orderId);
       if (session) queryOrder = queryOrder.session(session);
