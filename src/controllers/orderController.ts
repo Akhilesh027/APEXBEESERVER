@@ -305,7 +305,9 @@ export const createOrder = async (req: Request, res: Response) => {
         fulfillment,
         isScheduledSubscription,
         scheduleDetails,
-        preOrder
+        preOrder,
+        referralCode: req.body.referralCode || req.body.ref || undefined,
+        productSharerId: req.body.productSharerId || undefined
       },
       idempotencyKey ? String(idempotencyKey) : undefined,
       req.body

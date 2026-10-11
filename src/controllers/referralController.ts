@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { AuthRequest } from "../middleware/auth";
 import mongoose from "mongoose";
+import jwt from "jsonwebtoken";
 import { User } from "../models/User";
 import { Referral } from "../models/Referral";
 import { ReferralSettings } from "../models/ReferralSettings";
@@ -9,6 +10,36 @@ import { CommissionSettlement } from "../models/CommissionSettlement";
 import { Wallet } from "../models/Wallet";
 import { SettlementEngine } from "../services/SettlementEngine";
 import { WalletEngine } from "../services/WalletEngine";
+
+// Helper to determine if user has Business Partner or elevated referral roles
+export const isPartnerUser = (roles: any[] = []): boolean => {
+  const norm = (roles || []).map((r) => String(r).toLowerCase().trim());
+  return norm.some(
+    (r) =>
+      r === "business_partner" ||
+      r === "admin" ||
+      r.includes("franchise") ||
+      r === "entrepreneur" ||
+      r === "vendor" ||
+      r === "wholesaler" ||
+      r === "manufacturer"
+  );
+};
+
+// Helper to mask sensitive downline contact details for customer privacy
+export const maskContactInfo = (phone?: string, email?: string) => {
+  let maskedPhone = "";
+  if (phone) {
+    const clean = phone.replace(/[^0-9]/g, "");
+    maskedPhone = clean.length > 4 ? clean.slice(0, 4) + "••••••" : "••••••";
+  }
+  let maskedEmail = "";
+  if (email && email.includes("@")) {
+    const [name, domain] = email.split("@");
+    maskedEmail = (name.length > 2 ? name.slice(0, 2) : name.slice(0, 1)) + "•••@" + domain;
+  }
+  return { phone: maskedPhone, email: maskedEmail };
+};
 
 // GET /api/referrals/me or /my
 export const getMyReferralInfo = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -51,9 +82,29 @@ export const getReferralDashboard = async (req: AuthRequest, res: Response): Pro
       return;
     }
     const user = await User.findById(userId);
+    const isPartner = isPartnerUser(user?.roles || (req.user as any)?.roles || []);
 
-    const directReferrals = await Referral.find({ referrerUserId: userId }).populate("referredUserId", "name email phone createdAt");
-    const transactions = await ReferralTransaction.find({ recipientUserId: userId }).sort({ createdAt: -1 });
+    const directReferralsRaw = await Referral.find({ referrerUserId: userId }).populate("referredUserId", "name email phone createdAt");
+    
+    // Privacy protection: for customers, mask contact details
+    const directReferrals = directReferralsRaw.map((dr) => {
+      const raw = dr.toObject ? dr.toObject() : { ...dr };
+      if (!isPartner && raw.referredUserId && typeof raw.referredUserId === "object") {
+        const masked = maskContactInfo((raw.referredUserId as any).phone, (raw.referredUserId as any).email);
+        raw.referredUserId = {
+          ...(raw.referredUserId as any),
+          phone: masked.phone,
+          email: masked.email
+        };
+      }
+      return raw;
+    });
+
+    const txQuery: any = { recipientUserId: userId };
+    if (!isPartner) {
+      txQuery.$or = [{ level: 1 }, { level: { $exists: false } }, { level: null }];
+    }
+    const transactions = await ReferralTransaction.find(txQuery).sort({ createdAt: -1 });
 
     const totalEarned = transactions
       .filter(t => t.status === "released")
@@ -65,6 +116,8 @@ export const getReferralDashboard = async (req: AuthRequest, res: Response): Pro
 
     res.status(200).json({
       success: true,
+      isBusinessPartner: isPartner,
+      isCustomer: !isPartner,
       directReferralsCount: directReferrals.length,
       directReferrals,
       totalEarned,
@@ -84,7 +137,16 @@ export const getReferralHistory = async (req: AuthRequest, res: Response): Promi
       res.status(401).json({ success: false, message: "Unauthorized" });
       return;
     }
-    const history = await ReferralTransaction.find({ recipientUserId: userId })
+    const user = await User.findById(userId);
+    const isPartner = isPartnerUser(user?.roles || (req.user as any)?.roles || []);
+
+    const txQuery: any = { recipientUserId: userId };
+    // Customers can only access their own direct eligible rewards (Level 1)
+    if (!isPartner) {
+      txQuery.$or = [{ level: 1 }, { level: { $exists: false } }, { level: null }];
+    }
+
+    const history = await ReferralTransaction.find(txQuery)
       .populate("referredUserId", "name phone email")
       .populate("orderId", "orderNumber totalAmount createdAt")
       .sort({ createdAt: -1 });
@@ -114,7 +176,24 @@ export const getReferralHistory = async (req: AuthRequest, res: Response): Promi
     });
 
     const combinedHistory = [...history, ...syntheticBonusTxs];
-    res.status(200).json({ success: true, history: combinedHistory });
+
+    // Privacy protection: sanitize downline private details for regular customers
+    const sanitizedHistory = !isPartner
+      ? combinedHistory.map(item => {
+          const raw = item.toObject ? item.toObject() : { ...item };
+          if (raw.referredUserId && typeof raw.referredUserId === "object") {
+            const masked = maskContactInfo(raw.referredUserId.phone, raw.referredUserId.email);
+            raw.referredUserId = {
+              ...raw.referredUserId,
+              phone: masked.phone,
+              email: masked.email
+            };
+          }
+          return raw;
+        })
+      : combinedHistory;
+
+    res.status(200).json({ success: true, isBusinessPartner: isPartner, history: sanitizedHistory });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -129,7 +208,15 @@ export const getReferralNetwork = async (req: AuthRequest, res: Response): Promi
       return;
     }
 
-    const rootUser = await User.findById(userId).select("name email phone referralCode totalReferrals");
+    const user = await User.findById(userId);
+    if (!user) {
+      res.status(404).json({ success: false, message: "User not found" });
+      return;
+    }
+
+    const isPartner = isPartnerUser(user.roles || (req.user as any)?.roles || []);
+
+    const rootUser = await User.findById(userId).select("name email phone referralCode totalReferrals roles");
 
     // Level 1: direct
     const selectFields = "name email phone createdAt roles referredBy referralHierarchy referralCode totalReferrals";
@@ -142,29 +229,36 @@ export const getReferralNetwork = async (req: AuthRequest, res: Response): Promi
     }).select(selectFields);
     const l1Ids = level1Users.map(u => u._id);
 
-    // Level 2: referred by Level 1 members or level2UserId = userId
-    const level2Users = await User.find({
-      _id: { $nin: [userId, ...l1Ids] },
-      $or: [
-        { "referralHierarchy.level2UserId": userId },
-        { referredBy: { $in: l1Ids } },
-        { "referralHierarchy.level1UserId": { $in: l1Ids } }
-      ]
-    }).select(selectFields);
-    const l2Ids = level2Users.map(u => u._id);
+    // Business Partner only: Level 2 and Level 3 users
+    let level2Users: any[] = [];
+    let level3Users: any[] = [];
+    let l2Ids: any[] = [];
 
-    // Level 3: referred by Level 2 members or level3UserId = userId
-    const level3Users = await User.find({
-      _id: { $nin: [userId, ...l1Ids, ...l2Ids] },
-      $or: [
-        { "referralHierarchy.level3UserId": userId },
-        { referredBy: { $in: l2Ids } },
-        { "referralHierarchy.level1UserId": { $in: l2Ids } }
-      ]
-    }).select(selectFields);
+    if (isPartner) {
+      // Level 2: referred by Level 1 members or level2UserId = userId
+      level2Users = await User.find({
+        _id: { $nin: [userId, ...l1Ids] },
+        $or: [
+          { "referralHierarchy.level2UserId": userId },
+          { referredBy: { $in: l1Ids } },
+          { "referralHierarchy.level1UserId": { $in: l1Ids } }
+        ]
+      }).select(selectFields);
+      l2Ids = level2Users.map(u => u._id);
+
+      // Level 3: referred by Level 2 members or level3UserId = userId
+      level3Users = await User.find({
+        _id: { $nin: [userId, ...l1Ids, ...l2Ids] },
+        $or: [
+          { "referralHierarchy.level3UserId": userId },
+          { referredBy: { $in: l2Ids } },
+          { "referralHierarchy.level1UserId": { $in: l2Ids } }
+        ]
+      }).select(selectFields);
+    }
 
     // Calculate commissions generated and orders placed by downline members
-    const allDownlineIds = [...l1Ids, ...l2Ids, ...level3Users.map(u => u._id)];
+    const allDownlineIds = isPartner ? [...l1Ids, ...l2Ids, ...level3Users.map(u => u._id)] : [...l1Ids];
     const commMap = new Map<string, number>();
     const orderMap = new Map<string, number>();
 
@@ -254,8 +348,12 @@ export const getReferralNetwork = async (req: AuthRequest, res: Response): Promi
     let rootTotalOrders = 0;
 
     try {
+      const txMatch: any = { recipientUserId: { $in: [userObjId, String(userId) as any] } };
+      if (!isPartner) {
+        txMatch.$or = [{ level: 1 }, { level: { $exists: false } }, { level: null }];
+      }
       const rootComms = await ReferralTransaction.aggregate([
-        { $match: { recipientUserId: { $in: [userObjId, String(userId) as any] } } },
+        { $match: txMatch },
         { $group: { _id: null, total: { $sum: "$amount" }, count: { $sum: 1 } } }
       ]);
       if (rootComms.length > 0) {
@@ -264,16 +362,18 @@ export const getReferralNetwork = async (req: AuthRequest, res: Response): Promi
       }
     } catch { }
 
-    try {
-      const rootSettlements = await CommissionSettlement.aggregate([
-        { $match: { recipientId: { $in: [userObjId, String(userId) as any] } } },
-        { $group: { _id: null, total: { $sum: "$amount" }, count: { $sum: 1 } } }
-      ]);
-      if (rootSettlements.length > 0) {
-        rootTotalCommission += rootSettlements[0].total || 0;
-        rootTotalOrders += rootSettlements[0].count || 0;
-      }
-    } catch { }
+    if (isPartner) {
+      try {
+        const rootSettlements = await CommissionSettlement.aggregate([
+          { $match: { recipientId: { $in: [userObjId, String(userId) as any] } } },
+          { $group: { _id: null, total: { $sum: "$amount" }, count: { $sum: 1 } } }
+        ]);
+        if (rootSettlements.length > 0) {
+          rootTotalCommission += rootSettlements[0].total || 0;
+          rootTotalOrders += rootSettlements[0].count || 0;
+        }
+      } catch { }
+    }
 
     try {
       const OrderModel = mongoose.models.Order || (User.db as any).model("Order");
@@ -293,6 +393,12 @@ export const getReferralNetwork = async (req: AuthRequest, res: Response): Promi
     const enrichUser = (u: any) => {
       const raw = u.toObject ? u.toObject() : { ...u };
       const sId = String(raw._id);
+      // Privacy masking: mask downline phone and email for customer role
+      if (!isPartner) {
+        const masked = maskContactInfo(raw.phone, raw.email);
+        raw.phone = masked.phone;
+        raw.email = masked.email;
+      }
       return {
         ...raw,
         totalCommissionGenerated: commMap.get(sId) || 0,
@@ -301,8 +407,8 @@ export const getReferralNetwork = async (req: AuthRequest, res: Response): Promi
     };
 
     const enrichedL1 = level1Users.map(enrichUser);
-    const enrichedL2 = level2Users.map(enrichUser);
-    const enrichedL3 = level3Users.map(enrichUser);
+    const enrichedL2 = isPartner ? level2Users.map(enrichUser) : [];
+    const enrichedL3 = isPartner ? level3Users.map(enrichUser) : [];
 
     const enrichedRootUser = {
       ...(rootUser?.toObject ? rootUser.toObject() : rootUser),
@@ -312,6 +418,8 @@ export const getReferralNetwork = async (req: AuthRequest, res: Response): Promi
 
     res.status(200).json({
       success: true,
+      isBusinessPartner: isPartner,
+      isCustomer: !isPartner,
       user: enrichedRootUser,
       level1: enrichedL1,
       level2: enrichedL2,
@@ -337,6 +445,9 @@ export const getReferralStats = async (req: AuthRequest, res: Response): Promise
       return;
     }
 
+    const user = await User.findById(userId);
+    const isPartner = isPartnerUser(user?.roles || (req.user as any)?.roles || []);
+
     const [directCount, totalTransactions, wallet, directReferralsList] = await Promise.all([
       Referral.countDocuments({ $or: [{ referrerUserId: userId }, { referrerId: userId }] }),
       ReferralTransaction.find({ recipientUserId: userId }),
@@ -344,7 +455,7 @@ export const getReferralStats = async (req: AuthRequest, res: Response): Promise
       Referral.find({ $or: [{ referrerUserId: userId }, { referrerId: userId }] })
     ]);
 
-    const totalEarnings = totalTransactions
+    const totalEarningsAll = totalTransactions
       .filter(t => t.status === "released")
       .reduce((sum, t) => sum + (t.amount || 0), 0);
 
@@ -414,8 +525,13 @@ export const getReferralStats = async (req: AuthRequest, res: Response): Promise
       });
     }
 
+    // Customer scoping: only Level 1 rewards are presented
+    const totalEarnings = isPartner ? totalEarningsAll : level1.totalEarned;
+
     res.status(200).json({
       success: true,
+      isBusinessPartner: isPartner,
+      isCustomer: !isPartner,
       stats: {
         totalReferrals: directCount,
         totalEarnings,
@@ -431,8 +547,8 @@ export const getReferralStats = async (req: AuthRequest, res: Response): Promise
         signupBonus,
         franchiseIncentives,
         level1,
-        level2,
-        level3
+        level2: isPartner ? level2 : { signupBonus: 0, firstPurchaseCommission: 0, productCommission: 0, totalEarned: 0 },
+        level3: isPartner ? level3 : { signupBonus: 0, firstPurchaseCommission: 0, productCommission: 0, totalEarned: 0 }
       }
     });
   } catch (error: any) {
@@ -448,6 +564,9 @@ export const getReferralEarningsSummary = async (req: AuthRequest, res: Response
       res.status(401).json({ success: false, message: "Unauthorized" });
       return;
     }
+    const user = await User.findById(userId);
+    const isPartner = isPartnerUser(user?.roles || (req.user as any)?.roles || []);
+
     const txs = await ReferralTransaction.find({ recipientUserId: userId });
 
     const byLevel: Record<number, number> = { 1: 0, 2: 0, 3: 0 };
@@ -465,13 +584,20 @@ export const getReferralEarningsSummary = async (req: AuthRequest, res: Response
       }
     });
 
+    if (!isPartner) {
+      byLevel[2] = 0;
+      byLevel[3] = 0;
+    }
+
     res.status(200).json({
       success: true,
+      isBusinessPartner: isPartner,
+      isCustomer: !isPartner,
       summary: {
         byLevel,
         directBonus,
         productCommission,
-        total: directBonus + productCommission
+        total: isPartner ? (directBonus + productCommission) : (byLevel[1] || 0)
       }
     });
   } catch (error: any) {
@@ -551,6 +677,51 @@ export const processReferralReleases = async (req: Request, res: Response): Prom
       success: true,
       message: "Referral settlements processed successfully",
       stats
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// POST /api/referrals/upgrade-partner
+export const upgradeToBusinessPartner = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      res.status(401).json({ success: false, message: "Unauthorized" });
+      return;
+    }
+    const user = await User.findById(userId);
+    if (!user) {
+      res.status(404).json({ success: false, message: "User not found" });
+      return;
+    }
+
+    if (!user.roles.includes("business_partner")) {
+      user.roles.push("business_partner");
+      await user.save();
+    }
+
+    const token = jwt.sign(
+      { id: user._id.toString(), email: user.email, roles: user.roles },
+      process.env.JWT_SECRET || 'supersecretjwtkeyforapexbeebusinessoperatingnetwork',
+      { expiresIn: '30d' }
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "Congratulations! You have been upgraded to Business Partner for free. Full Level 1–3 network access and Audit Splits unlocked.",
+      token,
+      user: {
+        id: user._id,
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone || user.mobile || "",
+        roles: user.roles,
+        referralCode: user.referralCode,
+        sellerProfile: user.sellerProfile
+      }
     });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });

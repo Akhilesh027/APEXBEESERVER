@@ -2462,3 +2462,203 @@ export const removeSeededProducts = async (req: Request, res: Response) => {
     });
   }
 };
+
+/**
+ * Task USER - 12: Dynamic Open Graph (OG) & Social Sharing Preview Endpoint
+ * Generates crawler-accessible HTML with og:title, og:description, og:image, og:url, og:type
+ * Preserves referral parameters (?ref=) and supports WhatsApp/Facebook/Twitterbot/Telegram crawlers.
+ */
+export const getProductSocialSharePreview = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const ref = (req.query.ref as string) || (req.query.referral as string) || '';
+    const userAgent = (req.headers['user-agent'] as string) || '';
+
+    // Detect social crawlers
+    const isCrawler = /facebookexternalhit|WhatsApp|Twitterbot|TelegramBot|Slackbot|LinkedInBot|Pinterest|Discordbot|SkypeUriPreview|Googlebot|bingbot|crawler|spider|bot/i.test(
+      userAgent
+    );
+
+    // Configurable base URLs
+    const FRONTEND_URL = process.env.FRONTEND_URL || 'https://apexbee.in';
+    const SERVER_URL = process.env.SERVER_URL || 'https://server.apexbee.in';
+    const DEFAULT_LOGO = `${SERVER_URL}/uploads/logo.png`;
+
+    // Query product
+    let product: any = null;
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      product = await Product.findById(id).populate('categoryId', 'name').lean();
+    } else {
+      product = await Product.findOne({ $or: [{ slug: id }, { sku: id }] }).populate('categoryId', 'name').lean();
+    }
+
+    // Default fallback values
+    let ogTitle = 'ApexBee — Hyperlocal Shopping, Services & App Portal';
+    let ogDescription = 'Shop fashion, groceries, electronics, book doorstep services, discover local stores, and earn with ApexBee.';
+    let ogImage = DEFAULT_LOGO;
+    let price = 0;
+    let mrp = 0;
+    let canonicalUrl = `${FRONTEND_URL}/product/${id}${ref ? `?ref=${encodeURIComponent(ref)}` : ''}`;
+
+    if (product) {
+      const name = product.name || product.itemName || 'Quality Product';
+      price = Number(
+        product.adminPricing?.customerSellingAmount ??
+        product.adminPricing?.sellingPrice ??
+        product.baseSellingPrice ??
+        product.salesPrice ??
+        product.sellingPrice ??
+        product.price ??
+        0
+      );
+      mrp = Number(product.baseMrp ?? product.userPrice ?? product.mrp ?? price);
+
+      ogTitle = `${name} | ApexBee`;
+
+      // Clean description
+      let rawDesc = (product.description || '').replace(/<[^>]*>?/gm, '').trim();
+      if (!rawDesc) {
+        rawDesc = `Explore ${name} on ApexBee. High quality, verified seller, guaranteed genuine product.`;
+      }
+      if (rawDesc.length > 180) {
+        rawDesc = `${rawDesc.substring(0, 177)}...`;
+      }
+
+      const formattedPrice = price > 0 ? `₹${price.toLocaleString('en-IN')}` : '';
+      const priceText = formattedPrice ? ` — Buy now for ${formattedPrice}!` : '';
+      ogDescription = `${rawDesc}${priceText}`;
+
+      // Resolve absolute public image URL
+      let candidateImg = '';
+      if (Array.isArray(product.images) && product.images.length > 0 && product.images[0]) {
+        candidateImg = typeof product.images[0] === 'string' ? product.images[0] : (product.images[0].url || product.images[0].secure_url || '');
+      } else if (product.thumbnail) {
+        candidateImg = product.thumbnail;
+      } else if (product.image) {
+        candidateImg = product.image;
+      }
+
+      if (candidateImg) {
+        if (candidateImg.startsWith('http://') || candidateImg.startsWith('https://')) {
+          ogImage = candidateImg;
+        } else {
+          ogImage = `${SERVER_URL}${candidateImg.startsWith('/') ? '' : '/'}${candidateImg}`;
+        }
+      }
+
+      canonicalUrl = `${FRONTEND_URL}/product/${product._id || id}${ref ? `?ref=${encodeURIComponent(ref)}` : ''}`;
+    }
+
+    // HTML escape helper
+    const escapeHtml = (str: string) =>
+      str
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+
+    const safeTitle = escapeHtml(ogTitle);
+    const safeDesc = escapeHtml(ogDescription);
+    const safeImg = escapeHtml(ogImage);
+    const safeUrl = escapeHtml(canonicalUrl);
+
+    // If human browser (not crawler) and not forcing preview format, redirect to frontend preserving ?ref=
+    const forcePreview = req.query.format === 'html' || req.query.preview === 'true';
+    if (!isCrawler && !forcePreview) {
+      return res.redirect(302, canonicalUrl);
+    }
+
+    // Social Crawler Optimized Full HTML Response
+    const html = `<!DOCTYPE html>
+<html lang="en" prefix="og: https://ogp.me/ns# product: https://ogp.me/ns/product#">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${safeTitle}</title>
+  <meta name="description" content="${safeDesc}">
+  <link rel="canonical" href="${safeUrl}">
+
+  <!-- Open Graph Meta Tags for WhatsApp, Facebook, LinkedIn -->
+  <meta property="og:type" content="product">
+  <meta property="og:site_name" content="ApexBee">
+  <meta property="og:title" content="${safeTitle}">
+  <meta property="og:description" content="${safeDesc}">
+  <meta property="og:image" content="${safeImg}">
+  <meta property="og:image:secure_url" content="${safeImg}">
+  <meta property="og:image:type" content="image/jpeg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="${safeTitle}">
+  <meta property="og:url" content="${safeUrl}">
+  ${price > 0 ? `<meta property="product:price:amount" content="${price}">` : ''}
+  <meta property="product:price:currency" content="INR">
+
+  <!-- Twitter Card Tags -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:site" content="@ApexBeeOfficial">
+  <meta name="twitter:title" content="${safeTitle}">
+  <meta name="twitter:description" content="${safeDesc}">
+  <meta name="twitter:image" content="${safeImg}">
+  <meta name="twitter:url" content="${safeUrl}">
+
+  <!-- Structured Data JSON-LD for Search Crawlers -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org/",
+    "@type": "Product",
+    "name": ${JSON.stringify(ogTitle)},
+    "image": [${JSON.stringify(ogImage)}],
+    "description": ${JSON.stringify(ogDescription)},
+    "offers": {
+      "@type": "Offer",
+      "url": ${JSON.stringify(canonicalUrl)},
+      "priceCurrency": "INR",
+      "price": "${price}",
+      "availability": "https://schema.org/InStock",
+      "seller": {
+        "@type": "Organization",
+        "name": "ApexBee"
+      }
+    }
+  }
+  </script>
+
+  <!-- Instant Browser Redirect Fallback for Non-Crawler Users -->
+  <noscript>
+    <meta http-equiv="refresh" content="0;url=${safeUrl}">
+  </noscript>
+  <script>
+    if (!navigator.userAgent.match(/facebookexternalhit|WhatsApp|Twitterbot|TelegramBot|Slackbot|LinkedInBot|Pinterest|Discordbot|Googlebot/i)) {
+      window.location.replace("${safeUrl}");
+    }
+  </script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0A1128; color: #fff; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; text-align: center; }
+    .card { background: #111a3d; padding: 2rem; border-radius: 1rem; max-width: 480px; border: 1px solid #233166; }
+    img { max-width: 100%; border-radius: 0.75rem; max-height: 250px; object-fit: cover; }
+    h1 { font-size: 1.25rem; margin-top: 1rem; color: #f8fafc; }
+    p { font-size: 0.875rem; color: #94a3b8; }
+    .price { font-size: 1.5rem; font-weight: bold; color: #fbbf24; margin: 0.5rem 0; }
+    a.btn { display: inline-block; background: #fbbf24; color: #0a1128; font-weight: bold; padding: 0.75rem 1.5rem; border-radius: 0.5rem; text-decoration: none; margin-top: 1rem; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <img src="${safeImg}" alt="${safeTitle}">
+    <h1>${safeTitle}</h1>
+    ${price > 0 ? `<div class="price">₹${price.toLocaleString('en-IN')}</div>` : ''}
+    <p>${safeDesc}</p>
+    <a href="${safeUrl}" class="btn">View on ApexBee &rarr;</a>
+  </div>
+</body>
+</html>`;
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    return res.status(200).send(html);
+  } catch (error: any) {
+    console.error('[getProductSocialSharePreview Error]:', error);
+    return res.redirect(302, 'https://apexbee.in');
+  }
+};
+

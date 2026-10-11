@@ -5,6 +5,7 @@ import { Address } from "../models/Address";
 import { Wallet } from "../models/Wallet";
 import { WalletEngine } from "../services/WalletEngine";
 import { CommissionSettlement } from "../models/CommissionSettlement";
+import { isPartnerUser } from "./referralController";
 
 // GET /api/user/profile/:id
 export const getUserProfile = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -243,6 +244,17 @@ export const getUserCommissions = async (req: AuthRequest, res: Response): Promi
       res.status(401).json({ success: false, message: "Unauthorized" });
       return;
     }
+    const user = await User.findById(userId);
+    const isPartner = isPartnerUser(user?.roles || (req.user as any)?.roles || []);
+
+    if (!isPartner) {
+      res.status(403).json({
+        success: false,
+        message: "Audit Splits and multi-tier commission audit records are restricted to Business Partners."
+      });
+      return;
+    }
+
     const commissions = await CommissionSettlement.find({ recipientId: userId })
       .populate("orderId", "orderNumber totalAmount createdAt customerName customerPhone")
       .populate("productId", "title name")

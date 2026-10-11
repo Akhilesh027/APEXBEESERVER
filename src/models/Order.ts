@@ -84,6 +84,8 @@ export interface IOrder extends Document {
   prepStatus?: string;
   paymentMethod?: string;
   paymentDetails?: any;
+  referralCode?: string;
+  productSharerId?: mongoose.Types.ObjectId;
 }
 
 const OrderItemSchema = new Schema<IOrderItem>({
@@ -200,6 +202,8 @@ const OrderSchema = new Schema<IOrder>(
     prepStatus: { type: String, default: 'pending' },
     paymentMethod: { type: String, default: 'cod' },
     paymentDetails: { type: Schema.Types.Mixed },
+    referralCode: { type: String, default: null, trim: true },
+    productSharerId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
   },
   { timestamps: true }
 );

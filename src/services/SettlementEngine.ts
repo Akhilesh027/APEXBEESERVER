@@ -383,12 +383,75 @@ export class SettlementEngine {
           return sh.amount ? (sh.amount * qty) : ((distributionPool * sh.percent) / 100);
         };
 
+        // Task USER - 13: Product Referral Tracking & 3-Level Duplicate Incentive Prevention
+        let productSharer: any = null;
+        if (order.productSharerId) {
+          let querySharer = User.findById(order.productSharerId);
+          if (session) querySharer = querySharer.session(session);
+          productSharer = await querySharer;
+        } else if (order.referralCode && order.referralCode !== 'APEXBEE') {
+          let querySharer = User.findOne({ referralCode: order.referralCode });
+          if (session) querySharer = querySharer.session(session);
+          productSharer = await querySharer;
+        }
+
         const hierarchy = customer.referralHierarchy;
-        const uplines = [
-          { id: hierarchy?.level1UserId || this.COMPANY_ID, amount: getShareAmount("level1"), level: 1, isFallback: !hierarchy?.level1UserId },
-          { id: hierarchy?.level2UserId || this.COMPANY_ID, amount: getShareAmount("level2"), level: 2, isFallback: !hierarchy?.level2UserId },
-          { id: hierarchy?.level3UserId || this.COMPANY_ID, amount: getShareAmount("level3"), level: 3, isFallback: !hierarchy?.level3UserId }
-        ];
+        let isExistingDownline = false;
+        let isSharerSelf = false;
+
+        if (productSharer) {
+          isSharerSelf = productSharer._id.toString() === customer._id.toString();
+          const l1Id = hierarchy?.level1UserId ? hierarchy.level1UserId.toString() : '';
+          const l2Id = hierarchy?.level2UserId ? hierarchy.level2UserId.toString() : '';
+          const l3Id = hierarchy?.level3UserId ? hierarchy.level3UserId.toString() : '';
+          const sharerIdStr = productSharer._id.toString();
+
+          isExistingDownline = l1Id === sharerIdStr || l2Id === sharerIdStr || l3Id === sharerIdStr;
+        }
+
+        let uplines: any[] = [];
+
+        if (productSharer && !isSharerSelf && !isExistingDownline) {
+          // Rule 3: Non-downline buyer purchased via shared product link.
+          // Direct product sharer earns the Level 1 Product Commission for driving the sale.
+          // Buyer's permanent hierarchy remains completely intact without corruption.
+          const sharerHierarchy = productSharer.referralHierarchy;
+          uplines = [
+            {
+              id: productSharer._id,
+              amount: getShareAmount("level1"),
+              level: 1,
+              isFallback: false,
+              txType: "product_link_referral_commission",
+              reason: "Product Referral Link Commission (Direct Sharer Attribution)"
+            },
+            {
+              id: sharerHierarchy?.level1UserId || this.COMPANY_ID,
+              amount: getShareAmount("level2"),
+              level: 2,
+              isFallback: !sharerHierarchy?.level1UserId,
+              txType: "product_commission",
+              reason: "Product Referral Commission (Sharer Upline Level 2)"
+            },
+            {
+              id: sharerHierarchy?.level2UserId || this.COMPANY_ID,
+              amount: getShareAmount("level3"),
+              level: 3,
+              isFallback: !sharerHierarchy?.level2UserId,
+              txType: "product_commission",
+              reason: "Product Referral Commission (Sharer Upline Level 3)"
+            }
+          ];
+        } else {
+          // Rule 1: Buyer is in existing 3-level downline (or organic order).
+          // Standard 3-tier commission distribution logic strictly applies.
+          // No duplicate product-link incentive is generated.
+          uplines = [
+            { id: hierarchy?.level1UserId || this.COMPANY_ID, amount: getShareAmount("level1"), level: 1, isFallback: !hierarchy?.level1UserId, txType: "product_commission", reason: "product_commission" },
+            { id: hierarchy?.level2UserId || this.COMPANY_ID, amount: getShareAmount("level2"), level: 2, isFallback: !hierarchy?.level2UserId, txType: "product_commission", reason: "product_commission" },
+            { id: hierarchy?.level3UserId || this.COMPANY_ID, amount: getShareAmount("level3"), level: 3, isFallback: !hierarchy?.level3UserId, txType: "product_commission", reason: "product_commission" }
+          ];
+        }
 
         for (const upline of uplines) {
           if (upline.id && upline.amount > 0) {
@@ -399,8 +462,8 @@ export class SettlementEngine {
                 orderId: order._id,
                 level: upline.level,
                 amount: upline.amount,
-                transactionType: "product_commission",
-                rewardReason: upline.isFallback ? `product_commission (Level ${upline.level} unreferred fallback)` : "product_commission",
+                transactionType: upline.txType || "product_commission",
+                rewardReason: upline.isFallback ? `${upline.txType || 'product_commission'} (Level ${upline.level} unreferred fallback)` : (upline.reason || "product_commission"),
                 releaseDate,
                 status: "placed"
               }, session);

@@ -24,6 +24,8 @@ export interface CheckoutInput {
   preOrder?: any;
   checkoutIdempotencyKey?: string;
   checkoutRequestHash?: string;
+  referralCode?: string;
+  productSharerId?: string;
 }
 
 export class CheckoutService {
@@ -142,6 +144,8 @@ export class CheckoutService {
       categoryId: primaryCategoryId,
       categoryName: primaryCategoryName,
       orderType,
+      referralCode: input.referralCode ? input.referralCode.trim() : undefined,
+      productSharerId: input.productSharerId ? new mongoose.Types.ObjectId(input.productSharerId) : undefined,
     });
 
     // 3. Atomically redeem coupon under the session if present

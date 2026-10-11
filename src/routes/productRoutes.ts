@@ -23,7 +23,8 @@ import {
   createInventoryMovement,
   getProductBySku,
   getBuyAgainProducts,
-  seedProductsForAllCategories
+  seedProductsForAllCategories,
+  getProductSocialSharePreview
 } from '../controllers/productController';
 
 import { productUpload } from '../middleware/multer';
@@ -43,7 +44,15 @@ router.post('/inventory/movements', protect, createInventoryMovement);
 router.post('/bulk-update', protect, restrictTo('vendor', 'wholesaler', 'manufacturer', 'admin'), bulkUpdateProducts);
 router.post('/ai-generator', protect, restrictTo('vendor', 'wholesaler', 'manufacturer', 'admin'), getAiProductSuggestions);
 router.get('/sku/:sku', getProductBySku);
-router.get('/:id', getProductById);
+router.get('/:id/share-preview', getProductSocialSharePreview);
+router.get('/:id/og', getProductSocialSharePreview);
+router.get('/:id', (req, res, next) => {
+  const userAgent = req.headers['user-agent'] || '';
+  if (/facebookexternalhit|WhatsApp|Twitterbot|TelegramBot|Slackbot|LinkedInBot|Pinterest|Discordbot/i.test(userAgent)) {
+    return getProductSocialSharePreview(req, res);
+  }
+  return getProductById(req, res);
+});
 
 // Seller/Admin only routes for product creation & edit
 router.post('/', protect, restrictTo('vendor', 'wholesaler', 'manufacturer', 'admin'), productUpload, assertVendorCategoryAccess, validateCategoryProductPayload, createProduct);

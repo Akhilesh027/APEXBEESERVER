@@ -9,7 +9,8 @@ import {
   processReferralReleases,
   getReferralStats,
   getReferralEarningsSummary,
-  getReferralLeaderboard
+  getReferralLeaderboard,
+  upgradeToBusinessPartner
 } from "../controllers/referralController";
 import { protect } from "../middleware/auth";
 
@@ -24,7 +25,7 @@ router.get("/network", protect, getReferralNetwork);
 router.get("/stats", protect, getReferralStats);
 router.get("/earnings-summary", protect, getReferralEarningsSummary);
 router.get("/leaderboard", protect, getReferralLeaderboard);
-
+router.post("/upgrade-partner", protect, upgradeToBusinessPartner);
 
 // Admin Configuration Endpoints
 router.get("/admin/settings", protect, getReferralSettings);
