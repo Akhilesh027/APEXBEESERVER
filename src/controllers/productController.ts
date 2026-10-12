@@ -2152,16 +2152,39 @@ export const getProductBySku = async (req: Request, res: Response): Promise<void
 
 export const getBuyAgainProducts = async (req: Request, res: Response): Promise<void> => {
   try {
-    const authUser = (req as any).user;
+    let authUser = (req as any).user;
+    if (!authUser && req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+      try {
+        const token = req.headers.authorization.split(' ')[1];
+        const decoded = jwt.verify(
+          token,
+          process.env.JWT_SECRET || 'supersecretjwtkeyforapexbeebusinessoperatingnetwork'
+        ) as any;
+        if (decoded && (decoded.id || decoded._id)) {
+          authUser = decoded;
+        }
+      } catch (e) {
+        // Invalid or expired token
+      }
+    }
+
+    // If user is not authenticated, strictly return empty array (do NOT return fallback products)
     if (!authUser) {
-      const fallbackProds = await Product.find({ isActive: true }).limit(6).lean();
-      res.status(200).json({ success: true, products: fallbackProds });
+      res.status(200).json({ success: true, products: [] });
       return;
     }
 
     const userId = authUser.id || authUser._id;
+    const userObjectId = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : null;
+    const userQueryIds: any[] = [userId, ...(userObjectId ? [userObjectId] : [])];
+
+    // Find past completed orders for this customer
     const pastOrders = await Order.find({
-      customerId: userId,
+      $or: [
+        { customerId: { $in: userQueryIds } },
+        { user: { $in: userQueryIds } },
+        { userId: { $in: userQueryIds } }
+      ],
       orderStatus: { $nin: ['cancelled', 'Cancelled', 'pending_payment', 'Failed', 'Payment Rejected'] }
     }).sort({ createdAt: -1 });
 
@@ -2170,15 +2193,16 @@ export const getBuyAgainProducts = async (req: Request, res: Response): Promise<
     pastOrders.forEach((order: any) => {
       (order.items || []).forEach((item: any) => {
         if (item.productId) {
-          productIds.add(item.productId.toString());
+          const pid = (item.productId._id || item.productId).toString();
+          productIds.add(pid);
         }
       });
     });
 
     const idsArray = Array.from(productIds);
+    // If user has not purchased any products, strictly return empty array (never fallback to random products)
     if (idsArray.length === 0) {
-      const fallbackProds = await Product.find({ isActive: true }).limit(6).lean();
-      res.status(200).json({ success: true, products: fallbackProds });
+      res.status(200).json({ success: true, products: [] });
       return;
     }
 
@@ -2186,11 +2210,18 @@ export const getBuyAgainProducts = async (req: Request, res: Response): Promise<
     const lng = req.query.lng ? parseFloat(req.query.lng as string) : null;
     const pincode = req.query.pincode ? String(req.query.pincode).trim() : '';
 
-    // Fetch the product documents
+    // Fetch the product documents that the user actually purchased
     const rawProducts = await Product.find({
       _id: { $in: idsArray },
-      isActive: true
+      isActive: true,
+      status: { $in: ['Live', 'Active', 'Approved', 'approved', 'active', 'published'] },
+      isArchived: { $ne: true }
     });
+
+    if (rawProducts.length === 0) {
+      res.status(200).json({ success: true, products: [] });
+      return;
+    }
 
     const sellerIds = rawProducts.map((p: any) => p.sellerId?._id || p.sellerId).filter(Boolean);
     const vendors = await Vendor.find({ $or: [{ userId: { $in: sellerIds } }, { _id: { $in: sellerIds } }] });
@@ -2200,16 +2231,52 @@ export const getBuyAgainProducts = async (req: Request, res: Response): Promise<
       if (v._id) vendorMap.set(v._id.toString(), v);
     });
 
-    const mappedProducts = rawProducts.map((p: any) => {
+    // Filter out local products from other pincodes where vendor cannot service customer location
+    const filteredProducts = rawProducts.filter((p: any) => {
+      const isPan = p.isPanIndia === true || p.deliveryScope === 'pan_india' || p.deliveryScope === 'both' || p.isGlobalDelivery === true;
+      // Pan-India products deliver everywhere
+      if (isPan) return true;
+
+      // If customer has not provided location/pincode, allow
+      if (!pincode && (!lat || !lng)) return true;
+
+      const sellerIdStr = (p.sellerId?._id || p.sellerId || '').toString();
+      const vendor = vendorMap.get(sellerIdStr);
+      const vendorPin = String(vendor?.pincode || vendor?.pinCode || p.vendorPincode || p.sellerId?.pincode || '').trim();
+
+      // Check distance if coordinate data is present
+      if (lat && lng && vendor?.location?.coordinates) {
+        const vLng = vendor.location.coordinates[0];
+        const vLat = vendor.location.coordinates[1];
+        if (typeof vLng === 'number' && typeof vLat === 'number' && vLat !== 0 && vLng !== 0) {
+          const dist = calculateDistance(lat, lng, vLat, vLng);
+          const maxRadius = vendor.deliveryRadiusKm || 20;
+          if (dist <= maxRadius) return true;
+        }
+      }
+
+      // Check matching pincode or serviceable pincodes list
+      if (pincode) {
+        if (vendorPin && vendorPin === pincode) return true;
+        if (vendor?.serviceablePincodes && Array.isArray(vendor.serviceablePincodes) && vendor.serviceablePincodes.includes(pincode)) {
+          return true;
+        }
+      }
+
+      // Local product from another pincode/out-of-range vendor -> exclude from Buy Again in this pincode
+      return false;
+    });
+
+    const mappedProducts = filteredProducts.map((p: any) => {
       const productObj = p.toObject ? p.toObject() : p;
       const sellerIdStr = (p.sellerId?._id || p.sellerId || '').toString();
       const vendor = vendorMap.get(sellerIdStr);
 
-      let distance = 1.2; // default
-      let duration = 10; // default mins
-      let shippingCharge = 0; // default shipping charge
+      let distance = 1.2;
+      let duration = 10;
+      let shippingCharge = 0;
 
-      if (lat && lng && vendor && vendor.location && vendor.location.coordinates) {
+      if (lat && lng && vendor?.location?.coordinates) {
         const vLng = vendor.location.coordinates[0];
         const vLat = vendor.location.coordinates[1];
         if (typeof vLng === 'number' && typeof vLat === 'number') {
@@ -2217,10 +2284,11 @@ export const getBuyAgainProducts = async (req: Request, res: Response): Promise<
           duration = Math.max(10, Math.round(10 + distance * 2.5));
           shippingCharge = distance > 3 ? Math.round(distance * 8) : 0;
         }
-      } else if (pincode && vendor && vendor.pincode) {
+      } else if (pincode && vendor?.pincode) {
         if (vendor.pincode === pincode) {
           distance = 1.5;
           duration = 12;
+          shippingCharge = 0;
         } else {
           distance = 4.8;
           duration = 25;
@@ -2236,14 +2304,13 @@ export const getBuyAgainProducts = async (req: Request, res: Response): Promise<
       productObj.calculatedDistanceKm = parseFloat(distance.toFixed(1));
       productObj.estimatedDeliveryMinutes = duration;
       productObj.deliveryMode = vendor?.deliveryMode || 'self_delivery';
-
       productObj.brand = vendor?.businessName || productObj.brand || 'ApexBee Seller';
       productObj.vendorRating = 4.8;
 
       return productObj;
     });
 
-    // Sort products based on their appearance in the recent purchases list
+    // Preserve the order of recent purchases
     const productsMap = new Map(mappedProducts.map(p => [p._id.toString(), p]));
     const orderedProducts = idsArray
       .map(id => productsMap.get(id))

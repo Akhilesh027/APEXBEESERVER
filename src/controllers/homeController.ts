@@ -554,22 +554,8 @@ export const getPersonalizationDetails = async (req: Request, res: Response) => 
             status: { $in: liveStatuses },
             isActive: true,
             isArchived: { $ne: true }
-          }).limit(4);
+          }).limit(8);
         }
-      }
-      
-      // Fallback
-      if (continueShopping.length < 4) {
-        const liveStatuses = ['Live', 'Active', 'Approved', 'approved', 'active', 'published'];
-        const needed = 4 - continueShopping.length;
-        const skipIds = continueShopping.map(p => p._id);
-        const fallbacks = await Product.find({
-          _id: { $nin: skipIds },
-          status: { $in: liveStatuses },
-          isActive: true,
-          isArchived: { $ne: true }
-        }).limit(needed);
-        continueShopping = [...continueShopping, ...fallbacks];
       }
     } catch (err) {
       console.error("[Personalization] Error fetching continue shopping:", err);
