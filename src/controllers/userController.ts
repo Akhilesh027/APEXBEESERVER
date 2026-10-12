@@ -1,4 +1,4 @@
-import { Response } from "express";
+import { Request, Response } from "express";
 import { AuthRequest } from "../middleware/auth";
 import { User } from "../models/User";
 import { Address } from "../models/Address";
@@ -6,6 +6,7 @@ import { Wallet } from "../models/Wallet";
 import { WalletEngine } from "../services/WalletEngine";
 import { CommissionSettlement } from "../models/CommissionSettlement";
 import { isPartnerUser } from "./referralController";
+import { AccountDeletionRequest } from "../models/AccountDeletionRequest";
 
 // GET /api/user/profile/:id
 export const getUserProfile = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -297,5 +298,67 @@ export const getUserRewards = async (req: AuthRequest, res: Response): Promise<v
     });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// POST /api/user/delete-account-request (Public endpoint for Play Store/App Store compliance)
+export const requestAccountDeletion = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { phone, email, name, reason, comments } = req.body;
+    if (!phone || typeof phone !== "string" || phone.trim().length < 8) {
+      res.status(400).json({ success: false, message: "A valid phone number is required." });
+      return;
+    }
+
+    const cleanPhone = phone.trim().replace(/[^\d+]/g, "");
+    const referenceId = `DEL-${Date.now().toString().slice(-6)}${Math.floor(100 + Math.random() * 900)}`;
+
+    // Optional matching with registered user
+    let matchedUserId = undefined;
+    try {
+      const strippedPhone = cleanPhone.replace(/^\+91/, "");
+      const existingUser = await User.findOne({
+        $or: [
+          { phone: cleanPhone },
+          { mobile: cleanPhone },
+          { phone: strippedPhone },
+          { mobile: strippedPhone }
+        ]
+      }).select("_id");
+      if (existingUser) {
+        matchedUserId = existingUser._id;
+      }
+    } catch {
+      // Continue even if lookup fails
+    }
+
+    const deletionRecord = new AccountDeletionRequest({
+      referenceId,
+      phone: cleanPhone,
+      email: email ? String(email).trim().toLowerCase() : undefined,
+      name: name ? String(name).trim() : undefined,
+      reason: reason ? String(reason).trim() : "User requested account deletion",
+      comments: comments ? String(comments).trim() : undefined,
+      userId: matchedUserId,
+      ipAddress: req.ip || (req.headers["x-forwarded-for"] as string),
+      userAgent: req.headers["user-agent"] as string,
+      status: "Pending"
+    });
+
+    await deletionRecord.save();
+
+    res.status(201).json({
+      success: true,
+      referenceId,
+      message: "Account deletion request received successfully. Our team will verify and process it within 48 to 72 hours.",
+      details: {
+        referenceId,
+        phone: cleanPhone,
+        status: "Pending",
+        submittedAt: deletionRecord.createdAt
+      }
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message || "Failed to submit request." });
   }
 };

@@ -12,10 +12,14 @@ import {
   updateUserBankDetails,
   getUserCommissions,
   getUserWallet,
-  getUserRewards
+  getUserRewards,
+  requestAccountDeletion
 } from '../controllers/userController';
 
 const router = Router();
+
+// Public Compliance Endpoint: Request Account Deletion (Google Play & App Store requirement)
+router.post('/delete-account-request', requestAccountDeletion);
 
 // Profile endpoints
 router.get('/profile/:id', protect, getUserProfile);
