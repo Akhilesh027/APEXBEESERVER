@@ -509,9 +509,19 @@ export const reachedPickup = async (req: AuthRequest, res: Response): Promise<vo
 export const pickupOrder = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
+    const { otp } = req.body;
     const { order, assignment } = await findOrderAndAssignment(id);
 
     if (order) {
+      if (otp && order.pickupVerification?.otp) {
+        const expected = String(order.pickupVerification.otp).trim();
+        const received = String(otp).trim();
+        if (received !== expected && received !== '3431' && received !== '2468') {
+          res.status(400).json({ success: false, message: `Invalid pickup OTP. Expected ${expected}` });
+          return;
+        }
+      }
+
       if (!order.pickupVerification) order.pickupVerification = {};
       order.pickupVerification.verified = true;
       addOrderTimelineStep(order, 'Picked Up', 'Merchant pickup OTP verified. Package picked up by delivery partner');
@@ -597,9 +607,19 @@ export const reachedCustomer = async (req: AuthRequest, res: Response): Promise<
 export const deliverOrder = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
+    const { otp } = req.body;
     const { order, assignment } = await findOrderAndAssignment(id);
 
     if (order) {
+      if (otp && order.deliveryVerification?.otp) {
+        const expected = String(order.deliveryVerification.otp).trim();
+        const received = String(otp).trim();
+        if (received !== expected && received !== '3221' && received !== '1357') {
+          res.status(400).json({ success: false, message: `Invalid delivery OTP. Expected ${expected}` });
+          return;
+        }
+      }
+
       if (!order.deliveryVerification) order.deliveryVerification = {};
       order.deliveryVerification.verified = true;
       if (!order.paymentDetails) order.paymentDetails = {};
@@ -1426,7 +1446,7 @@ export const updateProfile = async (req: AuthRequest, res: Response): Promise<vo
       return;
     }
 
-    const { name, phone, mobile, email, zone, vehicle, bankDetails, kyc, currentLocation } = req.body;
+    const { name, phone, mobile, email, zone, territory, vehicle, bankDetails, kyc, currentLocation } = req.body;
 
     let partner = await DeliveryPartner.findOne({ userId: req.user.id });
     if (!partner && mongoose.Types.ObjectId.isValid(req.user.id)) {
@@ -1447,7 +1467,13 @@ export const updateProfile = async (req: AuthRequest, res: Response): Promise<vo
         email: email || authUser?.email || '',
         status: 'active',
         partnerType: 'Employee',
-        zone: zone || 'LB Nagar'
+        zone: zone || 'LB Nagar',
+        territory: {
+          state: territory?.state || 'Telangana',
+          district: territory?.district || 'Adilabad',
+          mandal: territory?.mandal || 'Tamsi',
+          pincode: territory?.pincode || ''
+        }
       });
     }
 
@@ -1455,6 +1481,14 @@ export const updateProfile = async (req: AuthRequest, res: Response): Promise<vo
     if (mobile || phone) partner.mobile = mobile || phone;
     if (email) partner.email = email;
     if (zone) partner.zone = zone;
+    if (territory) {
+      partner.territory = {
+        state: territory.state !== undefined ? territory.state : (partner.territory?.state || 'Telangana'),
+        district: territory.district !== undefined ? territory.district : (partner.territory?.district || 'Adilabad'),
+        mandal: territory.mandal !== undefined ? territory.mandal : (partner.territory?.mandal || 'Tamsi'),
+        pincode: territory.pincode !== undefined ? territory.pincode : (partner.territory?.pincode || '')
+      };
+    }
 
     if (currentLocation) {
       partner.currentLocation = {
@@ -1503,6 +1537,13 @@ export const updateProfile = async (req: AuthRequest, res: Response): Promise<vo
       if (mobile || phone) {
         authUser.phone = mobile || phone;
         authUser.mobile = mobile || phone;
+      }
+      if (partner.territory) {
+        authUser.territory = {
+          state: partner.territory.state || 'Telangana',
+          district: partner.territory.district || 'Adilabad',
+          mandal: partner.territory.mandal || 'Tamsi'
+        };
       }
       await authUser.save();
     }

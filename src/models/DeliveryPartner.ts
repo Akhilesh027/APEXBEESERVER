@@ -42,6 +42,13 @@ export interface IDeliveryLocation {
   updatedAt?: Date;
 }
 
+export interface IDeliveryTerritory {
+  state?: string;
+  district?: string;
+  mandal?: string;
+  pincode?: string;
+}
+
 export interface IDeliveryPartner extends Document {
   userId: mongoose.Types.ObjectId;
   deliveryPartnerId?: string;
@@ -52,6 +59,7 @@ export interface IDeliveryPartner extends Document {
   status: 'active' | 'pending_approval' | 'suspended' | 'offline';
   partnerType: 'Employee' | 'Freelancer';
   zone?: string;
+  territory?: IDeliveryTerritory;
   currentLocation?: IDeliveryLocation;
   vehicle?: IVehicleDetails;
   bankDetails?: IBankDetails;
@@ -113,6 +121,12 @@ const DeliveryPartnerSchema = new Schema<IDeliveryPartner>({
   status: { type: String, enum: ['active', 'pending_approval', 'suspended', 'offline'], default: 'pending_approval' },
   partnerType: { type: String, enum: ['Employee', 'Freelancer'], default: 'Employee' },
   zone: { type: String, default: 'LB Nagar' },
+  territory: {
+    state: { type: String, default: 'Telangana' },
+    district: { type: String, default: 'Adilabad' },
+    mandal: { type: String, default: 'Tamsi' },
+    pincode: { type: String, default: '' },
+  },
   currentLocation: {
     lat: { type: Number, default: 19.7207 },
     lng: { type: Number, default: 78.4186 },

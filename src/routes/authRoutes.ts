@@ -9,7 +9,8 @@ import {
   googleAuth,
   sendVendorLoginOtp,
   verifyVendorLoginOtp,
-  checkUserExists
+  checkUserExists,
+  resetPassword
 } from '../controllers/authController';
 import { protect } from '../middleware/auth';
 
@@ -25,6 +26,13 @@ router.post('/login', login);
 router.post('/google', googleAuth);
 router.get('/me', protect, getMe);
 router.post('/change-password', protect, changePassword);
+router.post('/reset-password', resetPassword);
+
+// Aliases for forgot/reset password flows
+router.post('/forgot-password', sendOtp);
+router.post('/forgot-password-otp/check', sendOtp);
+router.post('/verify-reset-otp/check', verifyOtp);
+router.post('/reset-password-otp/check', resetPassword);
 
 export default router;
 

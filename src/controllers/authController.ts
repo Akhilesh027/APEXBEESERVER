@@ -109,12 +109,76 @@ export const sendOtp = async (req: Request, res: Response): Promise<void> => {
       }
     }
 
+    // PRE-CHECK: If forgot/reset password, check if account exists
+    if (purpose === 'reset_password' || purpose === 'forgot_password') {
+      const cleanEmail = email ? email.toString().trim().toLowerCase() : '';
+      const cleanPhone = phone ? phone.toString().trim() : '';
+      const orConditions: any[] = [];
+      if (cleanEmail && cleanEmail.includes('@')) {
+        orConditions.push({ email: cleanEmail });
+        orConditions.push({ email: { $regex: new RegExp(`^${cleanEmail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } });
+      } else if (cleanEmail && !cleanEmail.includes('@')) {
+        // Input passed in email field is actually a phone number
+        const digits = cleanEmail.replace(/\D/g, '');
+        const last10 = digits.slice(-10);
+        orConditions.push({ phone: cleanEmail }, { mobile: cleanEmail });
+        if (last10 && last10.length === 10) {
+          orConditions.push(
+            { phone: last10 },
+            { mobile: last10 },
+            { phone: `+91${last10}` },
+            { mobile: `+91${last10}` }
+          );
+        }
+      }
+      if (cleanPhone) {
+        const last10 = cleanPhone.replace(/\D/g, '').slice(-10);
+        orConditions.push(
+          { phone: cleanPhone },
+          { mobile: cleanPhone }
+        );
+        if (last10 && last10.length === 10) {
+          orConditions.push(
+            { phone: last10 },
+            { mobile: last10 },
+            { phone: `+91${last10}` },
+            { mobile: `+91${last10}` }
+          );
+        }
+      }
+
+      if (orConditions.length > 0) {
+        const userExists = await User.findOne({ $or: orConditions });
+        if (!userExists) {
+          res.status(404).json({
+            success: false,
+            message: 'No account found with this email or phone number. Please register or verify the information entered.'
+          });
+          return;
+        }
+      }
+    }
+
     // Always generate a dynamic random 6-digit OTP
     const generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
 
     const redis = getRedisClient();
     const redisKey = `otp:${key}`;
     await redis.set(redisKey, generatedOtp, 'EX', 300);
+
+    if (email) {
+      const cleanEmail = email.toString().trim().toLowerCase();
+      await redis.set(`otp:${cleanEmail}`, generatedOtp, 'EX', 300);
+      await redis.set(`otp:${email.toString().trim()}`, generatedOtp, 'EX', 300);
+    }
+    if (phone) {
+      const cleanPhone = phone.toString().trim();
+      await redis.set(`otp:${cleanPhone}`, generatedOtp, 'EX', 300);
+      const digitsOnly = cleanPhone.replace(/\D/g, '').slice(-10);
+      if (digitsOnly) {
+        await redis.set(`otp:${digitsOnly}`, generatedOtp, 'EX', 300);
+      }
+    }
 
     console.log(`OTP generated for: ${key} (${generatedOtp})`);
 
@@ -224,20 +288,54 @@ export const checkUserExists = async (req: Request, res: Response): Promise<void
 export const verifyOtp = async (req: Request, res: Response): Promise<void> => {
   try {
     const { phone, email, otp } = req.body;
-    const key = phone || email;
+    const cleanEmail = email ? email.toString().trim().toLowerCase() : '';
+    const cleanPhone = phone ? phone.toString().trim() : '';
+    const key = cleanEmail || cleanPhone;
     if (!key || !otp) {
       res.status(400).json({ message: 'Phone/email and OTP are required' });
       return;
     }
 
     const redis = getRedisClient();
-    const redisKey = `otp:${key}`;
-    const savedOtp = await redis.get(redisKey);
+    const cleanOtp = otp.toString().trim();
 
-    if (savedOtp && savedOtp === otp) {
-      const verifiedKey = `verified:${key}`;
-      await redis.set(verifiedKey, 'true', 'EX', 600);
-      await redis.del(redisKey);
+    // Check all possible redis keys for OTP (normalized, raw, stripped)
+    const possibleOtpKeys = [
+      `otp:${key}`,
+      email ? `otp:${email.toString().trim()}` : '',
+      email ? `otp:${email.toString().trim().toLowerCase()}` : '',
+      phone ? `otp:${phone.toString().trim()}` : '',
+      phone ? `otp:${phone.toString().replace(/\D/g, '').slice(-10)}` : '',
+    ].filter(Boolean);
+
+    let matchedKey: string | null = null;
+    for (const k of possibleOtpKeys) {
+      const saved = await redis.get(k);
+      if (saved && saved.toString().trim() === cleanOtp) {
+        matchedKey = k;
+        break;
+      }
+    }
+
+    if (matchedKey) {
+      // Set verified for normalized key and all variants
+      await redis.set(`verified:${key}`, 'true', 'EX', 900);
+      if (cleanEmail) {
+        await redis.set(`verified:${cleanEmail}`, 'true', 'EX', 900);
+      }
+      if (cleanPhone) {
+        await redis.set(`verified:${cleanPhone}`, 'true', 'EX', 900);
+        const digits = cleanPhone.replace(/\D/g, '').slice(-10);
+        if (digits) await redis.set(`verified:${digits}`, 'true', 'EX', 900);
+      }
+      if (email) {
+        await redis.set(`verified:${email.toString().trim()}`, 'true', 'EX', 900);
+      }
+      if (phone) {
+        await redis.set(`verified:${phone.toString().trim()}`, 'true', 'EX', 900);
+      }
+
+      await redis.del(matchedKey);
       res.status(200).json({ success: true, message: 'OTP verified successfully' });
     } else {
       res.status(400).json({ message: 'Invalid OTP code' });
@@ -695,6 +793,136 @@ export const changePassword = async (req: AuthRequest, res: Response): Promise<v
   }
 };
 
+export const resetPassword = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { email, phone, otp, newPassword, password } = req.body;
+    const finalPassword = newPassword || password;
+    const cleanEmail = email ? email.toString().trim().toLowerCase() : '';
+    const cleanPhone = phone ? phone.toString().trim() : '';
+    const key = cleanEmail || cleanPhone;
+
+    if (!key) {
+      res.status(400).json({ success: false, message: 'Email or phone number is required' });
+      return;
+    }
+
+    if (!finalPassword || typeof finalPassword !== 'string' || finalPassword.length < 6) {
+      res.status(400).json({ success: false, message: 'Password must be at least 6 characters long' });
+      return;
+    }
+
+    const redis = getRedisClient();
+
+    // Check if verified in Redis across all possible variants
+    const possibleVerifiedKeys = [
+      `verified:${key}`,
+      cleanEmail ? `verified:${cleanEmail}` : '',
+      cleanPhone ? `verified:${cleanPhone}` : '',
+      email ? `verified:${email.toString().trim()}` : '',
+      phone ? `verified:${phone.toString().trim()}` : '',
+    ].filter(Boolean);
+
+    let isVerified = false;
+    for (const vk of possibleVerifiedKeys) {
+      const val = await redis.get(vk);
+      if (val === 'true') {
+        isVerified = true;
+        break;
+      }
+    }
+
+    // If verified flag is not found, also verify OTP directly if provided
+    if (!isVerified) {
+      if (otp) {
+        const cleanOtp = otp.toString().trim();
+        const possibleOtpKeys = [
+          `otp:${key}`,
+          cleanEmail ? `otp:${cleanEmail}` : '',
+          cleanPhone ? `otp:${cleanPhone}` : '',
+          email ? `otp:${email.toString().trim()}` : '',
+          phone ? `otp:${phone.toString().trim()}` : '',
+        ].filter(Boolean);
+
+        for (const ok of possibleOtpKeys) {
+          const savedOtp = await redis.get(ok);
+          if (savedOtp && savedOtp.toString().trim() === cleanOtp) {
+            isVerified = true;
+            await redis.del(ok);
+            break;
+          }
+        }
+      }
+
+      if (!isVerified) {
+        res.status(400).json({ success: false, message: 'OTP verification expired or invalid. Please verify OTP again.' });
+        return;
+      }
+    }
+
+    // Find user by email or phone (case-insensitive for email)
+    const orConditions: any[] = [];
+    if (cleanEmail && cleanEmail.includes('@')) {
+      orConditions.push({ email: cleanEmail });
+      orConditions.push({ email: { $regex: new RegExp(`^${cleanEmail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } });
+    } else if (cleanEmail && !cleanEmail.includes('@')) {
+      // Input in email field was actually a mobile/phone number
+      const digits = cleanEmail.replace(/\D/g, '');
+      const last10 = digits.slice(-10);
+      orConditions.push({ phone: cleanEmail }, { mobile: cleanEmail });
+      if (last10 && last10.length === 10) {
+        orConditions.push(
+          { phone: last10 },
+          { mobile: last10 },
+          { phone: `+91${last10}` },
+          { mobile: `+91${last10}` }
+        );
+      }
+    }
+    if (cleanPhone) {
+      const last10 = cleanPhone.replace(/\D/g, '').slice(-10);
+      orConditions.push({ phone: cleanPhone }, { mobile: cleanPhone });
+      if (last10 && last10.length === 10) {
+        orConditions.push(
+          { phone: last10 },
+          { mobile: last10 },
+          { phone: `+91${last10}` },
+          { mobile: `+91${last10}` }
+        );
+      }
+    }
+
+    const user = await User.findOne({ $or: orConditions });
+    if (!user) {
+      res.status(404).json({ success: false, message: 'No account found with this email or phone number' });
+      return;
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(finalPassword, salt);
+
+    // Update password directly using updateOne to avoid full schema re-validation errors
+    await User.updateOne(
+      { _id: user._id },
+      { $set: { passwordHash: hashedPassword } }
+    );
+
+    // Clean up verified flags
+    for (const vk of possibleVerifiedKeys) {
+      try {
+        await redis.del(vk);
+      } catch { }
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Password reset successfully. You can now log in with your new password.'
+    });
+  } catch (error: any) {
+    console.error('Reset password error:', error);
+    res.status(500).json({ success: false, message: 'Server error resetting password', error: error.message });
+  }
+};
+
 export const googleAuth = async (req: Request, res: Response): Promise<void> => {
   try {
     const { credential, referralCode } = req.body;
@@ -718,6 +946,17 @@ export const googleAuth = async (req: Request, res: Response): Promise<void> => 
         const verifyRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${credential}`);
         if (verifyRes.ok) {
           payload = await verifyRes.json();
+        }
+      } catch { }
+    }
+
+    if (!payload || !payload.email) {
+      try {
+        const userInfoRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+          headers: { Authorization: `Bearer ${credential}` }
+        });
+        if (userInfoRes.ok) {
+          payload = await userInfoRes.json();
         }
       } catch { }
     }

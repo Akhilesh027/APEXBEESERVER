@@ -35,8 +35,15 @@ const run = async () => {
           name: user.name,
           mobile: user.phone,
           email: user.email,
-          status: 'offline',
+          status: 'active',
           partnerType: 'Freelancer',
+          zone: 'Tamsi',
+          territory: {
+            state: 'Telangana',
+            district: 'Adilabad',
+            mandal: 'Tamsi',
+            pincode: '504312'
+          },
           vehicle: {
             type: 'Bike',
             number: 'MH-12-AB-' + Math.floor(1000 + Math.random() * 9000),
@@ -57,12 +64,16 @@ const run = async () => {
         console.log(`DeliveryPartner profile created for ${user.name}`);
       } else {
         console.log(`DeliveryPartner profile already exists for ${user.name}. Status: ${partner.status}`);
-        // Ensure status is offline or active so it's not suspended
-        if (partner.status === 'suspended') {
-          partner.status = 'offline';
-          await partner.save();
-          console.log(`Updated status of suspended partner ${user.name} to offline.`);
-        }
+        partner.status = 'active';
+        partner.zone = 'Tamsi';
+        partner.territory = {
+          state: 'Telangana',
+          district: 'Adilabad',
+          mandal: 'Tamsi',
+          pincode: '504312'
+        };
+        await partner.save();
+        console.log(`Updated partner ${user.name} to active status with Tamsi territory.`);
       }
 
       // Check if wallet exists

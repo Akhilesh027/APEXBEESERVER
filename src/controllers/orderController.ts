@@ -60,26 +60,135 @@ const scheduleAutoAssignmentTimeout = (assignmentId: string) => {
   activeAssignmentTimeouts.set(assignmentId, timeoutId);
 };
 
+const getOrderTerritory = (order: any) => {
+  const sa = order.shippingAddress || {};
+  let state = (sa.state || '').trim();
+  let district = (sa.district || sa.city || '').trim();
+  let mandal = (sa.mandal || '').trim();
+  let pincode = (sa.pincode ? String(sa.pincode) : '').trim();
+
+  // If mandal/district wasn't separate, check deliveryAddress text if available
+  if (!mandal && typeof order.deliveryAddress === 'string') {
+    const raw = order.deliveryAddress.toLowerCase();
+    if (raw.includes('tamsi')) mandal = 'Tamsi';
+    if (raw.includes('adilabad')) district = district || 'Adilabad';
+    if (raw.includes('telangana')) state = state || 'Telangana';
+  }
+  return {
+    state: state || 'Telangana',
+    district: district || 'Adilabad',
+    mandal: mandal || 'Tamsi',
+    pincode: pincode || '504312'
+  };
+};
+
 const autoAssignDeliveryPartner = async (order: any, excludedPartnerIds: string[] = []) => {
   try {
+    const orderTerritory = getOrderTerritory(order);
+    console.log(`[AutoAssign] Matching territory for order ${order.orderNumber}: State=${orderTerritory.state}, District=${orderTerritory.district}, Mandal=${orderTerritory.mandal}`);
+
     const activePartners = await DeliveryPartner.find({
-      status: 'active',
+      status: { $in: ['active', 'online'] },
       _id: { $nin: excludedPartnerIds.map(id => new mongoose.Types.ObjectId(id)) }
-    });
+    }).populate('userId');
+
     if (activePartners.length === 0) {
-      console.log(`[AutoAssign] No active/remaining partners found for order ${order.orderNumber}`);
+      console.log(`[AutoAssign] No active partners found for order ${order.orderNumber}`);
       return;
+    }
+
+    // Helper to extract partner territory
+    const getPartnerTerritory = (partner: any) => {
+      const pTerr = partner.territory || {};
+      const uTerr = (partner.userId && typeof partner.userId === 'object') ? (partner.userId as any).territory || {} : {};
+      const state = (pTerr.state || uTerr.state || '').trim().toLowerCase();
+      const district = (pTerr.district || uTerr.district || '').trim().toLowerCase();
+      const mandal = (pTerr.mandal || uTerr.mandal || partner.zone || '').trim().toLowerCase();
+      const pincode = (pTerr.pincode || uTerr.pincode || '').trim();
+      return { state, district, mandal, pincode };
+    };
+
+    const targetState = orderTerritory.state.toLowerCase();
+    const targetDistrict = orderTerritory.district.toLowerCase();
+    const targetMandal = orderTerritory.mandal.toLowerCase();
+    const targetPin = orderTerritory.pincode;
+
+    // Categorize candidates by matching level:
+    // Level 1: Exact Mandal Match (State + District + Mandal match)
+    // Level 2: Pincode Match
+    // Level 3: District Match (State + District match)
+    // Level 4: Active Fallback (Any active partner)
+    const exactMandalMatches: any[] = [];
+    const pinMatches: any[] = [];
+    const districtMatches: any[] = [];
+    const fallbacks: any[] = [];
+
+    for (const partner of activePartners) {
+      const pTerr = getPartnerTerritory(partner);
+
+      const isMandalMatch = targetMandal && (
+        pTerr.mandal === targetMandal ||
+        pTerr.mandal.includes(targetMandal) ||
+        targetMandal.includes(pTerr.mandal)
+      );
+
+      const isDistMatch = targetDistrict && (
+        pTerr.district === targetDistrict ||
+        pTerr.district.includes(targetDistrict) ||
+        targetDistrict.includes(pTerr.district)
+      );
+
+      const isStateMatch = !targetState || (
+        pTerr.state === targetState ||
+        pTerr.state.includes(targetState) ||
+        targetState.includes(pTerr.state)
+      );
+
+      const isPinMatch = targetPin && pTerr.pincode === targetPin;
+
+      if (isMandalMatch && (isDistMatch || !pTerr.district) && (isStateMatch || !pTerr.state)) {
+        exactMandalMatches.push(partner);
+      } else if (isPinMatch) {
+        pinMatches.push(partner);
+      } else if (isDistMatch && (isStateMatch || !pTerr.state)) {
+        districtMatches.push(partner);
+      } else {
+        fallbacks.push(partner);
+      }
+    }
+
+    // Pick the most relevant pool
+    let candidatePool: any[] = [];
+    if (exactMandalMatches.length > 0) {
+      candidatePool = exactMandalMatches;
+      console.log(`[AutoAssign] Found ${exactMandalMatches.length} exact mandal (${orderTerritory.mandal}) partner(s)`);
+    } else if (pinMatches.length > 0) {
+      candidatePool = pinMatches;
+      console.log(`[AutoAssign] Found ${pinMatches.length} pincode (${orderTerritory.pincode}) partner(s)`);
+    } else if (districtMatches.length > 0) {
+      candidatePool = districtMatches;
+      console.log(`[AutoAssign] Found ${districtMatches.length} district (${orderTerritory.district}) partner(s)`);
+    } else {
+      candidatePool = fallbacks;
+      console.log(`[AutoAssign] Falling back to general active partner pool (${fallbacks.length} partners)`);
     }
 
     let bestPartner = null;
     let highestScore = -Infinity;
 
-    for (const partner of activePartners) {
-      const activeOrders = await Order.countDocuments({ deliveryAgentId: partner.userId.toString(), orderStatus: { $in: ['Confirmed', 'Packed', 'Shipped'] } });
-      const rating = partner.ratings?.averageRating || 5.0;
-      const distance = Math.floor(Math.random() * 5) + 1; // mock distance 1 to 5 km
+    for (const partner of candidatePool) {
+      const pUserId = (partner.userId && typeof partner.userId === 'object' && (partner.userId as any)._id)
+        ? (partner.userId as any)._id.toString()
+        : (partner.userId?.toString() || partner._id.toString());
 
+      const activeOrders = await Order.countDocuments({
+        deliveryAgentId: pUserId,
+        orderStatus: { $in: ['Confirmed', 'Packed', 'Shipped', 'Out for Delivery', 'Accepted'] }
+      });
+      const rating = partner.ratings?.averageRating || 5.0;
+      const distance = 2; // local territory proximity
       const score = (rating * 15) - (activeOrders * 10) - (distance * 2);
+
       if (score > highestScore) {
         highestScore = score;
         bestPartner = partner;
@@ -87,11 +196,18 @@ const autoAssignDeliveryPartner = async (order: any, excludedPartnerIds: string[
     }
 
     if (bestPartner) {
-      order.deliveryAgentId = (bestPartner as any).userId.toString();
+      const partnerUserId = (bestPartner.userId && typeof bestPartner.userId === 'object' && (bestPartner.userId as any)._id)
+        ? (bestPartner.userId as any)._id.toString()
+        : (bestPartner.userId?.toString() || bestPartner._id.toString());
+
+      order.deliveryAgentId = partnerUserId;
       order.deliveryType = 'Platform';
+      order.set('assignedDeliveryAgent', bestPartner.name);
+      order.set('deliveryAgentName', bestPartner.name);
+      order.set('deliveryAgentPhone', bestPartner.mobile);
 
       if (!order.deliveryVerification || !order.deliveryVerification.otp) {
-        const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+        const otpCode = Math.floor(1000 + Math.random() * 9000).toString();
         order.deliveryVerification = {
           otp: otpCode,
           otpExpires: new Date(Date.now() + 24 * 60 * 60 * 1000),
@@ -100,40 +216,69 @@ const autoAssignDeliveryPartner = async (order: any, excludedPartnerIds: string[
         };
       }
 
-      const pickupOtpCode = Math.floor(100000 + Math.random() * 900000).toString();
+      const pickupOtpCode = Math.floor(1000 + Math.random() * 9000).toString();
       order.pickupVerification = {
         otp: pickupOtpCode,
         verified: false
       };
       await order.save();
 
-      // Perform state transition through the state machine if order is in initial placed state
-      if (['Placed', 'placed', 'pending_payment'].includes(order.orderStatus)) {
-        await OrderStateMachine.transition(order._id, 'Confirmed', {
-          notes: `Auto-assigned delivery partner: ${bestPartner.name} (Score: ${highestScore.toFixed(1)})`
-        });
-      }
+      // Upsert DeliveryAssignment
+      let assignment = await DeliveryAssignment.findOne({ orderId: order._id });
+      const partnerIdObj = bestPartner._id;
+      const deliveryPartnerIdObj = (bestPartner.userId && typeof bestPartner.userId === 'object' && (bestPartner.userId as any)._id)
+        ? (bestPartner.userId as any)._id
+        : (bestPartner.userId || bestPartner._id);
 
-      // Create Assignment with all required fields
-      const assignment = new DeliveryAssignment({
-        orderId: order._id,
-        deliveryPartnerId: bestPartner.userId || bestPartner._id,
-        vendorId: order.sellerId,
-        customerId: order.customerId,
-        partnerId: bestPartner._id,
-        partnerSnapshot: {
+      if (!assignment) {
+        assignment = new DeliveryAssignment({
+          orderId: order._id,
+          deliveryPartnerId: deliveryPartnerIdObj,
+          vendorId: order.sellerId,
+          customerId: order.customerId,
+          partnerId: partnerIdObj,
+          partnerSnapshot: {
+            name: bestPartner.name || 'Delivery Partner',
+            phoneMasked: bestPartner.mobile || 'N/A'
+          },
+          status: 'Assigned',
+          assignedAt: new Date(),
+          codCollection: {
+            expected: order.totalAmount,
+            collected: 0
+          }
+        });
+      } else {
+        assignment.deliveryPartnerId = deliveryPartnerIdObj;
+        assignment.partnerId = partnerIdObj;
+        assignment.partnerSnapshot = {
           name: bestPartner.name || 'Delivery Partner',
           phoneMasked: bestPartner.mobile || 'N/A'
-        },
-        status: 'Assigned',
-        assignedAt: new Date(),
-        codCollection: {
-          expected: order.totalAmount,
-          collected: 0
-        }
-      });
+        };
+        assignment.status = 'Assigned';
+        assignment.assignedAt = new Date();
+      }
       await assignment.save();
-      console.log(`[AutoAssign] Assigned order ${order.orderNumber} to partner ${bestPartner.name}`);
+      console.log(`[AutoAssign] Assigned order ${order.orderNumber} to partner ${bestPartner.name} in (${orderTerritory.mandal}, ${orderTerritory.district}, ${orderTerritory.state})`);
+
+      try {
+        notificationEmitter.emitNotification(
+          'delivery.assigned',
+          {
+            orderId: order.orderNumber,
+            orderNumber: order.orderNumber,
+            mandal: orderTerritory.mandal,
+            district: orderTerritory.district,
+            state: orderTerritory.state,
+            pincode: orderTerritory.pincode,
+            entityType: 'order',
+            entityId: order._id
+          },
+          [{ userId: deliveryPartnerIdObj, role: 'delivery_partner' }]
+        );
+      } catch (notifErr) {
+        console.warn('[AutoAssign] Notification emit warning:', notifErr);
+      }
 
       scheduleAutoAssignmentTimeout(assignment._id.toString());
     }
@@ -198,7 +343,7 @@ const handleManualAssignment = async (order: any, agentId: string) => {
     // Generate and save OTP on Order if not present
     let otpCode = '';
     if (!order.deliveryVerification || !order.deliveryVerification.otp) {
-      otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+      otpCode = Math.floor(1000 + Math.random() * 9000).toString();
       order.deliveryVerification = {
         otp: otpCode,
         otpExpires: new Date(Date.now() + 24 * 60 * 60 * 1000),
@@ -211,12 +356,15 @@ const handleManualAssignment = async (order: any, agentId: string) => {
 
     if (!order.pickupVerification || !order.pickupVerification.otp) {
       order.pickupVerification = {
-        otp: Math.floor(100000 + Math.random() * 900000).toString(),
+        otp: Math.floor(1000 + Math.random() * 9000).toString(),
         verified: false
       };
     }
 
     order.deliveryAgentId = partnerUserId;
+    order.set('assignedDeliveryAgent', partnerName);
+    order.set('deliveryAgentName', partnerName);
+    order.set('deliveryAgentPhone', partnerPhone);
     await order.save();
 
     console.log(`\n======================================================`);
@@ -1128,7 +1276,7 @@ export const updateOrder = async (req: Request, res: Response) => {
         } catch (notifErr) {
           console.warn("Failed to trigger agent assignment event:", notifErr);
         }
-      } else if (['Confirmed', 'Placed', 'Packed'].includes(order.orderStatus) && !order.deliveryAgentId) {
+      } else if (['Confirmed', 'Placed', 'Packed', 'Shipped', 'Ready', 'ready_for_pickup'].includes(order.orderStatus) && !order.deliveryAgentId) {
         await autoAssignDeliveryPartner(order);
       }
 
