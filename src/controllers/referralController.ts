@@ -154,7 +154,7 @@ export const getReferralHistory = async (req: AuthRequest, res: Response): Promi
     // Privacy protection: sanitize downline private details for regular customers
     const sanitizedHistory = !isPartner
       ? history.map(item => {
-          const raw = item.toObject ? item.toObject() : { ...item };
+          const raw: any = item.toObject ? item.toObject() : { ...item };
           if (raw.referredUserId && typeof raw.referredUserId === "object") {
             const masked = maskContactInfo(raw.referredUserId.phone, raw.referredUserId.email);
             raw.referredUserId = {
@@ -165,7 +165,7 @@ export const getReferralHistory = async (req: AuthRequest, res: Response): Promi
           }
           return raw;
         })
-      : combinedHistory;
+      : history;
 
     res.status(200).json({ success: true, isBusinessPartner: isPartner, history: sanitizedHistory });
   } catch (error: any) {
