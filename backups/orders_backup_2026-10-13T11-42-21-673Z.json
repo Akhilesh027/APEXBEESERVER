@@ -1,0 +1,1533 @@
+{
+  "metadata": {
+    "generatedAt": "2026-10-13T11:42:21.673Z",
+    "databaseName": "test",
+    "totalOrders": 10,
+    "totalStatusHistories": 0,
+    "totalTrackings": 0,
+    "totalDeliveryAssignments": 1,
+    "totalScheduledDeliveries": 0,
+    "totalInventoryReservations": 9,
+    "totalPaymentAttempts": 1,
+    "totalReturnRequests": 0,
+    "totalRefunds": 0
+  },
+  "orders": [
+    {
+      "_id": "6a86d9ec327abdd4b11d6790",
+      "orderNumber": "AB-1787222508926-6404",
+      "customerId": "6a86d87eebf52da64763020c",
+      "sellerId": "6a8583f3f4dd8476e960b1e5",
+      "items": [
+        {
+          "productId": "6a8583f8f4dd8476e960b201",
+          "productName": "Handcrafted Terracotta Chai Kulhad Set (Pack of 6)",
+          "sku": "DEC-HYD-KUL-01",
+          "quantity": 1,
+          "price": 280,
+          "categoryId": "6a8583f5f4dd8476e960b1f4",
+          "categoryName": "",
+          "_id": "6a86d9ec327abdd4b11d6791"
+        }
+      ],
+      "totalAmount": 294,
+      "paymentStatus": "Pending",
+      "orderStatus": "Placed",
+      "paymentVerificationStatus": "Not Required",
+      "customerNotes": "",
+      "refundStatus": "None",
+      "commissionReleaseStatus": "Pending",
+      "commissionReleasedAt": null,
+      "checkoutIdempotencyKey": "idem-1787222484495-8eh78fz89",
+      "timeline": [
+        {
+          "status": "pending",
+          "date": "2026-08-20T10:41:48.926Z",
+          "note": "Order placed successfully (price verified by backend)"
+        }
+      ],
+      "orderStatusObj": {
+        "currentStatus": "pending",
+        "timeline": [
+          {
+            "status": "pending",
+            "timestamp": "2026-08-20T10:41:48.926Z",
+            "description": "Order placed successfully (price verified by backend)"
+          }
+        ]
+      },
+      "shippingAddress": {
+        "_id": "6a86d9dc327abdd4b11d6787",
+        "name": "bannureddy1",
+        "phone": "6557647663",
+        "pincode": "504312",
+        "address": "Tamsi Mandal",
+        "city": "Tamsi Mandal",
+        "state": "Telangana",
+        "isDefault": true,
+        "type": "Home"
+      },
+      "priority": "Normal",
+      "packingChecklist": [],
+      "orderSummary": {
+        "itemsCount": 1,
+        "totalMrp": 350,
+        "mrpDiscount": 70,
+        "subtotal": 280,
+        "shippingFee": 0,
+        "shipping": 0,
+        "packingFee": 0,
+        "packageCharge": 0,
+        "platformFee": 28,
+        "discount": 0,
+        "couponDiscount": 0,
+        "tax": 15,
+        "total": 294,
+        "grandTotal": 294
+      },
+      "checkoutRequestHash": "4dc567510e66eaa9d2581cb63069cc7c1bd424b4f60401c4bb5299912b7a01d3",
+      "fulfillment": {
+        "type": "delivery",
+        "deliveryFee": 0,
+        "deliveryMode": "standard",
+        "deliveryInstruction": "call_before",
+        "customInstruction": ""
+      },
+      "deliveryDetails": {
+        "expectedDelivery": "Standard Delivery",
+        "shippingMethod": "Home Delivery"
+      },
+      "isSelfPickup": false,
+      "categoryId": "6a8583f5f4dd8476e960b1f4",
+      "categoryName": "",
+      "orderType": "RETAIL",
+      "estimatedDeliveryMinutes": 20,
+      "acceptedAt": null,
+      "estimatedDeliveryTime": null,
+      "prepStatus": "pending",
+      "createdAt": "2026-08-20T10:41:48.936Z",
+      "updatedAt": "2026-08-20T10:41:48.936Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a8d27f5204ba0e22c58a797",
+      "orderNumber": "AB-1787635701056-3755",
+      "customerId": "6a828149fd694e744027a2a6",
+      "sellerId": "6a8583f4f4dd8476e960b1ed",
+      "items": [
+        {
+          "productId": "6a8583fbf4dd8476e960b205",
+          "productName": "Handmade Rustic Ceramic Planter Bowl",
+          "sku": "DEC-MUM-PLT-05",
+          "quantity": 1,
+          "price": 420,
+          "categoryId": "6a8583f5f4dd8476e960b1f4",
+          "categoryName": "",
+          "_id": "6a8d27f5204ba0e22c58a798"
+        }
+      ],
+      "totalAmount": 441,
+      "paymentStatus": "Paid",
+      "orderStatus": "Placed",
+      "paymentVerificationStatus": "Verified",
+      "customerNotes": "",
+      "refundStatus": "None",
+      "commissionReleaseStatus": "Pending",
+      "commissionReleasedAt": null,
+      "checkoutIdempotencyKey": "idem-1787635669775-00bkqule9",
+      "timeline": [
+        {
+          "status": "pending",
+          "date": "2026-08-25T05:28:21.056Z",
+          "note": "Order placed successfully (price verified by backend)"
+        },
+        {
+          "status": "paid",
+          "date": "2026-08-25T05:28:21.056Z",
+          "note": "Payment completed via Razorpay (pay_TTt3w8KMb3UQby)"
+        }
+      ],
+      "orderStatusObj": {
+        "currentStatus": "pending",
+        "timeline": [
+          {
+            "status": "pending",
+            "timestamp": "2026-08-25T05:28:21.056Z",
+            "description": "Order placed successfully (price verified by backend)"
+          },
+          {
+            "status": "paid",
+            "timestamp": "2026-08-25T05:28:21.056Z",
+            "description": "Payment completed via Razorpay (pay_TTt3w8KMb3UQby)"
+          }
+        ]
+      },
+      "shippingAddress": {
+        "_id": "6a85918783126f64a538b37a",
+        "name": "AKHILESH REDDY 027",
+        "phone": "0955037950",
+        "pincode": "500081",
+        "address": "Tamsi Mandal",
+        "city": "Tamsi Mandal",
+        "state": "Telangana",
+        "isDefault": true,
+        "type": "home"
+      },
+      "priority": "Normal",
+      "packingChecklist": [],
+      "orderSummary": {
+        "itemsCount": 1,
+        "totalMrp": 550,
+        "mrpDiscount": 130,
+        "subtotal": 420,
+        "shippingFee": 0,
+        "shipping": 0,
+        "packingFee": 0,
+        "packageCharge": 0,
+        "platformFee": 0,
+        "discount": 130,
+        "couponDiscount": 0,
+        "tax": 21,
+        "total": 441,
+        "grandTotal": 441,
+        "walletDeduction": 0,
+        "rewardsDeduction": 0
+      },
+      "checkoutRequestHash": "695f62be33657761cb6c804d091cb7f7804ab5fd6f051cd5f5f4ccf6b699e523",
+      "fulfillment": {
+        "type": "delivery",
+        "deliveryFee": 0,
+        "deliveryMode": "standard",
+        "deliveryInstruction": "call_before",
+        "customInstruction": ""
+      },
+      "deliveryDetails": {
+        "expectedDelivery": "Standard Delivery",
+        "shippingMethod": "Home Delivery"
+      },
+      "isSelfPickup": false,
+      "categoryId": "6a8583f5f4dd8476e960b1f4",
+      "categoryName": "",
+      "orderType": "RETAIL",
+      "estimatedDeliveryMinutes": 20,
+      "acceptedAt": null,
+      "estimatedDeliveryTime": null,
+      "prepStatus": "pending",
+      "paymentMethod": "razorpay",
+      "paymentDetails": {
+        "method": "razorpay",
+        "amount": 441,
+        "status": "completed",
+        "transactionId": "pay_TTt3w8KMb3UQby",
+        "razorpayOrderId": "order_TTt3hrECsdkYwt",
+        "razorpayPaymentId": "pay_TTt3w8KMb3UQby",
+        "razorpaySignature": "1b33848c9585aa553bb1fee9898a7cdf2facb660a94b49513730c4dd976eac4a",
+        "upiDetails": null,
+        "paidAt": "2026-08-25T05:28:21.056Z"
+      },
+      "createdAt": "2026-08-25T05:28:21.066Z",
+      "updatedAt": "2026-08-25T05:28:21.066Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a8d2922204ba0e22c58b183",
+      "orderNumber": "AB-1787636002225-1837",
+      "customerId": "6a828149fd694e744027a2a6",
+      "sellerId": "6a8583f4f4dd8476e960b1ed",
+      "items": [
+        {
+          "productId": "6a8583fbf4dd8476e960b205",
+          "productName": "Handmade Rustic Ceramic Planter Bowl",
+          "sku": "DEC-MUM-PLT-05",
+          "quantity": 1,
+          "price": 420,
+          "categoryId": "6a8583f5f4dd8476e960b1f4",
+          "categoryName": "",
+          "_id": "6a8d2922204ba0e22c58b184"
+        }
+      ],
+      "totalAmount": 441,
+      "paymentStatus": "Paid",
+      "orderStatus": "Placed",
+      "paymentVerificationStatus": "Verified",
+      "customerNotes": "",
+      "refundStatus": "None",
+      "commissionReleaseStatus": "Pending",
+      "commissionReleasedAt": null,
+      "checkoutIdempotencyKey": "idem-1787635968924-pvyxv4za1",
+      "timeline": [
+        {
+          "status": "pending",
+          "date": "2026-08-25T05:33:22.226Z",
+          "note": "Order placed successfully (price verified by backend)"
+        },
+        {
+          "status": "paid",
+          "date": "2026-08-25T05:33:22.226Z",
+          "note": "Payment completed via Razorpay (pay_TTt92zC9gA5Fmk)"
+        }
+      ],
+      "orderStatusObj": {
+        "currentStatus": "pending",
+        "timeline": [
+          {
+            "status": "pending",
+            "timestamp": "2026-08-25T05:33:22.226Z",
+            "description": "Order placed successfully (price verified by backend)"
+          },
+          {
+            "status": "paid",
+            "timestamp": "2026-08-25T05:33:22.226Z",
+            "description": "Payment completed via Razorpay (pay_TTt92zC9gA5Fmk)"
+          }
+        ]
+      },
+      "shippingAddress": {
+        "_id": "6a85918783126f64a538b37a",
+        "name": "AKHILESH REDDY 027",
+        "phone": "0955037950",
+        "pincode": "500081",
+        "address": "Tamsi Mandal",
+        "city": "Tamsi Mandal",
+        "state": "Telangana",
+        "isDefault": true,
+        "type": "home"
+      },
+      "priority": "Normal",
+      "packingChecklist": [],
+      "orderSummary": {
+        "itemsCount": 1,
+        "totalMrp": 550,
+        "mrpDiscount": 130,
+        "subtotal": 420,
+        "shippingFee": 0,
+        "shipping": 0,
+        "packingFee": 0,
+        "packageCharge": 0,
+        "platformFee": 0,
+        "discount": 130,
+        "couponDiscount": 0,
+        "tax": 21,
+        "total": 441,
+        "grandTotal": 441,
+        "walletDeduction": 0,
+        "rewardsDeduction": 0
+      },
+      "checkoutRequestHash": "aadc039af71b36be5bebe602b45db782dc45a109efd94634d0f6402d42f6861b",
+      "fulfillment": {
+        "type": "delivery",
+        "deliveryFee": 0,
+        "deliveryMode": "standard",
+        "deliveryInstruction": "call_before",
+        "customInstruction": ""
+      },
+      "deliveryDetails": {
+        "expectedDelivery": "Standard Delivery",
+        "shippingMethod": "Home Delivery"
+      },
+      "isSelfPickup": false,
+      "categoryId": "6a8583f5f4dd8476e960b1f4",
+      "categoryName": "",
+      "orderType": "RETAIL",
+      "estimatedDeliveryMinutes": 20,
+      "acceptedAt": null,
+      "estimatedDeliveryTime": null,
+      "prepStatus": "pending",
+      "paymentMethod": "razorpay",
+      "paymentDetails": {
+        "method": "razorpay",
+        "amount": 441,
+        "status": "completed",
+        "transactionId": "pay_TTt92zC9gA5Fmk",
+        "razorpayOrderId": "order_TTt8xcbh1u0i7r",
+        "razorpayPaymentId": "pay_TTt92zC9gA5Fmk",
+        "razorpaySignature": "ebddf5c397a05e4af5398ed3a5f0054b9affc0607826ed1cd2399e93e4d33d61",
+        "upiDetails": null,
+        "paidAt": "2026-08-25T05:33:22.226Z"
+      },
+      "createdAt": "2026-08-25T05:33:22.230Z",
+      "updatedAt": "2026-08-25T05:33:22.230Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a8d30a42cf558e5b325ad06",
+      "orderNumber": "AB-1787637924697-2511",
+      "customerId": "6a8d30702cf558e5b325a897",
+      "sellerId": "6a86d7feebf52da64762f897",
+      "items": [
+        {
+          "productId": "6a8d2f0e2cf558e5b3259bfc",
+          "productName": "Test - Fresh & Premium Grade",
+          "sku": "HAN-TEST-98097-V1",
+          "quantity": 1,
+          "price": 435,
+          "categoryId": "6a8583f5f4dd8476e960b1f4",
+          "categoryName": "",
+          "_id": "6a8d30a42cf558e5b325ad07"
+        }
+      ],
+      "totalAmount": 457,
+      "paymentStatus": "Paid",
+      "orderStatus": "Delivered",
+      "paymentVerificationStatus": "Verified",
+      "customerNotes": "",
+      "refundStatus": "None",
+      "commissionReleaseStatus": "Pending",
+      "commissionReleasedAt": null,
+      "checkoutIdempotencyKey": "idem-1787637899987-2j8sp3gdo",
+      "timeline": [
+        {
+          "status": "pending",
+          "date": "2026-08-25T06:05:24.697Z",
+          "note": "Order placed successfully (price verified by backend)"
+        },
+        {
+          "status": "paid",
+          "date": "2026-08-25T06:05:24.697Z",
+          "note": "Payment completed via Razorpay (pay_TTth5T3wMow27Y)"
+        },
+        {
+          "status": "preparing",
+          "timestamp": "2026-08-25T10:06:40.656Z",
+          "note": "Restaurant confirmed order with 20 mins preparation time"
+        },
+        {
+          "status": "Shipped",
+          "date": "2026-08-25T10:06:49.003Z",
+          "note": "Order status updated to Shipped"
+        },
+        {
+          "status": "Shipped",
+          "date": "2026-08-25T10:07:08.626Z",
+          "note": "Order status updated to Shipped"
+        },
+        {
+          "status": "Delivered",
+          "date": "2026-08-25T10:07:18.611Z",
+          "note": "Order status updated to Delivered"
+        },
+        {
+          "status": "Shipped",
+          "date": "2026-08-25T10:07:34.370Z",
+          "note": "Order status updated to Shipped"
+        },
+        {
+          "status": "Shipped",
+          "date": "2026-08-25T10:09:48.420Z",
+          "note": "Order status updated to Shipped"
+        },
+        {
+          "status": "Shipped",
+          "date": "2026-08-25T10:09:48.573Z",
+          "note": "Order status updated to Shipped"
+        },
+        {
+          "status": "Reached Customer",
+          "date": "2026-08-25T10:13:03.617Z",
+          "note": "Delivery partner arrived at customer delivery location"
+        },
+        {
+          "status": "Delivered",
+          "date": "2026-08-25T10:13:22.874Z",
+          "note": "Customer delivery OTP verified. Order delivered successfully to doorstep"
+        }
+      ],
+      "orderStatusObj": {
+        "currentStatus": "pending",
+        "timeline": [
+          {
+            "status": "pending",
+            "timestamp": "2026-08-25T06:05:24.697Z",
+            "description": "Order placed successfully (price verified by backend)"
+          },
+          {
+            "status": "paid",
+            "timestamp": "2026-08-25T06:05:24.697Z",
+            "description": "Payment completed via Razorpay (pay_TTth5T3wMow27Y)"
+          }
+        ]
+      },
+      "shippingAddress": {
+        "_id": "6a85918783126f64a538b37a",
+        "name": "AKHILESH REDDY 027",
+        "phone": "0955037950",
+        "pincode": "500081",
+        "address": "Tamsi Mandal",
+        "city": "Tamsi Mandal",
+        "state": "Telangana",
+        "isDefault": true,
+        "type": "home"
+      },
+      "priority": "Normal",
+      "packingChecklist": [],
+      "orderSummary": {
+        "itemsCount": 1,
+        "totalMrp": 444,
+        "mrpDiscount": 9,
+        "subtotal": 435,
+        "shippingFee": 0,
+        "shipping": 0,
+        "packingFee": 0,
+        "packageCharge": 0,
+        "platformFee": 0,
+        "discount": 9,
+        "couponDiscount": 0,
+        "tax": 22,
+        "total": 457,
+        "grandTotal": 457,
+        "walletDeduction": 0,
+        "rewardsDeduction": 0,
+        "preparationTimeMinutes": 20,
+        "estimatedDeliveryMinutes": 20,
+        "estimatedDeliveryTime": "2026-08-25T10:26:40.656Z"
+      },
+      "checkoutRequestHash": "554a9953bd503c3684a72882e2343f470f17ae63b107cb897efc7b29fce93e97",
+      "fulfillment": {
+        "type": "delivery",
+        "deliveryFee": 0,
+        "deliveryMode": "standard",
+        "deliveryInstruction": "call_before",
+        "customInstruction": ""
+      },
+      "deliveryDetails": {
+        "expectedDelivery": "Standard Delivery",
+        "shippingMethod": "Home Delivery"
+      },
+      "isSelfPickup": false,
+      "categoryId": "6a8583f5f4dd8476e960b1f4",
+      "categoryName": "",
+      "orderType": "RETAIL",
+      "estimatedDeliveryMinutes": 20,
+      "acceptedAt": "2026-08-25T10:06:40.656Z",
+      "estimatedDeliveryTime": "2026-08-25T10:26:40.656Z",
+      "prepStatus": "preparing",
+      "paymentMethod": "razorpay",
+      "paymentDetails": {
+        "method": "razorpay",
+        "amount": 457,
+        "status": "completed",
+        "transactionId": "pay_TTth5T3wMow27Y",
+        "razorpayOrderId": "order_TTtgyYsY7mubzc",
+        "razorpayPaymentId": "pay_TTth5T3wMow27Y",
+        "razorpaySignature": "2e95408119cec1d3d662188af920321b5f888ab8b392ad9ccbe86832192f3667",
+        "upiDetails": null,
+        "paidAt": "2026-08-25T06:05:24.697Z"
+      },
+      "createdAt": "2026-08-25T06:05:24.700Z",
+      "updatedAt": "2026-08-25T10:13:22.878Z",
+      "__v": 9,
+      "deliveryAgentId": "6a8d5a3150d90feb07ac9c8f",
+      "deliveryType": "Platform",
+      "deliveryVerification": {
+        "verified": true
+      }
+    },
+    {
+      "_id": "6a8d381bd1001177c1d28092",
+      "orderNumber": "AB-1787639835017-6029",
+      "customerId": "6a86d7feebf52da64762f897",
+      "sellerId": "6a86d7feebf52da64762f897",
+      "items": [
+        {
+          "productId": "6a8d2f0e2cf558e5b3259bfc",
+          "productName": "Test - Fresh & Premium Grade",
+          "sku": "HAN-TEST-98097-V1",
+          "quantity": 1,
+          "price": 435,
+          "categoryId": "6a8583f5f4dd8476e960b1f4",
+          "categoryName": "",
+          "_id": "6a8d381bd1001177c1d28093"
+        }
+      ],
+      "totalAmount": 457,
+      "paymentStatus": "Paid",
+      "orderStatus": "Delivered",
+      "paymentVerificationStatus": "Verified",
+      "customerNotes": "",
+      "refundStatus": "None",
+      "commissionReleaseStatus": "Pending",
+      "commissionReleasedAt": null,
+      "checkoutIdempotencyKey": "idem-1787639810606-fqo8w1wmr",
+      "timeline": [
+        {
+          "status": "pending",
+          "date": "2026-08-25T06:37:15.017Z",
+          "note": "Order placed successfully (price verified by backend)"
+        },
+        {
+          "status": "paid",
+          "date": "2026-08-25T06:37:15.017Z",
+          "note": "Payment completed via Razorpay (pay_TTuEiCegy6GXRR)"
+        },
+        {
+          "status": "Shipped",
+          "date": "2026-08-25T10:03:45.038Z",
+          "note": "Order status updated to Shipped"
+        },
+        {
+          "status": "Shipped",
+          "date": "2026-08-25T10:03:45.189Z",
+          "note": "Order status updated to Shipped"
+        },
+        {
+          "status": "Out for Delivery",
+          "date": "2026-08-25T10:05:36.004Z",
+          "note": "Package is out for delivery to customer address"
+        },
+        {
+          "status": "Picked Up",
+          "date": "2026-08-25T10:05:36.924Z",
+          "note": "Merchant pickup OTP verified. Package picked up by delivery partner"
+        },
+        {
+          "status": "Reached Customer",
+          "date": "2026-08-25T10:05:41.064Z",
+          "note": "Delivery partner arrived at customer delivery location"
+        },
+        {
+          "status": "Delivered",
+          "date": "2026-08-25T10:05:46.701Z",
+          "note": "Customer delivery OTP verified. Order delivered successfully to doorstep"
+        }
+      ],
+      "orderStatusObj": {
+        "currentStatus": "pending",
+        "timeline": [
+          {
+            "status": "pending",
+            "timestamp": "2026-08-25T06:37:15.017Z",
+            "description": "Order placed successfully (price verified by backend)"
+          },
+          {
+            "status": "paid",
+            "timestamp": "2026-08-25T06:37:15.017Z",
+            "description": "Payment completed via Razorpay (pay_TTuEiCegy6GXRR)"
+          }
+        ]
+      },
+      "shippingAddress": {
+        "_id": "6a85918783126f64a538b37a",
+        "name": "AKHILESH REDDY 027",
+        "phone": "0955037950",
+        "pincode": "500081",
+        "address": "Tamsi Mandal",
+        "city": "Tamsi Mandal",
+        "state": "Telangana",
+        "isDefault": true,
+        "type": "home"
+      },
+      "priority": "Normal",
+      "packingChecklist": [],
+      "orderSummary": {
+        "itemsCount": 1,
+        "totalMrp": 444,
+        "mrpDiscount": 9,
+        "subtotal": 435,
+        "shippingFee": 0,
+        "shipping": 0,
+        "packingFee": 0,
+        "packageCharge": 0,
+        "platformFee": 0,
+        "discount": 9,
+        "couponDiscount": 0,
+        "tax": 22,
+        "total": 457,
+        "grandTotal": 457,
+        "walletDeduction": 0,
+        "rewardsDeduction": 0
+      },
+      "checkoutRequestHash": "c67ca759dfc220828b748e61e6652cd569beea64b295a7983943f7671a94bbe8",
+      "fulfillment": {
+        "type": "delivery",
+        "deliveryFee": 0,
+        "deliveryMode": "standard",
+        "deliveryInstruction": "call_before",
+        "customInstruction": ""
+      },
+      "deliveryDetails": {
+        "expectedDelivery": "Standard Delivery",
+        "shippingMethod": "Home Delivery"
+      },
+      "isSelfPickup": false,
+      "categoryId": "6a8583f5f4dd8476e960b1f4",
+      "categoryName": "",
+      "orderType": "RETAIL",
+      "estimatedDeliveryMinutes": 20,
+      "acceptedAt": null,
+      "estimatedDeliveryTime": null,
+      "prepStatus": "pending",
+      "paymentMethod": "razorpay",
+      "paymentDetails": {
+        "method": "razorpay",
+        "amount": 457,
+        "status": "completed",
+        "transactionId": "pay_TTuEiCegy6GXRR",
+        "razorpayOrderId": "order_TTuEb5p7Pl9l09",
+        "razorpayPaymentId": "pay_TTuEiCegy6GXRR",
+        "razorpaySignature": "81b10e6d1a5b619df2e4179e378a4f8db1ea7fe1fa03f0e0c8950ca81952ce66",
+        "upiDetails": null,
+        "paidAt": "2026-08-25T06:37:15.018Z"
+      },
+      "createdAt": "2026-08-25T06:37:15.024Z",
+      "updatedAt": "2026-08-25T10:05:46.703Z",
+      "__v": 6,
+      "deliveryAgentId": "6a8d5a3150d90feb07ac9c8f",
+      "deliveryType": "Platform",
+      "pickupVerification": {
+        "verified": true
+      },
+      "deliveryVerification": {
+        "verified": true
+      }
+    },
+    {
+      "_id": "6a8d6b0f21910f059e8c5a80",
+      "orderNumber": "AB-1787652879384-7149",
+      "customerId": "6a8d30702cf558e5b325a897",
+      "sellerId": "6a86d7feebf52da64762f897",
+      "items": [
+        {
+          "productId": "6a8d2f0e2cf558e5b3259bfc",
+          "productName": "Test - Fresh & Premium Grade",
+          "sku": "HAN-TEST-98097-V1",
+          "quantity": 1,
+          "price": 435,
+          "categoryId": "6a8583f5f4dd8476e960b1f4",
+          "categoryName": "",
+          "_id": "6a8d6b0f21910f059e8c5a81"
+        }
+      ],
+      "totalAmount": 457,
+      "paymentStatus": "Paid",
+      "orderStatus": "Delivered",
+      "paymentVerificationStatus": "Verified",
+      "customerNotes": "",
+      "refundStatus": "None",
+      "commissionReleaseStatus": "Pending",
+      "commissionReleasedAt": null,
+      "checkoutIdempotencyKey": "idem-1787652851647-iwlta6xv6",
+      "timeline": [
+        {
+          "status": "pending",
+          "date": "2026-08-25T10:14:39.384Z",
+          "note": "Order placed successfully (price verified by backend)"
+        },
+        {
+          "status": "paid",
+          "date": "2026-08-25T10:14:39.384Z",
+          "note": "Payment completed via Razorpay (pay_TTxwJRYg6i2QqT)"
+        },
+        {
+          "status": "preparing",
+          "timestamp": "2026-08-25T10:15:01.253Z",
+          "note": "Restaurant confirmed order with 20 mins preparation time"
+        },
+        {
+          "status": "Shipped",
+          "date": "2026-08-25T10:15:09.435Z",
+          "note": "Order status updated to Shipped"
+        },
+        {
+          "status": "Shipped",
+          "date": "2026-08-25T10:15:09.561Z",
+          "note": "Order status updated to Shipped"
+        },
+        {
+          "status": "Reached Vendor",
+          "date": "2026-08-25T10:20:33.381Z",
+          "note": "Delivery partner arrived at merchant store pickup location"
+        },
+        {
+          "status": "Picked Up",
+          "date": "2026-08-25T10:20:41.183Z",
+          "note": "Merchant pickup OTP verified. Package picked up by delivery partner"
+        },
+        {
+          "status": "Out for Delivery",
+          "date": "2026-08-25T10:20:44.340Z",
+          "note": "Package is out for delivery to customer address"
+        },
+        {
+          "status": "Picked Up",
+          "date": "2026-08-25T10:20:44.571Z",
+          "note": "Merchant pickup OTP verified. Package picked up by delivery partner"
+        },
+        {
+          "status": "Reached Customer",
+          "date": "2026-08-25T10:20:48.318Z",
+          "note": "Delivery partner arrived at customer delivery location"
+        },
+        {
+          "status": "Delivered",
+          "date": "2026-08-25T10:20:51.907Z",
+          "note": "Customer delivery OTP verified. Order delivered successfully to doorstep"
+        }
+      ],
+      "orderStatusObj": {
+        "currentStatus": "pending",
+        "timeline": [
+          {
+            "status": "pending",
+            "timestamp": "2026-08-25T10:14:39.384Z",
+            "description": "Order placed successfully (price verified by backend)"
+          },
+          {
+            "status": "paid",
+            "timestamp": "2026-08-25T10:14:39.384Z",
+            "description": "Payment completed via Razorpay (pay_TTxwJRYg6i2QqT)"
+          }
+        ]
+      },
+      "shippingAddress": {
+        "_id": "6a85918783126f64a538b37a",
+        "name": "AKHILESH REDDY 027",
+        "phone": "0955037950",
+        "pincode": "500081",
+        "address": "Tamsi Mandal",
+        "city": "Tamsi Mandal",
+        "state": "Telangana",
+        "isDefault": true,
+        "type": "home"
+      },
+      "priority": "Normal",
+      "packingChecklist": [],
+      "orderSummary": {
+        "itemsCount": 1,
+        "totalMrp": 444,
+        "mrpDiscount": 9,
+        "subtotal": 435,
+        "shippingFee": 0,
+        "shipping": 0,
+        "packingFee": 0,
+        "packageCharge": 0,
+        "platformFee": 0,
+        "discount": 9,
+        "couponDiscount": 0,
+        "tax": 22,
+        "total": 457,
+        "grandTotal": 457,
+        "walletDeduction": 0,
+        "rewardsDeduction": 0,
+        "preparationTimeMinutes": 20,
+        "estimatedDeliveryMinutes": 20,
+        "estimatedDeliveryTime": "2026-08-25T10:35:01.253Z"
+      },
+      "checkoutRequestHash": "663182519fbb40f98c891eedd36c9cb4ce3f1bc8a94c73153fd0c646c822a493",
+      "fulfillment": {
+        "type": "delivery",
+        "deliveryFee": 0,
+        "deliveryMode": "standard",
+        "deliveryInstruction": "call_before",
+        "customInstruction": ""
+      },
+      "deliveryDetails": {
+        "expectedDelivery": "Standard Delivery",
+        "shippingMethod": "Home Delivery"
+      },
+      "isSelfPickup": false,
+      "categoryId": "6a8583f5f4dd8476e960b1f4",
+      "categoryName": "",
+      "orderType": "RETAIL",
+      "estimatedDeliveryMinutes": 20,
+      "acceptedAt": "2026-08-25T10:15:01.253Z",
+      "estimatedDeliveryTime": "2026-08-25T10:35:01.253Z",
+      "prepStatus": "preparing",
+      "paymentMethod": "razorpay",
+      "paymentDetails": {
+        "method": "razorpay",
+        "amount": 457,
+        "status": "completed",
+        "transactionId": "pay_TTxwJRYg6i2QqT",
+        "razorpayOrderId": "order_TTxwByH1O1z3A3",
+        "razorpayPaymentId": "pay_TTxwJRYg6i2QqT",
+        "razorpaySignature": "ef389d72c9c91f43f030c64eb08aca61e89a1aa7555b00411991bb1c21d9c4fe",
+        "upiDetails": null,
+        "paidAt": "2026-08-25T10:14:39.384Z"
+      },
+      "createdAt": "2026-08-25T10:14:39.393Z",
+      "updatedAt": "2026-08-25T10:20:51.909Z",
+      "__v": 9,
+      "deliveryAgentId": "6a8d5a3150d90feb07ac9c8f",
+      "deliveryType": "Platform",
+      "pickupVerification": {
+        "verified": true
+      },
+      "deliveryVerification": {
+        "verified": true
+      }
+    },
+    {
+      "_id": "6a8d6d826525066615b5f547",
+      "orderNumber": "AB-1787653506437-6752",
+      "customerId": "6a8d30702cf558e5b325a897",
+      "sellerId": "6a86d7feebf52da64762f897",
+      "items": [
+        {
+          "productId": "6a8d2f0e2cf558e5b3259bfc",
+          "productName": "Test - Fresh & Premium Grade",
+          "sku": "HAN-TEST-98097-V1",
+          "quantity": 1,
+          "price": 435,
+          "categoryId": "6a8583f5f4dd8476e960b1f4",
+          "categoryName": "",
+          "_id": "6a8d6d826525066615b5f548"
+        }
+      ],
+      "totalAmount": 457,
+      "paymentStatus": "Paid",
+      "orderStatus": "Delivered",
+      "paymentVerificationStatus": "Verified",
+      "customerNotes": "",
+      "refundStatus": "None",
+      "commissionReleaseStatus": "Pending",
+      "commissionReleasedAt": null,
+      "checkoutIdempotencyKey": "idem-1787653484444-bonllh9oj",
+      "timeline": [
+        {
+          "status": "pending",
+          "date": "2026-08-25T10:25:06.437Z",
+          "note": "Order placed successfully (price verified by backend)"
+        },
+        {
+          "status": "paid",
+          "date": "2026-08-25T10:25:06.437Z",
+          "note": "Payment completed via Razorpay (pay_TTy7PozVK6zqOj)"
+        },
+        {
+          "status": "preparing",
+          "timestamp": "2026-08-25T10:25:24.950Z",
+          "note": "Restaurant confirmed order with 30 mins preparation time"
+        },
+        {
+          "status": "Shipped",
+          "date": "2026-08-25T10:25:46.051Z",
+          "note": "Order status updated to Shipped"
+        },
+        {
+          "status": "Shipped",
+          "date": "2026-08-25T10:25:46.217Z",
+          "note": "Order status updated to Shipped"
+        },
+        {
+          "status": "Reached Vendor",
+          "date": "2026-08-25T10:28:31.452Z",
+          "note": "Delivery partner arrived at merchant store pickup location"
+        },
+        {
+          "status": "Picked Up",
+          "date": "2026-08-25T10:28:40.461Z",
+          "note": "Merchant pickup OTP verified. Package picked up by delivery partner"
+        },
+        {
+          "status": "Reached Customer",
+          "date": "2026-08-25T10:28:48.422Z",
+          "note": "Delivery partner arrived at customer delivery location"
+        },
+        {
+          "status": "Delivered",
+          "date": "2026-08-25T10:28:52.953Z",
+          "note": "Customer delivery OTP verified. Order delivered successfully to doorstep"
+        }
+      ],
+      "orderStatusObj": {
+        "currentStatus": "Delivered",
+        "timeline": [
+          {
+            "status": "pending",
+            "timestamp": "2026-08-25T10:25:06.437Z",
+            "description": "Order placed successfully (price verified by backend)"
+          },
+          {
+            "status": "paid",
+            "timestamp": "2026-08-25T10:25:06.437Z",
+            "description": "Payment completed via Razorpay (pay_TTy7PozVK6zqOj)"
+          },
+          {
+            "status": "Reached Vendor",
+            "timestamp": "2026-08-25T10:28:31.454Z",
+            "description": "Delivery partner arrived at merchant store pickup location"
+          },
+          {
+            "status": "Picked Up",
+            "timestamp": "2026-08-25T10:28:40.461Z",
+            "description": "Merchant pickup OTP verified. Package picked up by delivery partner"
+          },
+          {
+            "status": "Reached Customer",
+            "timestamp": "2026-08-25T10:28:48.423Z",
+            "description": "Delivery partner arrived at customer delivery location"
+          },
+          {
+            "status": "Delivered",
+            "timestamp": "2026-08-25T10:28:52.953Z",
+            "description": "Customer delivery OTP verified. Order delivered successfully to doorstep"
+          }
+        ]
+      },
+      "shippingAddress": {
+        "_id": "6a85918783126f64a538b37a",
+        "name": "AKHILESH REDDY 027",
+        "phone": "0955037950",
+        "pincode": "500081",
+        "address": "Tamsi Mandal",
+        "city": "Tamsi Mandal",
+        "state": "Telangana",
+        "isDefault": true,
+        "type": "home"
+      },
+      "priority": "Normal",
+      "packingChecklist": [],
+      "orderSummary": {
+        "itemsCount": 1,
+        "totalMrp": 444,
+        "mrpDiscount": 9,
+        "subtotal": 435,
+        "shippingFee": 0,
+        "shipping": 0,
+        "packingFee": 0,
+        "packageCharge": 0,
+        "platformFee": 0,
+        "discount": 9,
+        "couponDiscount": 0,
+        "tax": 22,
+        "total": 457,
+        "grandTotal": 457,
+        "walletDeduction": 0,
+        "rewardsDeduction": 0,
+        "preparationTimeMinutes": 30,
+        "estimatedDeliveryMinutes": 30,
+        "estimatedDeliveryTime": "2026-08-25T10:55:24.950Z"
+      },
+      "checkoutRequestHash": "d195efcc7e5ce7669e5ab7af552b3f3a679ac389550f2d1d5314c29029ab401d",
+      "fulfillment": {
+        "type": "delivery",
+        "deliveryFee": 0,
+        "deliveryMode": "standard",
+        "deliveryInstruction": "call_before",
+        "customInstruction": ""
+      },
+      "deliveryDetails": {
+        "expectedDelivery": "Standard Delivery",
+        "shippingMethod": "Home Delivery"
+      },
+      "isSelfPickup": false,
+      "categoryId": "6a8583f5f4dd8476e960b1f4",
+      "categoryName": "",
+      "orderType": "RETAIL",
+      "estimatedDeliveryMinutes": 30,
+      "acceptedAt": "2026-08-25T10:25:24.950Z",
+      "estimatedDeliveryTime": "2026-08-25T10:55:24.950Z",
+      "prepStatus": "preparing",
+      "paymentMethod": "razorpay",
+      "paymentDetails": {
+        "method": "razorpay",
+        "amount": 457,
+        "status": "completed",
+        "transactionId": "pay_TTy7PozVK6zqOj",
+        "razorpayOrderId": "order_TTy7KLtuSFGac1",
+        "razorpayPaymentId": "pay_TTy7PozVK6zqOj",
+        "razorpaySignature": "e38a86092ded1962b6b4516ce8d2982e8deb152c085fc2625a1d99d5320155d1",
+        "upiDetails": null,
+        "paidAt": "2026-08-25T10:25:06.437Z"
+      },
+      "createdAt": "2026-08-25T10:25:06.446Z",
+      "updatedAt": "2026-08-25T10:28:56.175Z",
+      "__v": 3,
+      "deliveryAgentId": "6a8d5a3150d90feb07ac9c8f",
+      "deliveryType": "Platform",
+      "pickupVerification": {
+        "verified": true
+      },
+      "deliveryVerification": {
+        "verified": true
+      }
+    },
+    {
+      "_id": "6a8fcdd848300844cdf3587c",
+      "orderNumber": "AB-1787809240891-8367",
+      "customerId": "6a86d87eebf52da64763020c",
+      "sellerId": "6a8fc714c365771cea08b60c",
+      "items": [
+        {
+          "productId": "6a8fcba448300844cdf33b00",
+          "productName": "Shtdsgf - Fresh & Premium Grade",
+          "sku": "HAN-SHTD-42943-V1",
+          "quantity": 1,
+          "price": 2510,
+          "categoryId": "6a8583f5f4dd8476e960b1f4",
+          "categoryName": "",
+          "_id": "6a8fcdd848300844cdf3587d"
+        }
+      ],
+      "totalAmount": 2636,
+      "paymentStatus": "Paid",
+      "orderStatus": "Delivered",
+      "paymentVerificationStatus": "Verified",
+      "customerNotes": "",
+      "refundStatus": "None",
+      "commissionReleaseStatus": "Released",
+      "commissionReleasedAt": "2026-08-27T06:23:23.571Z",
+      "checkoutIdempotencyKey": "idem-1787809191296-dd2wtp7x0",
+      "timeline": [
+        {
+          "status": "pending",
+          "date": "2026-08-27T05:40:40.891Z",
+          "note": "Order placed successfully (price verified by backend)"
+        },
+        {
+          "status": "paid",
+          "date": "2026-08-27T05:40:40.891Z",
+          "note": "Payment completed via Razorpay (pay_TUgLD4jrwQANPP)"
+        },
+        {
+          "status": "preparing",
+          "timestamp": "2026-08-27T05:41:27.958Z",
+          "note": "Restaurant confirmed order with 20 mins preparation time"
+        },
+        {
+          "status": "Shipped",
+          "date": "2026-08-27T05:41:36.938Z",
+          "note": "Order status updated to Shipped"
+        },
+        {
+          "status": "Shipped",
+          "date": "2026-08-27T05:41:37.089Z",
+          "note": "Order status updated to Shipped"
+        },
+        {
+          "status": "Delivered",
+          "date": "2026-08-27T05:41:46.808Z",
+          "note": "Order status updated to Delivered"
+        },
+        {
+          "status": "Delivered",
+          "date": "2026-08-27T05:41:48.944Z",
+          "note": "Order status updated to Delivered"
+        },
+        {
+          "status": "Commissions Released",
+          "date": "2026-08-27T06:23:19.971Z",
+          "note": "Commissions successfully released."
+        }
+      ],
+      "orderStatusObj": {
+        "currentStatus": "pending",
+        "timeline": [
+          {
+            "status": "pending",
+            "timestamp": "2026-08-27T05:40:40.891Z",
+            "description": "Order placed successfully (price verified by backend)"
+          },
+          {
+            "status": "paid",
+            "timestamp": "2026-08-27T05:40:40.891Z",
+            "description": "Payment completed via Razorpay (pay_TUgLD4jrwQANPP)"
+          }
+        ]
+      },
+      "shippingAddress": {
+        "_id": "6a86d9dc327abdd4b11d6787",
+        "name": "bannureddy1",
+        "phone": "6557647663",
+        "pincode": "504312",
+        "address": "Tamsi Mandal",
+        "city": "Tamsi Mandal",
+        "state": "Telangana",
+        "isDefault": true,
+        "type": "home"
+      },
+      "priority": "Normal",
+      "packingChecklist": [],
+      "orderSummary": {
+        "itemsCount": 1,
+        "totalMrp": 4564,
+        "mrpDiscount": 2054,
+        "subtotal": 2510,
+        "shippingFee": 0,
+        "shipping": 0,
+        "packingFee": 0,
+        "packageCharge": 0,
+        "platformFee": 0,
+        "discount": 2054,
+        "couponDiscount": 0,
+        "tax": 126,
+        "total": 2636,
+        "grandTotal": 2636,
+        "walletDeduction": 0,
+        "rewardsDeduction": 0,
+        "preparationTimeMinutes": 20,
+        "estimatedDeliveryMinutes": 20,
+        "estimatedDeliveryTime": "2026-08-27T06:01:27.958Z"
+      },
+      "checkoutRequestHash": "55ffb7e56304cb0a9d9e52cf3c5604b236ea4fe0ac30bc44cb3d3aac41948665",
+      "fulfillment": {
+        "type": "delivery",
+        "deliveryFee": 0,
+        "deliveryMode": "standard",
+        "deliveryInstruction": "call_before",
+        "customInstruction": ""
+      },
+      "deliveryDetails": {
+        "expectedDelivery": "Standard Delivery",
+        "shippingMethod": "Home Delivery"
+      },
+      "isSelfPickup": false,
+      "categoryId": "6a8583f5f4dd8476e960b1f4",
+      "categoryName": "",
+      "orderType": "RETAIL",
+      "estimatedDeliveryMinutes": 20,
+      "acceptedAt": "2026-08-27T05:41:27.958Z",
+      "estimatedDeliveryTime": "2026-08-27T06:01:27.958Z",
+      "prepStatus": "preparing",
+      "paymentMethod": "razorpay",
+      "paymentDetails": {
+        "method": "razorpay",
+        "amount": 2636,
+        "status": "completed",
+        "transactionId": "pay_TUgLD4jrwQANPP",
+        "razorpayOrderId": "order_TUgKk6UNJ8oXjd",
+        "razorpayPaymentId": "pay_TUgLD4jrwQANPP",
+        "razorpaySignature": "71d80002618be52553fd414bad972dd644a773ce42fdb0bd530a99cc2c27ff41",
+        "upiDetails": null,
+        "paidAt": "2026-08-27T05:40:40.891Z"
+      },
+      "createdAt": "2026-08-27T05:40:40.897Z",
+      "updatedAt": "2026-08-27T06:23:23.572Z",
+      "__v": 6,
+      "deliveryAgentId": "6a8d5a3150d90feb07ac9c8f",
+      "deliveryType": "Platform"
+    },
+    {
+      "_id": "6abb9aa8481e9678e8fad45a",
+      "orderNumber": "AB-1790679720431-9960",
+      "customerId": "6a86d87eebf52da64763020c",
+      "sellerId": "6a86d7feebf52da64762f897",
+      "items": [
+        {
+          "productId": "6a8d2f0e2cf558e5b3259bfc",
+          "productName": "Test - Fresh & Premium Grade",
+          "sku": "HAN-TEST-98097-V1",
+          "quantity": 1,
+          "price": 435,
+          "categoryId": "6a8583f5f4dd8476e960b1f4",
+          "categoryName": "",
+          "_id": "6abb9aa8481e9678e8fad45b"
+        }
+      ],
+      "totalAmount": 502.5,
+      "paymentStatus": "Paid",
+      "orderStatus": "Placed",
+      "paymentVerificationStatus": "Verified",
+      "customerNotes": "",
+      "refundStatus": "None",
+      "commissionReleaseStatus": "Released",
+      "commissionReleasedAt": "2026-09-29T11:20:12.047Z",
+      "checkoutIdempotencyKey": "idem-1790679696823-6udvaqt10",
+      "timeline": [
+        {
+          "status": "pending",
+          "date": "2026-09-29T11:02:00.432Z",
+          "note": "Order placed successfully (price verified by backend)"
+        },
+        {
+          "status": "paid",
+          "date": "2026-09-29T11:02:00.432Z",
+          "note": "Payment completed via Razorpay (pay_ThpRbTBnp2vV05)"
+        },
+        {
+          "status": "Commissions Released",
+          "date": "2026-09-29T11:20:07.700Z",
+          "note": "Commissions successfully released."
+        }
+      ],
+      "orderStatusObj": {
+        "currentStatus": "pending",
+        "timeline": [
+          {
+            "status": "pending",
+            "timestamp": "2026-09-29T11:02:00.432Z",
+            "description": "Order placed successfully (price verified by backend)"
+          },
+          {
+            "status": "paid",
+            "timestamp": "2026-09-29T11:02:00.432Z",
+            "description": "Payment completed via Razorpay (pay_ThpRbTBnp2vV05)"
+          }
+        ]
+      },
+      "shippingAddress": {
+        "_id": "6a86d9dc327abdd4b11d6787",
+        "name": "bannureddy1",
+        "phone": "6557647663",
+        "pincode": "504312",
+        "address": "Tamsi Mandal",
+        "city": "Tamsi Mandal",
+        "state": "Telangana",
+        "isDefault": true,
+        "type": "home"
+      },
+      "priority": "Normal",
+      "packingChecklist": [],
+      "orderSummary": {
+        "itemsCount": 1,
+        "totalMrp": 444,
+        "mrpDiscount": 9,
+        "subtotal": 435,
+        "shippingFee": 0,
+        "shipping": 0,
+        "packingFee": 0,
+        "packageCharge": 0,
+        "platformFee": 43.5,
+        "discount": 9,
+        "couponDiscount": 0,
+        "tax": 24,
+        "total": 502.5,
+        "grandTotal": 502.5,
+        "walletDeduction": 0,
+        "rewardsDeduction": 0
+      },
+      "checkoutRequestHash": "36d4e8bec6a80e4e551eb7fd8e7ccb52d613560d3ab6e0bcd869eea5f37fb9b5",
+      "fulfillment": {
+        "type": "delivery",
+        "deliveryFee": 0,
+        "deliveryMode": "standard",
+        "deliveryInstruction": "call_before",
+        "customInstruction": ""
+      },
+      "deliveryDetails": {
+        "expectedDelivery": "Standard Delivery",
+        "shippingMethod": "Home Delivery"
+      },
+      "isSelfPickup": false,
+      "categoryId": "6a8583f5f4dd8476e960b1f4",
+      "categoryName": "",
+      "orderType": "RETAIL",
+      "estimatedDeliveryMinutes": 20,
+      "acceptedAt": null,
+      "estimatedDeliveryTime": null,
+      "prepStatus": "pending",
+      "paymentMethod": "razorpay",
+      "paymentDetails": {
+        "method": "razorpay",
+        "amount": 502.5,
+        "status": "completed",
+        "transactionId": "pay_ThpRbTBnp2vV05",
+        "razorpayOrderId": "order_ThpRUlu7laZqu7",
+        "razorpayPaymentId": "pay_ThpRbTBnp2vV05",
+        "razorpaySignature": "d403db4275987a23716179ae3d7cc4348a1d20204a5d5ca1603b97079987e409",
+        "upiDetails": null,
+        "paidAt": "2026-09-29T11:02:00.432Z"
+      },
+      "createdAt": "2026-09-29T11:02:00.439Z",
+      "updatedAt": "2026-09-29T11:20:12.047Z",
+      "__v": 1
+    },
+    {
+      "_id": "6acc5baca25a38bde7c37571",
+      "orderNumber": "AB-TAMSI-708519",
+      "customerId": "6a8d5a3150d90feb07ac9c8f",
+      "sellerId": "6acc5baca25a38bde7c3756f",
+      "items": [
+        {
+          "productId": "6acc5baca25a38bde7c37570",
+          "productName": "Organic Cotton Fabric (Tamsi Store)",
+          "quantity": 1,
+          "price": 250
+        }
+      ],
+      "totalAmount": 250,
+      "paymentStatus": "Paid",
+      "orderStatus": "Packed",
+      "shippingAddress": {
+        "name": "Akhilesh Reddy",
+        "phone": "9707010797",
+        "addressLine1": "Near Gram Panchayat, Main Road",
+        "mandal": "Tamsi",
+        "district": "Adilabad",
+        "state": "Telangana",
+        "pincode": "504312"
+      },
+      "timeline": [
+        {
+          "status": "Placed",
+          "date": "2026-10-12T04:01:48.520Z",
+          "note": "Order placed by user"
+        },
+        {
+          "status": "Packed",
+          "date": "2026-10-12T04:01:48.523Z",
+          "note": "Order packed and ready for delivery dispatch"
+        }
+      ],
+      "createdAt": "2026-10-12T04:01:48.523Z",
+      "updatedAt": "2026-10-12T04:01:48.523Z"
+    }
+  ],
+  "orderStatusHistories": [],
+  "orderTrackings": [],
+  "deliveryAssignments": [
+    {
+      "_id": "6acc5baca25a38bde7c37572",
+      "orderId": "6acc5baca25a38bde7c37571",
+      "deliveryPartnerId": "6a8d5a3150d90feb07ac9c8f",
+      "partnerId": "6a8d5ad081307b6c1885c7bf",
+      "partnerSnapshot": {
+        "name": "driveranna",
+        "phoneMasked": "9876543219"
+      },
+      "status": "Assigned",
+      "assignedAt": "2026-10-12T04:01:48.735Z",
+      "codCollection": {
+        "expected": 250,
+        "collected": 0
+      }
+    }
+  ],
+  "scheduledDeliveries": [],
+  "inventoryReservations": [
+    {
+      "_id": "6a86d9ed327abdd4b11d679c",
+      "reservationId": "RES_1787222509334_725517",
+      "orderId": "6a86d9ec327abdd4b11d6790",
+      "userId": "6a86d87eebf52da64763020c",
+      "productId": "6a8583f8f4dd8476e960b201",
+      "variantId": null,
+      "quantity": 1,
+      "status": "expired",
+      "expiresAt": "2026-08-20T10:56:49.334Z",
+      "createdAt": "2026-08-20T10:41:49.336Z",
+      "updatedAt": "2026-08-22T16:11:58.099Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a8d27f5204ba0e22c58a7a3",
+      "reservationId": "RES_1787635701508_568169",
+      "orderId": "6a8d27f5204ba0e22c58a797",
+      "userId": "6a828149fd694e744027a2a6",
+      "productId": "6a8583fbf4dd8476e960b205",
+      "variantId": null,
+      "quantity": 1,
+      "status": "expired",
+      "expiresAt": "2026-08-25T05:43:21.508Z",
+      "createdAt": "2026-08-25T05:28:21.510Z",
+      "updatedAt": "2026-08-25T05:43:26.002Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a8d2922204ba0e22c58b18e",
+      "reservationId": "RES_1787636002887_863142",
+      "orderId": "6a8d2922204ba0e22c58b183",
+      "userId": "6a828149fd694e744027a2a6",
+      "productId": "6a8583fbf4dd8476e960b205",
+      "variantId": null,
+      "quantity": 1,
+      "status": "expired",
+      "expiresAt": "2026-08-25T05:48:22.888Z",
+      "createdAt": "2026-08-25T05:33:22.889Z",
+      "updatedAt": "2026-08-25T05:48:26.096Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a8d30a52cf558e5b325ad12",
+      "reservationId": "RES_1787637925130_204880",
+      "orderId": "6a8d30a42cf558e5b325ad06",
+      "userId": "6a8d30702cf558e5b325a897",
+      "productId": "6a8d2f0e2cf558e5b3259bfc",
+      "variantId": null,
+      "quantity": 1,
+      "status": "expired",
+      "expiresAt": "2026-08-25T06:20:25.130Z",
+      "createdAt": "2026-08-25T06:05:25.132Z",
+      "updatedAt": "2026-08-25T06:23:10.431Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a8d381bd1001177c1d2809c",
+      "reservationId": "RES_1787639835354_221476",
+      "orderId": "6a8d381bd1001177c1d28092",
+      "userId": "6a86d7feebf52da64762f897",
+      "productId": "6a8d2f0e2cf558e5b3259bfc",
+      "variantId": null,
+      "quantity": 1,
+      "status": "expired",
+      "expiresAt": "2026-08-25T06:52:15.354Z",
+      "createdAt": "2026-08-25T06:37:15.355Z",
+      "updatedAt": "2026-08-25T06:53:02.781Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a8d6b0f21910f059e8c5a8a",
+      "reservationId": "RES_1787652879787_253905",
+      "orderId": "6a8d6b0f21910f059e8c5a80",
+      "userId": "6a8d30702cf558e5b325a897",
+      "productId": "6a8d2f0e2cf558e5b3259bfc",
+      "variantId": null,
+      "quantity": 1,
+      "status": "expired",
+      "expiresAt": "2026-08-25T10:29:39.787Z",
+      "createdAt": "2026-08-25T10:14:39.789Z",
+      "updatedAt": "2026-08-27T03:48:12.198Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a8d6d826525066615b5f551",
+      "reservationId": "RES_1787653506847_210509",
+      "orderId": "6a8d6d826525066615b5f547",
+      "userId": "6a8d30702cf558e5b325a897",
+      "productId": "6a8d2f0e2cf558e5b3259bfc",
+      "variantId": null,
+      "quantity": 1,
+      "status": "expired",
+      "expiresAt": "2026-08-25T10:40:06.847Z",
+      "createdAt": "2026-08-25T10:25:06.849Z",
+      "updatedAt": "2026-08-27T03:48:12.411Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a8fcdd948300844cdf35888",
+      "reservationId": "RES_1787809241497_219798",
+      "orderId": "6a8fcdd848300844cdf3587c",
+      "userId": "6a86d87eebf52da64763020c",
+      "productId": "6a8fcba448300844cdf33b00",
+      "variantId": null,
+      "quantity": 1,
+      "status": "committed",
+      "expiresAt": "2026-08-27T05:55:41.497Z",
+      "createdAt": "2026-08-27T05:40:41.499Z",
+      "updatedAt": "2026-08-27T05:41:47.075Z",
+      "__v": 0
+    },
+    {
+      "_id": "6abb9aa8481e9678e8fad464",
+      "reservationId": "RES_1790679720919_293123",
+      "orderId": "6abb9aa8481e9678e8fad45a",
+      "userId": "6a86d87eebf52da64763020c",
+      "productId": "6a8d2f0e2cf558e5b3259bfc",
+      "variantId": null,
+      "quantity": 1,
+      "status": "expired",
+      "expiresAt": "2026-09-29T11:17:00.919Z",
+      "createdAt": "2026-09-29T11:02:00.920Z",
+      "updatedAt": "2026-09-29T11:17:56.660Z",
+      "__v": 0
+    }
+  ],
+  "paymentAttempts": [
+    {
+      "_id": "6a86d9ed327abdd4b11d67a0",
+      "paymentAttemptId": "PAY_1787222509432_798076",
+      "orderId": "6a86d9ec327abdd4b11d6790",
+      "userId": "6a86d87eebf52da64763020c",
+      "provider": "UPI",
+      "amount": 294,
+      "currency": "INR",
+      "transactionReference": "12345678901234567",
+      "status": "pending_verification",
+      "createdAt": "2026-08-20T10:41:49.433Z",
+      "updatedAt": "2026-08-20T10:41:49.433Z",
+      "__v": 0
+    }
+  ],
+  "returnRequests": [],
+  "refunds": []
+}

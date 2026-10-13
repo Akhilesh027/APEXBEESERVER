@@ -20,7 +20,8 @@
     "categories:clear": "ts-node src/seeds/clearCategories.ts",
     "wallet:backup": "node backup_wallets.js",
     "wallet:reset": "node reset_wallets_safely.js",
-    "wallet:restore": "node restore_wallets.js"
+    "wallet:restore": "node restore_wallets.js",
+    "orders:delete": "node delete_orders_safely.js"
   },
   "dependencies": {
     "@socket.io/redis-adapter": "^8.3.0",
