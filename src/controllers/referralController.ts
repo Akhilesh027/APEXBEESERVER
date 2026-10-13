@@ -151,35 +151,9 @@ export const getReferralHistory = async (req: AuthRequest, res: Response): Promi
       .populate("orderId", "orderNumber totalAmount createdAt")
       .sort({ createdAt: -1 });
 
-    const directRefs = await Referral.find({
-      $or: [{ referrerUserId: userId }, { referrerId: userId }]
-    }).populate("referredUserId", "name phone email");
-
-    const historyReferredIds = new Set(history.map(h => String((h.referredUserId as any)?._id || h.referredUserId)));
-    const syntheticBonusTxs: any[] = [];
-    directRefs.forEach((r) => {
-      const refUserId = String((r.referredUserId as any)?._id || r.referredUserId);
-      if (!historyReferredIds.has(refUserId)) {
-        syntheticBonusTxs.push({
-          _id: r._id,
-          recipientUserId: userId,
-          referredUserId: r.referredUserId,
-          level: 1,
-          amount: Number((r as any).reward || r.rewardAmount || 50),
-          reward: Number((r as any).reward || r.rewardAmount || 50),
-          transactionType: "signup_bonus",
-          rewardReason: "Direct Referral Signup Bonus",
-          status: r.status === "registered" || r.status === "rewarded" || r.status === "approved" ? "released" : "pending",
-          createdAt: r.createdAt || new Date()
-        });
-      }
-    });
-
-    const combinedHistory = [...history, ...syntheticBonusTxs];
-
     // Privacy protection: sanitize downline private details for regular customers
     const sanitizedHistory = !isPartner
-      ? combinedHistory.map(item => {
+      ? history.map(item => {
           const raw = item.toObject ? item.toObject() : { ...item };
           if (raw.referredUserId && typeof raw.referredUserId === "object") {
             const masked = maskContactInfo(raw.referredUserId.phone, raw.referredUserId.email);
@@ -512,18 +486,6 @@ export const getReferralStats = async (req: AuthRequest, res: Response): Promise
       else if (isProductFirstPurchase) firstPurchaseCommission += amt;
       else productCommission += amt;
     });
-
-    // If no direct signup bonus transactions recorded in ReferralTransaction yet, add any rewarded signups from Referral collection
-    if (signupBonus === 0 && directReferralsList.length > 0) {
-      directReferralsList.forEach(r => {
-        const reward = Number((r as any).reward || r.rewardAmount || 0);
-        if (reward > 0) {
-          signupBonus += reward;
-          level1.signupBonus += reward;
-          level1.totalEarned += reward;
-        }
-      });
-    }
 
     // Customer scoping: only Level 1 rewards are presented
     const totalEarnings = isPartner ? totalEarningsAll : level1.totalEarned;

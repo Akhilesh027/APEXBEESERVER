@@ -50,6 +50,20 @@ async function resetWallets() {
   console.log(` Removed ${deleteRefTxResult.deletedCount} old reward logs from 'referraltransactions'.`);
   console.log(` Removed ${deleteCommResult.deletedCount} records from 'commissionsettlements'.\n`);
 
+  // 2b. RESET REWARD AMOUNTS IN REFERRALS (Preserving referrer, referred user, referralCode & hierarchy 100%)
+  console.log("🎁 Resetting historical referral rewards to ₹0 (keeping referral hierarchy & codes intact)...");
+  const updateReferralsResult = await db.collection("referrals").updateMany(
+    {},
+    {
+      $set: {
+        rewardAmount: 0,
+        status: "registered",
+        updatedAt: new Date()
+      }
+    }
+  );
+  console.log(` Reset rewardAmount to ₹0 in ${updateReferralsResult.modifiedCount} referral documents.\n`);
+
   // 3. RESET WALLETS COLLECTION TO 0
   console.log("🔄 Resetting wallet balances and ledger entries to 0...");
   const updateWalletsResult = await db.collection("wallets").updateMany(
