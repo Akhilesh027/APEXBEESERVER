@@ -41,10 +41,14 @@ async function resetWallets() {
   fs.writeFileSync(backupFile, JSON.stringify(backupData, null, 2));
   console.log(` Safety backup saved to:\n   ${backupFile}\n`);
 
-  // 2. WIPE WALLET TRANSACTIONS COLLECTION
-  console.log("🗑️  Clearing wallet transactions collection...");
+  // 2. WIPE WALLET TRANSACTIONS & REFERRAL COMMISSION LOGS
+  console.log("🗑️  Clearing wallet transactions and old commission logs...");
   const deleteTxResult = await db.collection("wallettransactions").deleteMany({});
-  console.log(` Removed ${deleteTxResult.deletedCount} transaction records from 'wallettransactions'.\n`);
+  const deleteRefTxResult = await db.collection("referraltransactions").deleteMany({});
+  const deleteCommResult = await db.collection("commissionsettlements").deleteMany({});
+  console.log(` Removed ${deleteTxResult.deletedCount} records from 'wallettransactions'.`);
+  console.log(` Removed ${deleteRefTxResult.deletedCount} old reward logs from 'referraltransactions'.`);
+  console.log(` Removed ${deleteCommResult.deletedCount} records from 'commissionsettlements'.\n`);
 
   // 3. RESET WALLETS COLLECTION TO 0
   console.log("🔄 Resetting wallet balances and ledger entries to 0...");

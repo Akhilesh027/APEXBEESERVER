@@ -21,7 +21,8 @@
     "wallet:backup": "node backup_wallets.js",
     "wallet:reset": "node reset_wallets_safely.js",
     "wallet:restore": "node restore_wallets.js",
-    "orders:delete": "node delete_orders_safely.js"
+    "orders:delete": "node delete_orders_safely.js",
+    "platform-fee:check": "node check_platform_fees.js"
   },
   "dependencies": {
     "@socket.io/redis-adapter": "^8.3.0",
