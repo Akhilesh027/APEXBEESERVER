@@ -53,6 +53,7 @@ export interface IBusinessApplication extends Document {
   };
   category?: string;
   primaryCategory?: string;
+  categories?: string[];
   subCategory?: string;
   approvedSubcategories?: string[];
   requestedCapabilities?: string[];
@@ -74,6 +75,7 @@ const BusinessApplicationSchema = new Schema<IBusinessApplication>(
     remarks: { type: String, default: "" },
     category: { type: String, default: "" },
     primaryCategory: { type: String, default: "" },
+    categories: [{ type: String, trim: true }],
     subCategory: { type: String, default: "" },
     approvedSubcategories: [{ type: String, trim: true }],
     requestedCapabilities: [{ type: String, trim: true }],

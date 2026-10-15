@@ -764,8 +764,8 @@ export const getAllProducts = async (req: Request, res: Response) => {
     const sellerIds = rawProducts.flatMap((p: any) => [p.sellerId?._id, p.sellerId, p.createdBy]).filter(Boolean);
     const vendors = sellerIds.length > 0
       ? await Vendor.find({ $or: [{ userId: { $in: sellerIds } }, { _id: { $in: sellerIds } }] })
-          .select('_id userId businessName ownerName shopName storeName location pincode mandal district state deliveryMode storeDesign')
-          .lean()
+        .select('_id userId businessName ownerName shopName storeName location pincode mandal district state deliveryMode storeDesign')
+        .lean()
       : [];
     const vendorMap = new Map();
     vendors.forEach((v: any) => {
@@ -1961,7 +1961,7 @@ export const toggleProductStatus = async (req: Request, res: Response): Promise<
     ].filter(Boolean);
 
     const isOwner = vendorIds.includes(product.sellerId?.toString()) ||
-                    vendorIds.includes(product.createdBy?.toString());
+      vendorIds.includes(product.createdBy?.toString());
     const isAdmin = authUser.roles?.includes('admin');
 
     if (!isOwner && !isAdmin) {
@@ -1979,20 +1979,40 @@ export const toggleProductStatus = async (req: Request, res: Response): Promise<
       targetActive = !product.isActive;
     }
 
-    product.isActive = targetActive;
-
     if (!targetActive) {
       // Vendor switched OFF product
+      product.isActive = false;
       product.status = 'Inactive';
     } else {
-      // Vendor switched ON product
-      if (product.moderationStatus === 'rejected') {
+      // Vendor switched ON product - verify admin and seller approvals
+      if (product.moderationStatus === 'rejected' || product.status === 'Rejected') {
         res.status(400).json({
           success: false,
           message: 'Cannot activate a rejected product. Please edit and submit for review.'
         });
         return;
       }
+
+      if (!isAdmin) {
+        if (product.status === 'Awaiting Seller Approval') {
+          res.status(400).json({
+            success: false,
+            message: 'Please review and accept Admin pricing first before turning Store Status ON.'
+          });
+          return;
+        }
+
+        const isApprovedByBoth = product.status === 'Live' || product.status === 'Inactive' || product.sellerPricingAccepted || (product.adminPricingApproved && product.status === 'Approved');
+        if (!isApprovedByBoth) {
+          res.status(400).json({
+            success: false,
+            message: 'Product must be approved by Admin and accepted by Vendor before enabling Store Status (ON/OFF).'
+          });
+          return;
+        }
+      }
+
+      product.isActive = true;
       product.status = 'Live';
     }
 

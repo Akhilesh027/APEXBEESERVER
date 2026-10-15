@@ -8,16 +8,17 @@ import {
   getInvoices,
   getMyInvoices,
   getPublicInvoiceByToken,
+  createInvoiceRazorpayOrder,
   payInvoice,
   markInvoicePaidManual,
 } from "../controllers/feePricingController";
-
 const router = Router();
 
 // Public / Portal Pricing catalog lookup
 router.get("/catalog", getPricingCatalog);
 router.get("/public/invoice/:token", getPublicInvoiceByToken);
 router.post("/public/pay", payInvoice);
+router.post("/create-razorpay-order", createInvoiceRazorpayOrder);
 
 // Authenticated Portal User (Vendor / Franchise / Partner)
 router.get("/my-invoices", protect, getMyInvoices);

@@ -22,6 +22,7 @@ router.get('/vendor/subscription-products/addons', protect, VendorSubscriptionCo
 
 router.post('/vendor/subscription-quotes', protect, VendorSubscriptionController.createQuote);
 router.post('/vendor/subscription-orders', protect, VendorSubscriptionController.createOrder);
+router.post('/vendor/subscription-orders/razorpay', protect, VendorSubscriptionController.createRazorpayOrder);
 router.post('/vendor/subscription-payments/create', protect, VendorSubscriptionController.processPayment);
 
 router.post('/vendor/subscriptions/clear-all', protect, VendorSubscriptionController.clearAllSubscriptions);

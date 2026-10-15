@@ -207,8 +207,39 @@ export const createApplication = async (
       sampleVideoLink,
       vehicleType,
       licenseNumber,
-      primaryCategory: req.body.primaryCategory || req.body.category || "",
-      category: req.body.primaryCategory || req.body.category || "",
+      categories: (() => {
+        const raw = req.body.categories;
+        if (Array.isArray(raw) && raw.length > 0) {
+          return raw.flatMap((s: any) => typeof s === 'string' && s.includes(',') ? s.split(',').map((x: string) => x.trim()) : String(s).trim()).filter(Boolean);
+        }
+        const single = req.body.category || req.body.primaryCategory;
+        if (typeof single === 'string' && single.trim()) {
+          return single.split(',').map((s: string) => s.trim()).filter(Boolean);
+        }
+        return [];
+      })(),
+      primaryCategory: (() => {
+        const raw = req.body.categories;
+        if (Array.isArray(raw) && raw.length > 0) {
+          const first = typeof raw[0] === 'string' && raw[0].includes(',') ? raw[0].split(',')[0].trim() : String(raw[0]).trim();
+          if (first) return first;
+        }
+        if (req.body.primaryCategory && typeof req.body.primaryCategory === 'string') {
+          return req.body.primaryCategory.split(',')[0].trim();
+        }
+        if (req.body.category && typeof req.body.category === 'string') {
+          return req.body.category.split(',')[0].trim();
+        }
+        return "";
+      })(),
+      category: (() => {
+        const raw = req.body.categories;
+        if (Array.isArray(raw) && raw.length > 0) {
+          const flat = raw.flatMap((s: any) => typeof s === 'string' && s.includes(',') ? s.split(',').map((x: string) => x.trim()) : String(s).trim()).filter(Boolean);
+          if (flat.length > 0) return flat.join(", ");
+        }
+        return req.body.category || req.body.primaryCategory || "";
+      })(),
       subCategory: (Array.isArray(req.body.approvedSubcategories) && req.body.approvedSubcategories.length > 0)
         ? req.body.approvedSubcategories[0]
         : (Array.isArray(req.body.subCategories) && req.body.subCategories.length > 0)

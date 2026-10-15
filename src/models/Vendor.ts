@@ -264,13 +264,10 @@ const VendorSchema = new Schema<IVendor>(
     location: {
       type: {
         type: String,
-        enum: ["Point"],
-        default: "Point"
+        enum: ["Point"]
       },
       coordinates: {
-        type: [Number], // [longitude, latitude]
-        required: false,
-        default: undefined
+        type: [Number] // [longitude, latitude]
       }
     },
     deliveryMode: {
@@ -344,16 +341,25 @@ const VendorSchema = new Schema<IVendor>(
   { timestamps: true }
 );
 
-VendorSchema.pre("save", function (next) {
+VendorSchema.pre("validate", function (next) {
   if (this.location) {
-    if (!this.location.coordinates || this.location.coordinates.length !== 2) {
+    if (!this.location.coordinates || !Array.isArray(this.location.coordinates) || this.location.coordinates.length !== 2) {
       this.location = undefined;
     }
   }
   next();
 });
 
-VendorSchema.index({ location: "2dsphere" });
+VendorSchema.pre("save", function (next) {
+  if (this.location) {
+    if (!this.location.coordinates || !Array.isArray(this.location.coordinates) || this.location.coordinates.length !== 2) {
+      this.location = undefined;
+    }
+  }
+  next();
+});
+
+VendorSchema.index({ location: "2dsphere" }, { sparse: true });
 VendorSchema.index({ userId: 1 });
 VendorSchema.index({ status: 1 });
 VendorSchema.index({ businessName: 1 });

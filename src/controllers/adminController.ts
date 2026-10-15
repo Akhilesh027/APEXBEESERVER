@@ -605,6 +605,18 @@ export const getApplications = async (
     const enrichedApps = apps.map((app: any) => {
       const appObj = app.toObject();
 
+      if (!Array.isArray(appObj.categories) || appObj.categories.length === 0) {
+        if (appObj.category && typeof appObj.category === 'string' && appObj.category.includes(',')) {
+          appObj.categories = appObj.category.split(',').map((s: string) => s.trim()).filter(Boolean);
+        } else if (appObj.primaryCategory && typeof appObj.primaryCategory === 'string' && appObj.primaryCategory.includes(',')) {
+          appObj.categories = appObj.primaryCategory.split(',').map((s: string) => s.trim()).filter(Boolean);
+        } else if (appObj.category || appObj.primaryCategory) {
+          appObj.categories = [appObj.category || appObj.primaryCategory];
+        } else {
+          appObj.categories = [];
+        }
+      }
+
       const stKey = app.state ? `state:${app.state.trim().toLowerCase()}` : "";
       const distKey = app.state && app.district ? `district:${app.state.trim().toLowerCase()}:${app.district.trim().toLowerCase()}` : "";
       const mandalKey = app.state && app.district && app.mandal ? `mandal:${app.state.trim().toLowerCase()}:${app.district.trim().toLowerCase()}:${app.mandal.trim().toLowerCase()}` : "";
@@ -671,6 +683,18 @@ export const getApplicationById = async (
     }
 
     const appObj = app.toObject() as any;
+
+    if (!Array.isArray(appObj.categories) || appObj.categories.length === 0) {
+      if (appObj.category && typeof appObj.category === 'string' && appObj.category.includes(',')) {
+        appObj.categories = appObj.category.split(',').map((s: string) => s.trim()).filter(Boolean);
+      } else if (appObj.primaryCategory && typeof appObj.primaryCategory === 'string' && appObj.primaryCategory.includes(',')) {
+        appObj.categories = appObj.primaryCategory.split(',').map((s: string) => s.trim()).filter(Boolean);
+      } else if (appObj.category || appObj.primaryCategory) {
+        appObj.categories = [appObj.category || appObj.primaryCategory];
+      } else {
+        appObj.categories = [];
+      }
+    }
 
     const stateFranchise = await Franchise.findOne({
       franchiseLevel: "state",
@@ -771,10 +795,24 @@ export const updateApplicationDetails = async (
     if (updates.serviceType !== undefined) app.serviceType = updates.serviceType;
     if (updates.adminRemarks !== undefined) app.adminRemarks = updates.adminRemarks;
 
-    const assignedCat = updates.primaryCategory || updates.category || (app as any).primaryCategory || (app as any).category;
-    if (assignedCat) {
-      (app as any).primaryCategory = assignedCat;
-      (app as any).category = assignedCat;
+    const rawCats = updates.categories;
+    const catList = Array.isArray(rawCats) && rawCats.length > 0
+      ? rawCats.flatMap((s: any) => typeof s === 'string' && s.includes(',') ? s.split(',').map((x: string) => x.trim()) : String(s).trim()).filter(Boolean)
+      : (updates.category || updates.primaryCategory)
+        ? String(updates.category || updates.primaryCategory).split(',').map((s: string) => s.trim()).filter(Boolean)
+        : (app.categories && app.categories.length > 0 ? app.categories : (app.category ? String(app.category).split(',').map(s => s.trim()).filter(Boolean) : []));
+
+    if (catList.length > 0) {
+      app.categories = catList;
+      app.primaryCategory = catList[0];
+      app.category = catList.join(', ');
+    } else {
+      const assignedCat = updates.primaryCategory || updates.category || (app as any).primaryCategory || (app as any).category;
+      if (assignedCat) {
+        (app as any).primaryCategory = assignedCat;
+        (app as any).category = assignedCat;
+        (app as any).categories = [assignedCat];
+      }
     }
     if (updates.subCategory) (app as any).subCategory = updates.subCategory;
     if (Array.isArray(updates.approvedSubcategories)) (app as any).approvedSubcategories = updates.approvedSubcategories;
@@ -868,9 +906,17 @@ export const approveApplication = async (
     if (franchiseLevel !== undefined) app.franchiseLevel = franchiseLevel;
     if (serviceType !== undefined) app.serviceType = serviceType;
 
-    const assignedCat = primaryCategory || category || (app as any).primaryCategory || (app as any).category || "Food & Restaurant";
+    const rawCats = (req.body as any).categories;
+    const catList = Array.isArray(rawCats) && rawCats.length > 0
+      ? rawCats.flatMap((s: any) => typeof s === 'string' && s.includes(',') ? s.split(',').map((x: string) => x.trim()) : String(s).trim()).filter(Boolean)
+      : (primaryCategory || category)
+        ? String(primaryCategory || category).split(',').map((s: string) => s.trim()).filter(Boolean)
+        : ((app as any).categories && (app as any).categories.length > 0 ? (app as any).categories : ((app as any).category ? String((app as any).category).split(',').map((s: string) => s.trim()).filter(Boolean) : []));
+
+    const assignedCat = catList[0] || primaryCategory || category || (app as any).primaryCategory || (app as any).category || "Food & Restaurant";
+    (app as any).categories = catList.length > 0 ? catList : [assignedCat];
     (app as any).primaryCategory = assignedCat;
-    (app as any).category = assignedCat;
+    (app as any).category = catList.length > 0 ? catList.join(', ') : assignedCat;
     if (subCategory || (req.body as any).subCategory) {
       (app as any).subCategory = subCategory || (req.body as any).subCategory;
     }
@@ -1002,14 +1048,17 @@ export const verifyKycApplication = async (
     if (serviceType !== undefined) app.serviceType = serviceType;
 
     // Apply category / capability overrides from req.body if provided
-    const assignedCat =
-      primaryCategory ||
-      category ||
-      (app as any).primaryCategory ||
-      (app as any).category ||
-      "Food & Restaurant";
+    const rawCats = (req.body as any).categories;
+    const catList = Array.isArray(rawCats) && rawCats.length > 0
+      ? rawCats.flatMap((s: any) => typeof s === 'string' && s.includes(',') ? s.split(',').map((x: string) => x.trim()) : String(s).trim()).filter(Boolean)
+      : (primaryCategory || category)
+        ? String(primaryCategory || category).split(',').map((s: string) => s.trim()).filter(Boolean)
+        : ((app as any).categories && (app as any).categories.length > 0 ? (app as any).categories : ((app as any).category ? String((app as any).category).split(',').map((s: string) => s.trim()).filter(Boolean) : []));
+
+    const assignedCat = catList[0] || primaryCategory || category || (app as any).primaryCategory || (app as any).category || "Food & Restaurant";
+    (app as any).categories = catList.length > 0 ? catList : [assignedCat];
     (app as any).primaryCategory = assignedCat;
-    (app as any).category = assignedCat;
+    (app as any).category = catList.length > 0 ? catList.join(', ') : assignedCat;
     if (subCategory) {
       (app as any).subCategory = subCategory;
     }
@@ -1189,8 +1238,12 @@ export const verifyKycApplication = async (
 
       const validLocation =
         (app as any).location &&
-        (app as any).location.coordinates &&
-        (app as any).location.coordinates.length === 2
+        Array.isArray((app as any).location.coordinates) &&
+        (app as any).location.coordinates.length === 2 &&
+        typeof (app as any).location.coordinates[0] === 'number' &&
+        typeof (app as any).location.coordinates[1] === 'number' &&
+        !isNaN((app as any).location.coordinates[0]) &&
+        !isNaN((app as any).location.coordinates[1])
           ? (app as any).location
           : undefined;
 
@@ -1205,11 +1258,38 @@ export const verifyKycApplication = async (
               .filter(Boolean)
           : [];
 
+      const vendorCategories = (app as any).categories && (app as any).categories.length > 0
+        ? (app as any).categories
+        : (assignedCat ? String(assignedCat).split(',').map((s: string) => s.trim()).filter(Boolean) : []);
+
+      const allowedCategoryIds: any[] = [];
+      const matchedParents: any[] = [];
+      for (const catName of vendorCategories) {
+        try {
+          const safeCat = escapeRegex(catName.toLowerCase().trim());
+          const matched = await Category.findOne({
+            level: 1,
+            $or: [
+              { slug: { $regex: new RegExp(`^${safeCat}$`, "i") } },
+              { name: { $regex: new RegExp(`^${safeCat}$`, "i") } },
+              { slug: { $regex: new RegExp(safeCat, "i") } },
+              { name: { $regex: new RegExp(safeCat, "i") } },
+            ],
+          });
+          if (matched && !allowedCategoryIds.some(id => String(id) === String(matched._id))) {
+            allowedCategoryIds.push(matched._id);
+            matchedParents.push(matched);
+          }
+        } catch (e) { }
+      }
+
       const updateObj: any = {
         $set: {
           ...profileFields,
-          category: assignedCat,
-          primaryCategory: assignedCat,
+          category: vendorCategories.join(", ") || assignedCat,
+          primaryCategory: vendorCategories[0] || assignedCat,
+          categories: vendorCategories.length > 0 ? vendorCategories : [assignedCat],
+          allowedCategories: allowedCategoryIds,
           subCategory: vendorSubCategories[0] || (app as any).subCategory || "",
           approvedSubcategories: vendorSubCategories,
           subCategories: vendorSubCategories,
@@ -1230,6 +1310,8 @@ export const verifyKycApplication = async (
 
       if (validLocation) {
         updateObj.$set.location = validLocation;
+      } else {
+        updateObj.$unset = { location: "" };
       }
 
       const savedVendor = await Vendor.findOneAndUpdate(
@@ -1241,47 +1323,30 @@ export const verifyKycApplication = async (
       if (savedVendor) {
         await assignTerritoryAndMapFranchises("vendor", savedVendor);
 
-        // Auto-initialize and approve VendorCategoryAccess for vendor's primary category vertical
+        // Auto-initialize and approve VendorCategoryAccess for all vendor categories
         try {
-          const vendorCatStr = (
-            savedVendor.primaryCategory ||
-            (savedVendor as any).category ||
-            savedVendor.storeType ||
-            ""
-          ).toLowerCase().trim();
+          const parentsToGrant = matchedParents.length > 0
+            ? matchedParents
+            : [await Category.findOne({ level: 1 })].filter(Boolean);
 
-          let matchedParent = null;
-          if (vendorCatStr) {
-            const safeCat = escapeRegex(vendorCatStr);
-            matchedParent = await Category.findOne({
-              level: 1,
-              $or: [
-                { slug: { $regex: new RegExp(safeCat, "i") } },
-                { name: { $regex: new RegExp(safeCat, "i") } },
-              ],
-            });
-          }
-          if (!matchedParent) {
-            matchedParent = await Category.findOne({ level: 1 });
-          }
-          if (matchedParent) {
-            const reqCaps =
-              (app as any).requestedCapabilities &&
-              Array.isArray((app as any).requestedCapabilities) &&
-              (app as any).requestedCapabilities.length > 0
-                ? (app as any).requestedCapabilities
-                : ["pooja_store", "general_store", "retail_store"];
+          const reqCaps =
+            (app as any).requestedCapabilities &&
+            Array.isArray((app as any).requestedCapabilities) &&
+            (app as any).requestedCapabilities.length > 0
+              ? (app as any).requestedCapabilities
+              : ["pooja_store", "general_store", "retail_store", "shopping_store"];
 
+          for (const parentCat of parentsToGrant) {
             await VendorCategoryAccess.findOneAndUpdate(
               {
                 vendorId: savedVendor._id,
-                parentCategoryId: matchedParent._id,
+                parentCategoryId: parentCat._id,
               },
               {
                 $set: {
                   vendorId: savedVendor._id,
                   storeId: savedVendor._id,
-                  parentCategoryId: matchedParent._id,
+                  parentCategoryId: parentCat._id,
                   requestedCapabilities: reqCaps,
                   approvedCapabilities: reqCaps,
                   status: "approved",
@@ -1302,6 +1367,20 @@ export const verifyKycApplication = async (
           }
         } catch (vcaErr) {
           console.error("Error setting up VendorCategoryAccess:", vcaErr);
+        }
+
+        try {
+          (user as any).categories = vendorCategories.length > 0 ? vendorCategories : [assignedCat];
+          (user as any).primaryCategory = vendorCategories[0] || assignedCat;
+          (user as any).allowedCategories = allowedCategoryIds;
+          if (user.sellerProfile) {
+            (user.sellerProfile as any).categories = vendorCategories.length > 0 ? vendorCategories : [assignedCat];
+            (user.sellerProfile as any).primaryCategory = vendorCategories[0] || assignedCat;
+            (user.sellerProfile as any).allowedCategories = allowedCategoryIds;
+          }
+          await user.save();
+        } catch (uErr) {
+          console.warn("Error updating user categories for vendor:", uErr);
         }
       }
     } else if (targetRole === "manufacturer") {
@@ -1702,11 +1781,11 @@ export const verifyKycApplication = async (
         if (effectiveLevel === "state" || targetRole === "state_franchise") feeServiceKey = "state_franchise_assign";
         else if (effectiveLevel === "district" || targetRole === "district_franchise") feeServiceKey = "district_franchise_assign";
         else feeServiceKey = "mandal_franchise_assign";
-      } else if (targetRole === "vendor" || targetRole === "food_partner") {
-        feeServiceKey = "vendor_enrollment";
       }
 
-      if (feeServiceKey) {
+      // Note: Vendors and food partners only have commissions distributed when they ACTUALLY pay (via FeeInvoice or subscription payment)
+      // Commissions must NEVER be distributed on simple KYC approval without payment.
+      if (feeServiceKey && targetRole !== "vendor" && targetRole !== "food_partner") {
         try {
           const cleanState = (app.state || user.territory?.state || "").trim();
           const cleanDist = (app.district || user.territory?.district || "").trim();
@@ -1718,7 +1797,7 @@ export const verifyKycApplication = async (
           if (targetRole === "franchise" || targetRole === "state_franchise" || targetRole === "district_franchise" || targetRole === "mandal_franchise") {
             const fc = await Franchise.findOne({ userId: user._id }).sort({ createdAt: -1 });
 
-            // 1. Direct Territory lookup via Franchise assignedTerritories or franchiseId
+            // Direct Territory lookup via Franchise assignedTerritories or franchiseId
             try {
               if (fc?.assignedTerritories && fc.assignedTerritories.length > 0) {
                 matchedTerritory = await Territory.findOne({ _id: { $in: fc.assignedTerritories } });
@@ -1763,7 +1842,7 @@ export const verifyKycApplication = async (
               }
 
               if (matchedTerritory) {
-                // 1. If actual payment was made via payment gateway (Advance or Full), use actual amount received (excluding 18% GST)
+                // Only if actual payment was received via payment gateway or security deposit
                 if (matchedTerritory.paymentDetails?.amountPaid && matchedTerritory.paymentDetails.amountPaid > 0) {
                   const rawPaid = matchedTerritory.paymentDetails.amountPaid;
                   finalAmount = (rawPaid % 118 === 0 || rawPaid % 1180 === 0) ? Math.round(rawPaid / 1.18) : rawPaid;
@@ -1771,63 +1850,37 @@ export const verifyKycApplication = async (
                   const rawPaid = fc.securityDeposit.amountPaid;
                   finalAmount = (rawPaid % 118 === 0 || rawPaid % 1180 === 0) ? Math.round(rawPaid / 1.18) : rawPaid;
                 }
-                // 2. Fallback only if no payment record exists and it's NOT an advance booking
-                else if (matchedTerritory.paymentStatus !== "PARTIAL_ADVANCE" && matchedTerritory.paymentDetails?.paymentType !== "ADVANCE") {
-                  if (matchedTerritory.annualFranchiseFee && matchedTerritory.annualFranchiseFee > 0) {
-                    finalAmount = matchedTerritory.annualFranchiseFee;
-                  } else if (matchedTerritory.franchiseFeePerYear && matchedTerritory.franchiseFeePerYear > 0) {
-                    finalAmount = matchedTerritory.franchiseFeePerYear;
-                  }
-                }
               }
             } catch (terrErr) {
               console.warn("Could not lookup territory fee:", terrErr);
             }
 
-            // 2. Check Franchise record for amountPaid in security deposit if not yet resolved
+            // Check Franchise record for amountPaid in security deposit if not yet resolved
             if (!finalAmount && fc?.securityDeposit?.amountPaid && fc.securityDeposit.amountPaid > 0) {
               const rawPaid = fc.securityDeposit.amountPaid;
               finalAmount = (rawPaid % 118 === 0 || rawPaid % 1180 === 0) ? Math.round(rawPaid / 1.18) : rawPaid;
             }
-
-            // 3. Check application investment capacity only if not an advance booking
-            if (!finalAmount && app.investmentCapacity && Number(app.investmentCapacity) > 0) {
-              const cap = Number(app.investmentCapacity);
-              finalAmount = (cap % 118 === 0 || cap % 1180 === 0) ? Math.round(cap / 1.18) : cap;
-            }
           }
 
-          // 4. Fallback to PricingCatalog or standard defaults if not set on territory
-          if (!finalAmount) {
-            const catalogItem = await PricingCatalog.findOne({ serviceKey: feeServiceKey });
-            const defaultAmount = feeServiceKey.includes("state") ? 500000 :
-                                  feeServiceKey.includes("district") ? 100000 :
-                                  feeServiceKey.includes("mandal") ? 25000 : 2999;
-            finalAmount = catalogItem ? catalogItem.amount : defaultAmount;
-            
-            // If territory booking was specifically marked as Advance, calculate the advance proportion
-            if (matchedTerritory?.paymentStatus === "PARTIAL_ADVANCE" || matchedTerritory?.paymentDetails?.paymentType === "ADVANCE") {
-              const advPct = catalogItem?.minAdvancePercentage || (feeServiceKey.includes("state") ? 30 : feeServiceKey.includes("district") ? 25 : 20);
-              finalAmount = Math.round((finalAmount * advPct) / 100);
-            }
+          // Distribute commissions ONLY if real payment was actually received
+          if (finalAmount > 0) {
+            await AssignmentCommissionService.processFeeCommissionSettlement({
+              sourceUserId: user._id,
+              sourceRole: targetRole as any,
+              serviceKey: feeServiceKey,
+              amount: finalAmount,
+              referenceId: app._id,
+              location: {
+                state: app.state || user.territory?.state || (user as any).state || "",
+                district: app.district || user.territory?.district || (user as any).district || "",
+                mandal: app.mandal || user.territory?.mandal || (user as any).mandal || "",
+                franchiseLevel: (effectiveLevel || app.franchiseLevel) as any
+              },
+              notes: `Commission on Paid Assignment for ${app.businessName || user.name} (${feeServiceKey})`
+            });
           }
-
-          await AssignmentCommissionService.processFeeCommissionSettlement({
-            sourceUserId: user._id,
-            sourceRole: targetRole as any,
-            serviceKey: feeServiceKey,
-            amount: finalAmount,
-            referenceId: app._id,
-            location: {
-              state: app.state || user.territory?.state || (user as any).state || "",
-              district: app.district || user.territory?.district || (user as any).district || "",
-              mandal: app.mandal || user.territory?.mandal || (user as any).mandal || "",
-              franchiseLevel: (effectiveLevel || app.franchiseLevel) as any
-            },
-            notes: `Auto Settlement on Approval for ${app.businessName || user.name} (${feeServiceKey})`
-          });
         } catch (commErr) {
-          console.error(`[AssignmentCommissionService] Error executing auto-commission on approval:`, commErr);
+          console.error(`[AssignmentCommissionService] Error executing commission on approval:`, commErr);
         }
       }
     } catch (refError) {
@@ -4027,11 +4080,25 @@ export const getMetrics = async (req: Request, res: Response): Promise<void> => 
 export const updateVendorCategoryGovernance = async (req: Request, res: Response): Promise<void> => {
   try {
     const { userId } = req.params;
-    const { primaryCategory, subCategory, approvedSubcategories } = req.body;
+    const { primaryCategory, category, categories, allowedCategories, subCategory, approvedSubcategories } = req.body;
+
+    const rawCats = categories;
+    const catList = Array.isArray(rawCats) && rawCats.length > 0
+      ? rawCats.flatMap((s: any) => typeof s === 'string' && s.includes(',') ? s.split(',').map((x: string) => x.trim()) : String(s).trim()).filter(Boolean)
+      : (primaryCategory || category)
+        ? String(primaryCategory || category).split(',').map((s: string) => s.trim()).filter(Boolean)
+        : [];
 
     const app = await BusinessApplication.findOne({ userId });
     if (app) {
-      if (primaryCategory) app.primaryCategory = primaryCategory;
+      if (catList.length > 0) {
+        app.categories = catList;
+        app.primaryCategory = primaryCategory || catList[0];
+        app.category = catList.join(', ');
+      } else if (primaryCategory) {
+        app.primaryCategory = primaryCategory;
+        app.category = primaryCategory;
+      }
       if (subCategory) app.subCategory = subCategory;
       if (Array.isArray(approvedSubcategories)) app.approvedSubcategories = approvedSubcategories;
       await app.save();
@@ -4039,16 +4106,85 @@ export const updateVendorCategoryGovernance = async (req: Request, res: Response
 
     const vendor = await Vendor.findOne({ userId });
     if (vendor) {
-      if (primaryCategory) {
+      const allowedCategoryIds: any[] = [];
+
+      // If allowedCategories array passed from frontend, pre-populate valid ObjectIds
+      if (Array.isArray(allowedCategories) && allowedCategories.length > 0) {
+        for (const acId of allowedCategories) {
+          const idStr = String(typeof acId === 'object' ? (acId._id || acId) : acId).trim();
+          if (mongoose.Types.ObjectId.isValid(idStr) && !allowedCategoryIds.some(id => String(id) === idStr)) {
+            allowedCategoryIds.push(new mongoose.Types.ObjectId(idStr));
+          }
+        }
+      }
+
+      if (catList.length > 0) {
+        vendor.categories = catList;
+        vendor.primaryCategory = primaryCategory || catList[0];
+        vendor.category = catList.join(', ');
+
+        for (const catName of catList) {
+          const safeCat = escapeRegex(catName.toLowerCase().trim());
+          const parentCat = await Category.findOne({
+            level: 1,
+            $or: [
+              { slug: { $regex: new RegExp(`^${safeCat}$`, 'i') } },
+              { name: { $regex: new RegExp(`^${safeCat}$`, 'i') } },
+              { slug: { $regex: new RegExp(safeCat, 'i') } },
+              { name: { $regex: new RegExp(safeCat, 'i') } },
+            ],
+          });
+          if (parentCat) {
+            if (!allowedCategoryIds.some(id => String(id) === String(parentCat._id))) {
+              allowedCategoryIds.push(parentCat._id);
+            }
+            await VendorCategoryAccess.findOneAndUpdate(
+              { vendorId: vendor._id, parentCategoryId: parentCat._id },
+              {
+                $set: {
+                  vendorId: vendor._id,
+                  storeId: vendor._id,
+                  parentCategoryId: parentCat._id,
+                  status: 'approved',
+                  approvedCapabilities: ['general_store', 'retail_store', 'shopping_store', 'pooja_store'],
+                  approvedItemTypes: ['product', 'service'],
+                  restrictions: {
+                    canCreateProducts: true,
+                    canCreateServices: true,
+                    canJoinFestivalCombos: true,
+                    canAcceptBulkOrders: true,
+                    canSellWholesale: true,
+                    canOfferSubscriptions: true,
+                  },
+                  approvedAt: new Date(),
+                },
+              },
+              { upsert: true, new: true }
+            );
+          }
+        }
+        if (allowedCategoryIds.length > 0) {
+          vendor.allowedCategories = allowedCategoryIds;
+          // Revoke any category access not in allowedCategoryIds
+          await VendorCategoryAccess.updateMany(
+            {
+              $or: [{ vendorId: vendor._id }, { storeId: vendor._id }],
+              parentCategoryId: { $nin: allowedCategoryIds }
+            },
+            { $set: { status: 'rejected' } }
+          );
+        }
+      } else if (primaryCategory) {
         vendor.primaryCategory = primaryCategory;
         vendor.category = primaryCategory;
+        vendor.categories = [primaryCategory];
 
-        // Auto-upsert approved VendorCategoryAccess for newly assigned primary category
+        const safeCat = escapeRegex(primaryCategory.toLowerCase().trim());
         const parentCat = await Category.findOne({
           level: 1,
           $or: [
-            { slug: { $regex: new RegExp(primaryCategory, 'i') } },
-            { name: { $regex: new RegExp(primaryCategory, 'i') } },
+            { slug: { $regex: new RegExp(safeCat, 'i') } },
+            { name: { $regex: new RegExp(safeCat, 'i') } },
           ],
         });
         if (parentCat) {
@@ -4085,12 +4221,30 @@ export const updateVendorCategoryGovernance = async (req: Request, res: Response
         vendor.subCategories = approvedSubcategories;
       }
       await vendor.save();
+
+      // Synchronize with User account
+      try {
+        const userDoc = await User.findById(userId);
+        if (userDoc) {
+          (userDoc as any).categories = catList.length > 0 ? catList : [primaryCategory].filter(Boolean);
+          (userDoc as any).primaryCategory = primaryCategory || catList[0] || '';
+          (userDoc as any).allowedCategories = allowedCategoryIds;
+          if (userDoc.sellerProfile) {
+            (userDoc.sellerProfile as any).categories = catList.length > 0 ? catList : [primaryCategory].filter(Boolean);
+            (userDoc.sellerProfile as any).primaryCategory = primaryCategory || catList[0] || '';
+            (userDoc.sellerProfile as any).allowedCategories = allowedCategoryIds;
+          }
+          await userDoc.save();
+        }
+      } catch (userErr) {
+        console.warn('Syncing User categories error:', userErr);
+      }
     }
 
     res.status(200).json({
       success: true,
       message: 'Vendor category governance updated successfully',
-      data: { primaryCategory, subCategory, approvedSubcategories }
+      data: { primaryCategory, categories: catList, subCategory, approvedSubcategories }
     });
   } catch (error: any) {
     console.error('Update vendor category governance error:', error);
@@ -4591,5 +4745,74 @@ export const deleteTransaction = async (req: Request, res: Response): Promise<vo
     });
   } catch (error: any) {
     res.status(500).json({ success: false, message: 'Failed to delete transaction', error: error.message });
+  }
+};
+
+export const deleteAllTransactions = async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const { FeeInvoice } = await import('../models/FeeInvoice');
+
+    // 1. Wipe all transactions from WalletTransaction
+    const txDeleteResult = await WalletTransaction.deleteMany({});
+
+    // 2. Clear all ledgerEntries in all Wallets and reset balances to 0
+    const walletUpdateResult = await Wallet.updateMany(
+      {},
+      {
+        $set: {
+          availableBalance: 0,
+          pendingBalance: 0,
+          holdBalance: 0,
+          withdrawnBalance: 0,
+          rewardCoins: 0,
+          totalCredits: 0,
+          totalDebits: 0,
+          ledgerEntries: [],
+          version: 0,
+        }
+      }
+    );
+
+    // 3. Clear commission settlements & referral transactions
+    const commDeleteResult = await CommissionSettlement.deleteMany({});
+    const refDeleteResult = await ReferralTransaction.deleteMany({});
+
+    // 4. Reset User embedded wallet fields
+    await User.updateMany(
+      { wallet: { $exists: true } },
+      {
+        $set: {
+          "wallet.balance": 0,
+          "wallet.holdBalance": 0,
+          "wallet.totalEarned": 0,
+          "wallet.totalWithdrawn": 0
+        }
+      }
+    );
+
+    // 5. Reset fee invoices to pending with blank settlement details
+    await FeeInvoice.updateMany(
+      {},
+      {
+        $set: {
+          status: "pending",
+          commissionSettled: false,
+          commissionSettlementDetails: []
+        }
+      }
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "All transactions, ledger entries, settlements, and wallet balances have been successfully deleted and reset.",
+      stats: {
+        walletTransactionsDeleted: txDeleteResult.deletedCount,
+        commissionSettlementsDeleted: commDeleteResult.deletedCount,
+        referralTransactionsDeleted: refDeleteResult.deletedCount,
+        walletsReset: walletUpdateResult.modifiedCount
+      }
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: 'Failed to delete all transactions', error: error.message });
   }
 };

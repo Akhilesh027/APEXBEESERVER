@@ -7,8 +7,9 @@ import { User } from "../models/User";
 import { Franchise } from "../models/Franchise";
 import { Vendor } from "../models/Vendor";
 import { AssignmentCommissionService } from "../services/AssignmentCommissionService";
-import { notificationEmitter } from "../modules/notifications/events/notificationEmitter";
 import { AuthRequest } from "../middleware/auth";
+import { RazorpayService } from "../services/razorpayService";
+import { notificationEmitter } from "../modules/notifications/events/notificationEmitter";
 
 // Default Seed Catalog if database has 0 pricing items
 const DEFAULT_CATALOG = [
@@ -242,9 +243,47 @@ export const sendPaymentLink = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ success: false, message: "recipientUserId and serviceKey are required" });
     }
 
-    const user = await User.findById(recipientUserId);
+    let user = await User.findById(recipientUserId);
+    let vn: any = null;
+    let fr: any = null;
+
     if (!user) {
-      return res.status(404).json({ success: false, message: "Recipient user not found" });
+      // Check if recipientUserId is a Vendor _id
+      vn = await Vendor.findById(recipientUserId);
+      if (vn) {
+        if (vn.userId) {
+          user = await User.findById(vn.userId);
+        }
+        if (!user) {
+          user = {
+            _id: vn.userId || vn._id,
+            name: vn.ownerName || vn.businessName || "Vendor Partner",
+            email: vn.email || "",
+            phone: vn.mobile || vn.whatsappNumber || "",
+            roles: ["vendor"],
+          } as any;
+        }
+      }
+    }
+
+    if (!user) {
+      // Check if recipientUserId is a Franchise _id
+      fr = await Franchise.findById(recipientUserId);
+      if (fr && fr.userId) {
+        user = await User.findById(fr.userId);
+      }
+    }
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: "Recipient partner or user profile not found" });
+    }
+
+    // Resolve vendor / franchise details if not already loaded
+    if (!vn && (recipientRole === "vendor" || !recipientRole || user.roles?.includes("vendor"))) {
+      vn = await Vendor.findOne({ $or: [{ userId: user._id }, { _id: user._id }] });
+    }
+    if (!fr && (recipientRole === "franchise" || user.roles?.includes("franchise"))) {
+      fr = await Franchise.findOne({ $or: [{ userId: user._id }, { _id: user._id }] });
     }
 
     // Find catalog price
@@ -259,26 +298,30 @@ export const sendPaymentLink = async (req: AuthRequest, res: Response) => {
 
     // Resolve territory info if available
     let territoryInfo: any = {};
-    if (recipientRole === "franchise") {
-      const fr = await Franchise.findOne({ userId: user._id });
-      if (fr) {
-        territoryInfo = {
-          state: fr.state,
-          district: fr.district,
-          mandal: fr.mandal,
-          franchiseLevel: fr.franchiseLevel,
-        };
-      }
-    } else if (recipientRole === "vendor") {
-      const vn = await Vendor.findOne({ userId: user._id });
-      if (vn) {
-        territoryInfo = {
-          state: vn.state,
-          district: vn.district,
-          mandal: vn.mandal,
-        };
-      }
+    if (fr) {
+      territoryInfo = {
+        state: fr.state || user.territory?.state || "",
+        district: fr.district || user.territory?.district || "",
+        mandal: fr.mandal || user.territory?.mandal || "",
+        franchiseLevel: fr.franchiseLevel || user.franchiseLevel || "",
+      };
+    } else if (vn) {
+      territoryInfo = {
+        state: vn.state || user.territory?.state || "",
+        district: vn.district || user.territory?.district || "",
+        mandal: vn.mandal || user.territory?.mandal || "",
+      };
+    } else if (user.territory) {
+      territoryInfo = {
+        state: user.territory.state || "",
+        district: user.territory.district || "",
+        mandal: user.territory.mandal || "",
+      };
     }
+
+    const businessName = vn?.businessName || user.sellerProfile?.businessName || fr?.franchiseName || user.name;
+    const recipientPhone = user.phone || user.mobile || vn?.mobile || vn?.whatsappNumber || "";
+    const recipientEmail = (user.email || vn?.email || "").toLowerCase();
 
     const token = crypto.randomBytes(20).toString("hex");
     const invoiceNumber = `INV-${Date.now().toString().slice(-6)}-${Math.floor(100 + Math.random() * 900)}`;
@@ -286,11 +329,11 @@ export const sendPaymentLink = async (req: AuthRequest, res: Response) => {
     const invoice = await FeeInvoice.create({
       invoiceNumber,
       recipientUserId: user._id,
-      recipientRole: recipientRole || "vendor",
-      recipientName: user.name || "Valued Partner",
-      recipientBusinessName: user.name,
-      recipientEmail: user.email || "",
-      recipientPhone: user.phone || "",
+      recipientRole: recipientRole || (user.roles?.includes("franchise") ? "franchise" : "vendor"),
+      recipientName: user.name || vn?.ownerName || "Valued Partner",
+      recipientBusinessName: businessName,
+      recipientEmail,
+      recipientPhone,
       territoryInfo,
       serviceKey,
       title: catalogItem ? catalogItem.title : "Fee Invoice",
@@ -382,10 +425,22 @@ export const getInvoices = async (req: Request, res: Response) => {
 export const getPublicInvoiceByToken = async (req: Request, res: Response) => {
   try {
     const { token } = req.params;
-    const invoice = await FeeInvoice.findOne({ paymentLinkToken: token });
+    let invoice = await FeeInvoice.findOne({
+      $or: [{ paymentLinkToken: token }, { invoiceNumber: token }]
+    });
 
     if (!invoice) {
       return res.status(404).json({ success: false, message: "Invoice or payment link not found / expired" });
+    }
+
+    if (invoice.status === "paid") {
+      const hasCompany = (invoice.commissionSettlementDetails || []).some(
+        (d) => d.tier === "company" || d.recipientRole === "company"
+      );
+      if (!hasCompany) {
+        await AssignmentCommissionService.syncPendingCompanyFeeCredits();
+        invoice = await FeeInvoice.findById(invoice._id);
+      }
     }
 
     res.json({
@@ -406,7 +461,21 @@ export const getMyInvoices = async (req: AuthRequest, res: Response) => {
       return res.status(401).json({ success: false, message: "Unauthorized" });
     }
 
-    const invoices = await FeeInvoice.find({ recipientUserId: req.user.id }).sort({ createdAt: -1 });
+    const user = await User.findById(req.user.id);
+    const conditions: any[] = [{ recipientUserId: req.user.id }];
+    if (user?.email) conditions.push({ recipientEmail: user.email.toLowerCase() });
+    if (user?.phone) conditions.push({ recipientPhone: user.phone });
+    if (user?.mobile) conditions.push({ recipientPhone: user.mobile });
+
+    const vendor = await Vendor.findOne({ $or: [{ userId: req.user.id }, { _id: req.user.id }] });
+    if (vendor) {
+      conditions.push({ recipientUserId: vendor._id });
+      if (vendor.userId) conditions.push({ recipientUserId: vendor.userId });
+      if (vendor.mobile) conditions.push({ recipientPhone: vendor.mobile });
+      if (vendor.email) conditions.push({ recipientEmail: vendor.email.toLowerCase() });
+    }
+
+    const invoices = await FeeInvoice.find({ $or: conditions }).sort({ createdAt: -1 });
 
     res.json({
       success: true,
@@ -419,11 +488,59 @@ export const getMyInvoices = async (req: AuthRequest, res: Response) => {
 };
 
 /**
+ * Create a Razorpay Order for invoice payment
+ */
+export const createInvoiceRazorpayOrder = async (req: Request, res: Response) => {
+  try {
+    const { invoiceId, token } = req.body;
+    const invoice = invoiceId
+      ? await FeeInvoice.findById(invoiceId)
+      : await FeeInvoice.findOne({ paymentLinkToken: token });
+
+    if (!invoice) {
+      return res.status(404).json({ success: false, message: "Invoice not found" });
+    }
+    if (invoice.status === "paid") {
+      return res.status(400).json({ success: false, message: "Invoice has already been paid" });
+    }
+
+    const amountInr = invoice.totalAmount || Math.round(invoice.baseAmount * 1.18);
+    let order: any = null;
+    try {
+      order = await RazorpayService.createOrder(amountInr, `INV_${invoice.invoiceNumber || invoice._id}`, {
+        invoiceId: invoice._id.toString(),
+        serviceKey: invoice.serviceKey,
+        recipientRole: invoice.recipientRole,
+      });
+    } catch (rzpErr: any) {
+      console.warn("[Razorpay] Error creating order, using test fallback:", rzpErr.message);
+      order = {
+        id: `order_inv_${Date.now()}`,
+        amount: Math.round(amountInr * 100),
+        currency: "INR",
+        keyId: process.env.RAZORPAY_KEY_ID || "rzp_test_ThlZYDDvRmTvhl",
+      };
+    }
+
+    res.json({
+      success: true,
+      orderId: order.id,
+      amount: order.amount,
+      currency: order.currency || "INR",
+      keyId: order.keyId || process.env.RAZORPAY_KEY_ID || "rzp_test_ThlZYDDvRmTvhl",
+      invoice,
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
  * Process invoice payment completion and trigger multi-tier commission settlement
  */
 export const payInvoice = async (req: Request, res: Response) => {
   try {
-    const { invoiceId, token, paymentMethod = "UPI", paymentGatewayOrderId, paymentId } = req.body;
+    const { invoiceId, token, paymentMethod = "Razorpay", paymentGatewayOrderId, paymentId, signature } = req.body;
 
     const invoice = invoiceId
       ? await FeeInvoice.findById(invoiceId)

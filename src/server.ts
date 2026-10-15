@@ -403,10 +403,54 @@ const startServer = async () => {
       }
     };
 
+    const cleanupUnpaidVendorCommission = async () => {
+      try {
+        const db = mongoose.connection.db;
+        if (!db) return;
+        const txCol = db.collection('wallettransactions');
+        const walletCol = db.collection('wallets');
+        const commCol = db.collection('commissionsettlements');
+
+        const query = {
+          $or: [
+            { remarks: { $regex: /ASFDASDF/i } },
+            { notes: { $regex: /ASFDASDF/i } },
+            { referenceId: new mongoose.Types.ObjectId("6ad08de7bbcfcd01d71ebc0b") }
+          ]
+        };
+
+        const txs = await txCol.find(query).toArray();
+        for (const tx of txs) {
+          if (tx.amount > 0 && tx.userId) {
+            const wallet = await walletCol.findOne({ userId: tx.userId });
+            if (wallet) {
+              const newBalance = Math.max(0, (wallet.balance || 0) - tx.amount);
+              const updatedLedger = Array.isArray(wallet.ledger)
+                ? wallet.ledger.filter((entry: any) =>
+                    String(entry.referenceId) !== "6ad08de7bbcfcd01d71ebc0b" &&
+                    !entry.remarks?.includes("ASFDASDF")
+                  )
+                : [];
+              await walletCol.updateOne(
+                { _id: wallet._id },
+                { $set: { balance: newBalance, ledger: updatedLedger } }
+              );
+              console.log(`[Cleanup] Reverted ₹${tx.amount} from wallet for ASFDASDF (new balance: ₹${newBalance})`);
+            }
+          }
+          await txCol.deleteOne({ _id: tx._id });
+        }
+        await commCol.deleteMany(query);
+      } catch (err: any) {
+        console.error('[Cleanup] cleanupUnpaidVendorCommission error:', err.message);
+      }
+    };
+
     if (process.env.NODE_APP_INSTANCE === undefined || process.env.NODE_APP_INSTANCE === '0') {
       try { await seedDatabase(); } catch (e: any) { console.error('seedDatabase error:', e.message); }
       try { await seedReferralDefaults(); } catch (e: any) { console.error('seedReferralDefaults non-fatal error:', e.message); }
       try { await syncApprovedFoodPartnerApplications(); } catch (e: any) { console.error('syncApprovedFoodPartnerApplications non-fatal error:', e.message); }
+      try { await cleanupUnpaidVendorCommission(); } catch (e: any) { console.error('cleanupUnpaidVendorCommission non-fatal error:', e.message); }
     } else {
       console.log(`[Server] Skipping startup seed on clustered instance ${process.env.NODE_APP_INSTANCE}`);
     }
@@ -497,4 +541,4 @@ if (process.env.NODE_ENV !== 'test') {
 }
 
 export { app };
-// Trigger reload 54
+// Trigger reload 56

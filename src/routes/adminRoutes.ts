@@ -52,7 +52,8 @@ import {
   getMetrics,
   getAllTransactions,
   updateTransaction,
-  deleteTransaction
+  deleteTransaction,
+  deleteAllTransactions
 } from '../controllers/adminController';
 import { requestVendorDocument } from '../controllers/vendorController';
 import { processReferralReleases } from '../controllers/referralController';
@@ -119,6 +120,8 @@ router.get('/treasury-master', protect, restrictTo('admin'), getTreasuryMasterSt
 
 // Transaction Management routes
 router.get('/transactions', protect, restrictTo('admin'), getAllTransactions);
+router.delete('/transactions/all', protect, restrictTo('admin'), deleteAllTransactions);
+router.post('/transactions/delete-all', protect, restrictTo('admin'), deleteAllTransactions);
 router.put('/transactions/:id', protect, restrictTo('admin'), updateTransaction);
 router.delete('/transactions/:id', protect, restrictTo('admin'), deleteTransaction);
 

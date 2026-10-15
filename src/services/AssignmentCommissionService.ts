@@ -3,6 +3,8 @@ import { User } from "../models/User";
 import { Franchise } from "../models/Franchise";
 import { WalletEngine } from "./WalletEngine";
 import { CommissionSettlement } from "../models/CommissionSettlement";
+import { SettlementEngine } from "./SettlementEngine";
+import { FeeInvoice } from "../models/FeeInvoice";
 
 export interface TerritoryLocation {
   state?: string;
@@ -64,7 +66,7 @@ export class AssignmentCommissionService {
       const mandalFranchise = await Franchise.findOne({
         franchiseLevel: "mandal",
         mandal: { $regex: new RegExp(`^${mandal}$`, "i") },
-        status: "active"
+        status: { $in: ["active", "Approved", "approved", "verified"] }
       });
       if (mandalFranchise && mandalFranchise.userId) {
         if (!excludeUserId || mandalFranchise.userId.toString() !== excludeUserId.toString()) {
@@ -72,7 +74,7 @@ export class AssignmentCommissionService {
         }
       } else {
         const mandalUser = await User.findOne({
-          roles: "mandal_franchise",
+          roles: { $in: ["mandal_franchise", "franchise"] },
           "territory.mandal": { $regex: new RegExp(`^${mandal}$`, "i") }
         });
         if (mandalUser && (!excludeUserId || mandalUser._id.toString() !== excludeUserId.toString())) {
@@ -86,7 +88,7 @@ export class AssignmentCommissionService {
       const distFranchise = await Franchise.findOne({
         franchiseLevel: "district",
         district: { $regex: new RegExp(`^${district}$`, "i") },
-        status: "active"
+        status: { $in: ["active", "Approved", "approved", "verified"] }
       });
       if (distFranchise && distFranchise.userId) {
         if (!excludeUserId || distFranchise.userId.toString() !== excludeUserId.toString()) {
@@ -94,7 +96,7 @@ export class AssignmentCommissionService {
         }
       } else {
         const distUser = await User.findOne({
-          roles: "district_franchise",
+          roles: { $in: ["district_franchise", "franchise"] },
           "territory.district": { $regex: new RegExp(`^${district}$`, "i") }
         });
         if (distUser && (!excludeUserId || distUser._id.toString() !== excludeUserId.toString())) {
@@ -108,7 +110,7 @@ export class AssignmentCommissionService {
       const stateFranchise = await Franchise.findOne({
         franchiseLevel: "state",
         state: { $regex: new RegExp(`^${state}$`, "i") },
-        status: "active"
+        status: { $in: ["active", "Approved", "approved", "verified"] }
       });
       if (stateFranchise && stateFranchise.userId) {
         if (!excludeUserId || stateFranchise.userId.toString() !== excludeUserId.toString()) {
@@ -116,7 +118,7 @@ export class AssignmentCommissionService {
         }
       } else {
         const stateUser = await User.findOne({
-          roles: "state_franchise",
+          roles: { $in: ["state_franchise", "franchise"] },
           "territory.state": { $regex: new RegExp(`^${state}$`, "i") }
         });
         if (stateUser && (!excludeUserId || stateUser._id.toString() !== excludeUserId.toString())) {
@@ -127,7 +129,7 @@ export class AssignmentCommissionService {
 
     // Fallback: If not resolved by exact state, find any active state franchise
     if (!stateFranchiseUserId) {
-      const anyState = await Franchise.findOne({ franchiseLevel: "state", status: "active" });
+      const anyState = await Franchise.findOne({ franchiseLevel: "state", status: { $in: ["active", "Approved", "approved", "verified"] } });
       if (anyState && anyState.userId && (!excludeUserId || anyState.userId.toString() !== excludeUserId.toString())) {
         stateFranchiseUserId = anyState.userId as any;
       }
@@ -167,12 +169,29 @@ export class AssignmentCommissionService {
     const shares: Array<{ tier: string; role: string; recipientId: any; percent: number }> = [];
 
     // Referral uplines
-    if (sourceUser?.referralHierarchy) {
-      const { level1UserId, level2UserId, level3UserId } = sourceUser.referralHierarchy;
-      if (level1UserId) shares.push({ tier: "level1", role: "referrer", recipientId: level1UserId, percent: 10 });
-      if (level2UserId) shares.push({ tier: "level2", role: "referrer", recipientId: level2UserId, percent: 3 });
-      if (level3UserId) shares.push({ tier: "level3", role: "referrer", recipientId: level3UserId, percent: 2 });
+    let l1Id = sourceUser?.referralHierarchy?.level1UserId || sourceUser?.referredBy;
+    let l2Id = sourceUser?.referralHierarchy?.level2UserId;
+    let l3Id = sourceUser?.referralHierarchy?.level3UserId;
+
+    if (!l1Id && sourceUser?.referredByCode) {
+      const directRef = await User.findOne({ referralCode: sourceUser.referredByCode });
+      if (directRef) l1Id = directRef._id;
     }
+
+    if (l1Id && (!l2Id || !l3Id)) {
+      const u1 = await User.findById(l1Id);
+      if (u1?.referredBy) {
+        l2Id = l2Id || u1.referredBy;
+        const u2 = await User.findById(l2Id);
+        if (u2?.referredBy) {
+          l3Id = l3Id || u2.referredBy;
+        }
+      }
+    }
+
+    if (l1Id) shares.push({ tier: "level1", role: "referrer", recipientId: l1Id, percent: 10 });
+    if (l2Id) shares.push({ tier: "level2", role: "referrer", recipientId: l2Id, percent: 3 });
+    if (l3Id) shares.push({ tier: "level3", role: "referrer", recipientId: l3Id, percent: 2 });
 
     // Franchise network shares
     if (!isMandalAssign && !isDistAssign && !isStateAssign) {
@@ -237,12 +256,54 @@ export class AssignmentCommissionService {
 
           totalDistributed += shareAmount;
         } catch (creditErr: any) {
-          console.warn(`[AssignmentCommissionService] Failed to credit ${share.tier} commission:`, creditErr.message);
+          if (!creditErr.message?.includes("E11000")) {
+            console.warn(`[AssignmentCommissionService] Failed to credit ${share.tier} commission:`, creditErr.message);
+          }
         }
       }
     }
 
+    // 5. Credit remainder (retained pool) to ApexBee Company System Wallet
     const companyRetainedAmount = Math.max(0, amount - totalDistributed);
+
+    if (companyRetainedAmount > 0) {
+      try {
+        await WalletEngine.credit(SettlementEngine.COMPANY_ID, companyRetainedAmount, {
+          category: "Commission",
+          source: "company_platform_pool",
+          remarks: notes || `Platform retained fee for ${serviceKey || 'enrollment'}`,
+          referenceId: referenceId || new mongoose.Types.ObjectId(),
+          referenceType: "SYSTEM"
+        });
+
+        await CommissionSettlement.create({
+          recipientId: SettlementEngine.COMPANY_ID,
+          amount: companyRetainedAmount,
+          settlementType: "company",
+          status: "released",
+          releaseDate: new Date(),
+          released: true,
+          walletCredited: true,
+          releasedAt: new Date(),
+          notes: notes || `Platform retained pool for ${serviceKey || 'enrollment'}`
+        });
+
+        settlements.push({
+          userId: SettlementEngine.COMPANY_ID,
+          role: "company",
+          tier: "company",
+          percentage: amount > 0 ? Math.round((companyRetainedAmount / amount) * 100) : 100,
+          amount: companyRetainedAmount,
+          status: "completed"
+        });
+
+        console.log(`[AssignmentCommissionService] Credited ApexBee Company System Wallet: ₹${companyRetainedAmount} for ${serviceKey || 'fee'}`);
+      } catch (companyErr: any) {
+        if (!companyErr.message?.includes("E11000")) {
+          console.warn(`[AssignmentCommissionService] Failed to credit company retained fee:`, companyErr.message);
+        }
+      }
+    }
 
     return {
       success: true,
@@ -250,6 +311,91 @@ export class AssignmentCommissionService {
       companyRetainedAmount,
       settlements
     };
+  }
+
+  /**
+   * Synchronize and backfill missing company fee credits for any paid invoices or franchise payments.
+   */
+  static async syncPendingCompanyFeeCredits(): Promise<any> {
+    const results: any = { invoicesProcessed: 0, companyCreditedAmount: 0, details: [] };
+    try {
+      // 1. Fee Invoices: Credit company wallet for paid invoices where company settlement is missing
+      const paidInvoices = await FeeInvoice.find({ status: "paid" });
+      for (const inv of paidInvoices) {
+        const details = inv.commissionSettlementDetails || [];
+        const hasCompanySettlement = details.some(
+          (d) => d.tier === "company" || d.recipientRole === "company" || (d.recipientId && d.recipientId.toString() === SettlementEngine.COMPANY_ID.toString())
+        );
+
+        if (!hasCompanySettlement) {
+          const distributed = details.reduce((sum, d) => sum + (d.amount || 0), 0);
+          const retained = Math.max(0, (inv.baseAmount || inv.totalAmount || 0) - distributed);
+
+          if (retained > 0) {
+            const safeInvNum = (inv.invoiceNumber || "").replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const existingSettlement = await CommissionSettlement.findOne({
+              notes: new RegExp(safeInvNum, "i"),
+              recipientId: SettlementEngine.COMPANY_ID
+            });
+
+            if (!existingSettlement) {
+              await WalletEngine.credit(SettlementEngine.COMPANY_ID, retained, {
+                category: "Commission",
+                source: "company_platform_pool",
+                remarks: `Platform retained fee for ${inv.title} (${inv.invoiceNumber})`,
+                referenceId: inv._id,
+                referenceType: "SYSTEM"
+              });
+
+              await CommissionSettlement.create({
+                recipientId: SettlementEngine.COMPANY_ID,
+                amount: retained,
+                settlementType: "company",
+                status: "released",
+                releaseDate: new Date(),
+                released: true,
+                walletCredited: true,
+                releasedAt: new Date(),
+                notes: `Platform retained pool for ${inv.title} (${inv.invoiceNumber})`
+              });
+            }
+
+            const updatedDetails = [
+              ...details,
+              {
+                recipientId: SettlementEngine.COMPANY_ID,
+                recipientRole: "company",
+                tier: "company",
+                percentage: inv.baseAmount > 0 ? Math.round((retained / inv.baseAmount) * 100) : 100,
+                amount: retained,
+                status: "completed"
+              }
+            ];
+
+            await FeeInvoice.findByIdAndUpdate(inv._id, {
+              $set: {
+                commissionSettlementDetails: updatedDetails,
+                commissionSettled: true
+              }
+            });
+
+            results.invoicesProcessed++;
+            results.companyCreditedAmount += retained;
+            results.details.push({
+              invoiceNumber: inv.invoiceNumber,
+              retainedAmount: retained
+            });
+
+            console.log(`[AssignmentCommissionService] Successfully synced company retained fee of ₹${retained} for invoice ${inv.invoiceNumber}`);
+          }
+        }
+      }
+      return results;
+    } catch (err: any) {
+      console.error("[AssignmentCommissionService] syncPendingCompanyFeeCredits error:", err.message);
+      results.error = err.message;
+      return results;
+    }
   }
 }
 
