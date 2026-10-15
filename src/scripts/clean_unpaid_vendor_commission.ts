@@ -24,14 +24,17 @@ async function run() {
     console.log(`Found ${txs.length} WalletTransactions matching ASFDASDF`);
 
     for (const tx of txs) {
-      console.log(`TX ID: ${tx._id}, User: ${tx.userId}, Amount: ${tx.amount}, Remarks: ${tx.remarks}`);
+      const txAny = tx as any;
+      const txAmount = Number(tx.amount || txAny.amount || 0);
+      console.log(`TX ID: ${tx._id}, User: ${tx.userId}, Amount: ${txAmount}, Remarks: ${txAny.remarks || txAny.description || ""}`);
       
       // Deduct/reverse from Wallet balance
-      if (tx.amount > 0) {
-        const wallet = await Wallet.findOne({ userId: tx.userId });
+      if (txAmount > 0) {
+        const wallet: any = await Wallet.findOne({ userId: tx.userId });
         if (wallet) {
-          console.log(`Before reversal: Balance: ${wallet.balance}, Ledger entries: ${wallet.ledger?.length}`);
-          wallet.balance = Math.max(0, wallet.balance - tx.amount);
+          const curBal = Number(wallet.balance || 0);
+          console.log(`Before reversal: Balance: ${curBal}, Ledger entries: ${wallet.ledger?.length}`);
+          wallet.balance = Math.max(0, curBal - txAmount);
           
           // Filter out ledger entry if present
           if (wallet.ledger && Array.isArray(wallet.ledger)) {
