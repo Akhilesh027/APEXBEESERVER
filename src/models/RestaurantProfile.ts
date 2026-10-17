@@ -1,6 +1,15 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
-export type FoodBusinessType = 'RESTAURANT' | 'STREET_FOOD' | 'CAFE_BAKERY_BEVERAGES' | 'CAFE_BAKERY' | 'SWEETS_DESSERTS';
+export type FoodBusinessType =
+  | 'RESTAURANT'
+  | 'STREET_FOOD'
+  | 'CAFE_BAKERY_BEVERAGES'
+  | 'CAFE_BAKERY'
+  | 'CAFE'
+  | 'BAKERY'
+  | 'SWEETS_DESSERTS'
+  | 'SWEETS'
+  | 'DESSERTS';
 export type AccountStatus = 'ACTIVE' | 'SUSPENDED' | 'BLOCKED';
 export type VerificationStatus = 'PENDING' | 'UNDER_REVIEW' | 'APPROVED' | 'REJECTED';
 export type OperationalStatus = 'OPEN' | 'CLOSED' | 'TEMPORARILY_CLOSED' | 'BUSY';
@@ -13,9 +22,12 @@ export interface IRestaurantProfile extends Document {
   slug: string;
   businessType: FoodBusinessType;
   legalBusinessName: string;
+  tagline?: string;
+  packagingCharge?: number;
   description: string;
   logo: string;
   coverImage: string;
+  bannerImage?: string;
   cuisines: string[];
   foodPreference: 'VEG' | 'NON_VEG' | 'BOTH' | 'VEGAN';
   phone: string;
@@ -77,14 +89,27 @@ const RestaurantProfileSchema = new Schema<IRestaurantProfile>(
     slug: { type: String, required: true, unique: true, lowercase: true, trim: true },
     businessType: {
       type: String,
-      enum: ['RESTAURANT', 'STREET_FOOD', 'CAFE_BAKERY_BEVERAGES', 'CAFE_BAKERY', 'SWEETS_DESSERTS'],
+      enum: [
+        'RESTAURANT',
+        'STREET_FOOD',
+        'CAFE_BAKERY_BEVERAGES',
+        'CAFE_BAKERY',
+        'CAFE',
+        'BAKERY',
+        'SWEETS_DESSERTS',
+        'SWEETS',
+        'DESSERTS',
+      ],
       default: 'RESTAURANT',
       required: true,
     },
     legalBusinessName: { type: String, default: '', trim: true },
+    tagline: { type: String, default: '' },
+    packagingCharge: { type: Number, default: 0 },
     description: { type: String, default: '' },
     logo: { type: String, default: '' },
     coverImage: { type: String, default: '' },
+    bannerImage: { type: String, default: '' },
     cuisines: [{ type: String }],
     foodPreference: {
       type: String,

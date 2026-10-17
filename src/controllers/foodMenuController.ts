@@ -348,8 +348,8 @@ export const adminReviewMenuItem = async (req: any, res: Response): Promise<void
       const vendorPayout = customPayout !== undefined
         ? customPayout
         : (poolMode === 'apexbee_commission' || vCommPercent > 0)
-        ? Math.max(0, Math.round((sellingPrice - vCommAmount) * 100) / 100)
-        : Math.max(0, Math.round((sellingPrice - platformShare) * 100) / 100);
+          ? Math.max(0, Math.round((sellingPrice - vCommAmount) * 100) / 100)
+          : Math.max(0, Math.round((sellingPrice - platformShare) * 100) / 100);
 
       item.platformCommissionPercent = commPercent;
       item.platformShareAmount = platformShare;

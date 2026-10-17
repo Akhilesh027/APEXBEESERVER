@@ -35,11 +35,15 @@ export type OrderStatus =
   | 'Returned'
   | 'Payment Verified'
   | 'Payment Rejected'
+  | 'ready'
+  | 'served'
+  | 'Served'
+  | 'completed'
   | 'Cancelled';
 
 export interface IOrder extends Document {
   orderNumber: string;
-  customerId: mongoose.Types.ObjectId;
+  customerId?: mongoose.Types.ObjectId;
   sellerId: mongoose.Types.ObjectId;
   items: IOrderItem[];
   totalAmount: number;
@@ -78,6 +82,7 @@ export interface IOrder extends Document {
   categoryId?: mongoose.Types.ObjectId | string;
   categoryName?: string;
   orderType?: string;
+  tableNumber?: string;
   estimatedDeliveryMinutes?: number;
   acceptedAt?: Date | null;
   estimatedDeliveryTime?: Date | null;
@@ -89,7 +94,7 @@ export interface IOrder extends Document {
 }
 
 const OrderItemSchema = new Schema<IOrderItem>({
-  productId: { type: Schema.Types.ObjectId, ref: 'Product', required: true },
+  productId: { type: Schema.Types.ObjectId, ref: 'Product', required: false },
   productName: { type: String, required: true },
   sku: { type: String, default: 'N/A' },
   quantity: { type: Number, required: true, default: 1 },
@@ -101,7 +106,7 @@ const OrderItemSchema = new Schema<IOrderItem>({
 const OrderSchema = new Schema<IOrder>(
   {
     orderNumber: { type: String, required: true, unique: true },
-    customerId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    customerId: { type: Schema.Types.ObjectId, ref: 'User', required: false },
     sellerId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     items: { type: [OrderItemSchema], required: true },
     totalAmount: { type: Number, required: true },
@@ -145,6 +150,10 @@ const OrderSchema = new Schema<IOrder>(
         'Returned',
         'Payment Verified',
         'Payment Rejected',
+        'ready',
+        'served',
+        'Served',
+        'completed',
         'Cancelled',
       ],
       default: 'placed',
@@ -196,6 +205,7 @@ const OrderSchema = new Schema<IOrder>(
     categoryId: { type: Schema.Types.Mixed },
     categoryName: { type: String, default: '' },
     orderType: { type: String, default: 'RETAIL' },
+    tableNumber: { type: String, default: '' },
     estimatedDeliveryMinutes: { type: Number, default: 20 },
     acceptedAt: { type: Date, default: null },
     estimatedDeliveryTime: { type: Date, default: null },

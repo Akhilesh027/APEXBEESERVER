@@ -4,6 +4,7 @@ import { BusinessApplication } from '../models/BusinessApplication';
 import { RestaurantProfile } from '../models/RestaurantProfile';
 import { RestaurantSettings } from '../models/RestaurantSettings';
 import { RestaurantOperatingHours } from '../models/RestaurantOperatingHours';
+import { Vendor } from '../models/Vendor';
 
 export const getProfile = async (req: FoodPartnerAuthRequest, res: Response): Promise<void> => {
   try {
@@ -84,11 +85,11 @@ export const getProfile = async (req: FoodPartnerAuthRequest, res: Response): Pr
     res.status(500).json({ success: false, message: 'Failed to fetch profile', error: error.message });
   }
 };
-
+ 
 export const updateProfile = async (req: FoodPartnerAuthRequest, res: Response): Promise<void> => {
   try {
     const restaurantId = req.foodPartnerContext?.restaurantId;
-    const updateData = req.body;
+    const updateData = { ...req.body };
 
     // Prevent changing locked compliance fields if approved
     const profile = await RestaurantProfile.findById(restaurantId);
@@ -103,10 +104,77 @@ export const updateProfile = async (req: FoodPartnerAuthRequest, res: Response):
       delete updateData.gstNumber;
     }
 
+    // Clean up non-schema frontend fields
+    delete updateData.cuisinesText;
+    delete updateData._id;
+    delete updateData.createdAt;
+    delete updateData.updatedAt;
+    delete updateData.vendorId;
+    delete updateData.storeId;
+    delete updateData.userId;
+
+    // Normalize businessType to ensure strict schema enum compliance
+    if (updateData.businessType) {
+      const bt = String(updateData.businessType).trim().toUpperCase();
+      if (bt === 'CAFE' || bt === 'BAKERY' || bt === 'CAFE_BAKERY' || bt === 'CAFE_BAKERY_BEVERAGES') {
+        updateData.businessType = 'CAFE_BAKERY';
+      } else if (bt === 'SWEETS' || bt === 'DESSERTS' || bt === 'SWEETS_DESSERTS') {
+        updateData.businessType = 'SWEETS_DESSERTS';
+      } else if (bt === 'STREET' || bt === 'STREET_FOOD') {
+        updateData.businessType = 'STREET_FOOD';
+      } else {
+        updateData.businessType = 'RESTAURANT';
+      }
+    }
+
+    // Synchronize bannerImage and coverImage
+    if (updateData.bannerImage && !updateData.coverImage) {
+      updateData.coverImage = updateData.bannerImage;
+    } else if (updateData.coverImage && !updateData.bannerImage) {
+      updateData.bannerImage = updateData.coverImage;
+    }
+
     const updatedProfile = await RestaurantProfile.findByIdAndUpdate(restaurantId, updateData, {
       new: true,
       runValidators: true,
     });
+
+    // Synchronize category and details to associated Vendor record
+    if (profile.vendorId) {
+      try {
+        const vendorUpdate: any = {};
+        if (updateData.restaurantName) vendorUpdate.businessName = updateData.restaurantName;
+        if (updateData.businessType) {
+          if (updateData.businessType === 'CAFE_BAKERY') {
+            vendorUpdate.subCategory = 'Cafe & Bakery';
+            vendorUpdate.category = 'Food';
+          } else if (updateData.businessType === 'SWEETS_DESSERTS') {
+            vendorUpdate.subCategory = 'Sweets & Bakery';
+            vendorUpdate.category = 'Food';
+          } else if (updateData.businessType === 'STREET_FOOD') {
+            vendorUpdate.subCategory = 'Fast Food';
+            vendorUpdate.category = 'Food';
+          } else {
+            vendorUpdate.subCategory = 'Restaurant';
+            vendorUpdate.category = 'Food';
+          }
+        }
+        if (updateData.bannerImage || updateData.coverImage) {
+          vendorUpdate['storeDesign.bannerUrl'] = updateData.bannerImage || updateData.coverImage;
+        }
+        if (updateData.logo) {
+          vendorUpdate['storeDesign.logoUrl'] = updateData.logo;
+        }
+        if (updateData.address) vendorUpdate.address = updateData.address;
+        if (updateData.pincode) vendorUpdate.pincode = updateData.pincode;
+
+        if (Object.keys(vendorUpdate).length > 0) {
+          await Vendor.findByIdAndUpdate(profile.vendorId, { $set: vendorUpdate });
+        }
+      } catch (syncErr) {
+        console.warn('Could not sync to vendor record:', syncErr);
+      }
+    }
 
     res.status(200).json({ success: true, profile: updatedProfile });
   } catch (error: any) {

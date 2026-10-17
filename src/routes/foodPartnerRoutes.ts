@@ -75,6 +75,14 @@ import {
   updateDiningInfo,
 } from '../controllers/foodDiningController';
 
+import {
+  getTablesWithQRs,
+  createTableWithQR,
+  updateTableQR,
+  deleteTableQR,
+  generateAllSeparateTableQRs,
+} from '../controllers/tableQrController';
+
 import { protectFoodPartner, restrictFoodStaffPermission } from '../middleware/foodPartnerAuthMiddleware';
 import { protect, restrictTo } from '../middleware/auth';
 
@@ -145,6 +153,13 @@ router.post('/dining/bookings', restrictFoodStaffPermission('orders'), createDin
 router.patch('/dining/bookings/:id/status', restrictFoodStaffPermission('orders'), updateDiningBookingStatus);
 router.get('/dining/info', getDiningInfo);
 router.put('/dining/info', restrictFoodStaffPermission('profile', 'settings'), updateDiningInfo);
+
+// Dining Tables & Separate QR Codes Engine
+router.get('/tables/qr', getTablesWithQRs);
+router.post('/tables/qr', createTableWithQR);
+router.put('/tables/qr/:id', updateTableQR);
+router.delete('/tables/qr/:id', deleteTableQR);
+router.post('/tables/qr/generate-all', generateAllSeparateTableQRs);
 
 // Offers & Commercial
 router.get('/offers', getRestaurantOffers);

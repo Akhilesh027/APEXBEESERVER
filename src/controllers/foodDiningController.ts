@@ -46,87 +46,15 @@ export const getDiningBookings = async (req: FoodPartnerAuthRequest, res: Respon
       ];
     }
 
-    let bookings = await TableBooking.find(query).sort({ createdAt: -1 });
+    // Purge any previously seeded demo table bookings
+    await TableBooking.deleteMany({
+      $or: [
+        { customerName: { $in: ['Akhilesh Reddy', 'Priya Sharma', 'Rajesh Varma', 'Ananya Deshmukh'] } },
+        { customerPhone: { $in: ['9707010797', '9848012345', '9177176969', '9988776655'] } },
+      ],
+    }).catch(() => {});
 
-    // Initial sample table reservations if none exist for demonstration
-    if (bookings.length === 0 && !status && !date && !search) {
-      const todayStr = new Date().toISOString().split('T')[0];
-      const tomorrowObj = new Date();
-      tomorrowObj.setDate(tomorrowObj.getDate() + 1);
-      const tomorrowStr = tomorrowObj.toISOString().split('T')[0];
-
-      const sampleBookings = [
-        {
-          restaurantId: profile._id,
-          bookingNumber: `TB-${Math.floor(100000 + Math.random() * 900000)}`,
-          customerName: 'Akhilesh Reddy',
-          customerPhone: '9707010797',
-          customerEmail: 'akhilesh@apexbee.in',
-          guestCount: 4,
-          bookingDate: todayStr,
-          bookingTime: '08:00 PM',
-          tableType: 'VIP Booth Section',
-          occasion: 'Birthday Celebration 🎂',
-          specialRequests: 'Window side booth with candlelight setup preferred',
-          status: 'PENDING',
-          tableNumber: 'T-04',
-          depositAmount: 500,
-          depositStatus: 'PAID'
-        },
-        {
-          restaurantId: profile._id,
-          bookingNumber: `TB-${Math.floor(100000 + Math.random() * 900000)}`,
-          customerName: 'Priya Sharma',
-          customerPhone: '9848012345',
-          customerEmail: 'priya.s@gmail.com',
-          guestCount: 2,
-          bookingDate: todayStr,
-          bookingTime: '07:30 PM',
-          tableType: 'Rooftop Terrace',
-          occasion: 'Anniversary Dinner 💖',
-          specialRequests: 'Quiet corner table, quiet ambiance',
-          status: 'CONFIRMED',
-          tableNumber: 'RT-02',
-          depositAmount: 300,
-          depositStatus: 'PAID'
-        },
-        {
-          restaurantId: profile._id,
-          bookingNumber: `TB-${Math.floor(100000 + Math.random() * 900000)}`,
-          customerName: 'Rajesh Varma',
-          customerPhone: '9177176969',
-          customerEmail: 'varma.corp@gmail.com',
-          guestCount: 6,
-          bookingDate: todayStr,
-          bookingTime: '01:30 PM',
-          tableType: 'Family Dining Suite',
-          occasion: 'Business Lunch 💼',
-          specialRequests: 'High chair needed for 1 kid',
-          status: 'SEATED',
-          tableNumber: 'F-01',
-          depositAmount: 0,
-          depositStatus: 'PAID'
-        },
-        {
-          restaurantId: profile._id,
-          bookingNumber: `TB-${Math.floor(100000 + Math.random() * 900000)}`,
-          customerName: 'Ananya Deshmukh',
-          customerPhone: '9988776655',
-          guestCount: 3,
-          bookingDate: tomorrowStr,
-          bookingTime: '08:30 PM',
-          tableType: 'Standard Indoor',
-          occasion: 'Casual Dining',
-          status: 'CONFIRMED',
-          tableNumber: 'T-08',
-          depositAmount: 0,
-          depositStatus: 'PAID'
-        }
-      ];
-
-      await TableBooking.insertMany(sampleBookings);
-      bookings = await TableBooking.find(query).sort({ createdAt: -1 });
-    }
+    const bookings = await TableBooking.find(query).sort({ createdAt: -1 });
 
     const counts = {
       total: bookings.length,
@@ -244,13 +172,14 @@ export const getDiningInfo = async (req: FoodPartnerAuthRequest, res: Response):
     const objectIds = rawIds
       .filter((id) => mongoose.Types.ObjectId.isValid(String(id)))
       .map((id) => new mongoose.Types.ObjectId(String(id)));
+    const allIds: any[] = [...objectIds, ...rawIds.map(String)];
 
     const profile = await RestaurantProfile.findOne({
       $or: [
-        { _id: { $in: objectIds } },
-        { vendorId: { $in: objectIds } },
-        { userId: { $in: objectIds } },
-        { storeId: { $in: objectIds } },
+        { _id: { $in: allIds } },
+        { vendorId: { $in: allIds } },
+        { userId: { $in: allIds } },
+        { storeId: { $in: allIds } },
       ],
     });
 
@@ -316,6 +245,7 @@ export const updateDiningInfo = async (req: FoodPartnerAuthRequest, res: Respons
     const objectIds = rawIds
       .filter((id) => mongoose.Types.ObjectId.isValid(String(id)))
       .map((id) => new mongoose.Types.ObjectId(String(id)));
+    const allIds: any[] = [...objectIds, ...rawIds.map(String)];
 
     const { diningEnabled, diningInfo } = req.body;
 
@@ -330,10 +260,10 @@ export const updateDiningInfo = async (req: FoodPartnerAuthRequest, res: Respons
     const profile = await RestaurantProfile.findOneAndUpdate(
       {
         $or: [
-          { _id: { $in: objectIds } },
-          { vendorId: { $in: objectIds } },
-          { userId: { $in: objectIds } },
-          { storeId: { $in: objectIds } },
+          { _id: { $in: allIds } },
+          { vendorId: { $in: allIds } },
+          { userId: { $in: allIds } },
+          { storeId: { $in: allIds } },
         ],
       },
       updateData,

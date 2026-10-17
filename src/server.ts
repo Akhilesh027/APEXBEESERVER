@@ -446,10 +446,44 @@ const startServer = async () => {
       }
     };
 
+    const sanitizeRestaurantDiningProfiles = async () => {
+      try {
+        // Specifically update bakeries, sweets and cafes to ensure they do not show in Dineout reservations
+        await RestaurantProfile.updateMany(
+          {
+            $or: [
+              { restaurantName: { $regex: /bakery|sweets|sweet|cafe|chai|biscuit|cake/i } },
+              { businessType: { $in: ['CAFE_BAKERY', 'CAFE_BAKERY_BEVERAGES', 'SWEETS_DESSERTS', 'STREET_FOOD'] } }
+            ]
+          },
+          {
+            $set: {
+              diningEnabled: false
+            }
+          }
+        );
+
+        // Ensure specific vendors identified by user are categorized as bakeries/sweets
+        await RestaurantProfile.updateMany(
+          { restaurantName: { $regex: /bb cafe|cafe&bakery/i } },
+          { $set: { businessType: 'CAFE_BAKERY', diningEnabled: false } }
+        );
+        await RestaurantProfile.updateMany(
+          { restaurantName: { $regex: /siva nandini/i } },
+          { $set: { businessType: 'SWEETS_DESSERTS', diningEnabled: false } }
+        );
+
+        console.log('[Sanitizer] Dining profiles sanitized: Bakeries and sweet shops excluded from table reservations.');
+      } catch (err: any) {
+        console.error('[Sanitizer] sanitizeRestaurantDiningProfiles error:', err.message);
+      }
+    };
+
     if (process.env.NODE_APP_INSTANCE === undefined || process.env.NODE_APP_INSTANCE === '0') {
       try { await seedDatabase(); } catch (e: any) { console.error('seedDatabase error:', e.message); }
       try { await seedReferralDefaults(); } catch (e: any) { console.error('seedReferralDefaults non-fatal error:', e.message); }
       try { await syncApprovedFoodPartnerApplications(); } catch (e: any) { console.error('syncApprovedFoodPartnerApplications non-fatal error:', e.message); }
+      try { await sanitizeRestaurantDiningProfiles(); } catch (e: any) { console.error('sanitizeRestaurantDiningProfiles non-fatal error:', e.message); }
       try { await cleanupUnpaidVendorCommission(); } catch (e: any) { console.error('cleanupUnpaidVendorCommission non-fatal error:', e.message); }
     } else {
       console.log(`[Server] Skipping startup seed on clustered instance ${process.env.NODE_APP_INSTANCE}`);

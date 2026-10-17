@@ -1495,7 +1495,7 @@ export const getOrderPackingSlipPDF = async (req: Request, res: Response) => {
 
     // Items list
     order.items.forEach((item) => {
-      const isPacked = order.packingChecklist?.includes(item.productId.toString()) || false;
+      const isPacked = (item.productId && order.packingChecklist?.includes(item.productId.toString())) || false;
       const checkboxSymbol = isPacked ? '[X]' : '[  ]';
 
       const startY = doc.y;

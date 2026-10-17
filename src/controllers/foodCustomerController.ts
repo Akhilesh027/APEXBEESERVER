@@ -102,6 +102,8 @@ export const getCustomerRestaurantsListing = async (req: Request, res: Response)
           isOpen: openCheck.isOpen,
           openReason: openCheck.reason,
           busyMode: r.busyMode,
+          diningEnabled: r.diningEnabled,
+          diningInfo: r.diningInfo,
           offersCount: offers.length,
           activeOfferSummary: offers[0] ? `${offers[0].discountValue}% OFF` : null,
           locality: r.locality,
@@ -345,14 +347,16 @@ export const getAllFoodItems = async (req: Request, res: Response): Promise<void
       items.map(async (item) => {
         const anyItem = item as any;
         const rest = await RestaurantProfile.findById(item.restaurantId).select('restaurantName logo city locality pincode zipcode address');
-        const price = item.basePrice || anyItem.price || anyItem.offerPrice || 199;
-        const mrp = anyItem.mrp || Math.round(price * 1.25);
+        const sellingPrice = (item.offerPrice && item.offerPrice > 0) ? item.offerPrice : (item.basePrice || anyItem.price || anyItem.baseSellingPrice || 0);
+        const mrpPrice = anyItem.mrp || anyItem.baseMrp || ((item.offerPrice && item.offerPrice > 0 && item.basePrice > item.offerPrice) ? item.basePrice : sellingPrice);
         return {
           _id: item._id,
           name: item.name,
           description: item.description,
-          price: price,
-          mrp: mrp,
+          price: sellingPrice,
+          mrp: mrpPrice,
+          basePrice: item.basePrice || mrpPrice,
+          offerPrice: item.offerPrice || sellingPrice,
           image: item.image || anyItem.imageUrl || 'https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?w=800&auto=format&fit=crop',
           imageUrl: item.image || anyItem.imageUrl || 'https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?w=800&auto=format&fit=crop',
           isVeg: item.foodType === 'VEG',
@@ -376,21 +380,41 @@ export const getAllFoodItems = async (req: Request, res: Response): Promise<void
 
 export const getDiningVenues = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { search, cuisine, pincode, zipcode } = req.query;
+    const { search, cuisine, pincode, zipcode, mandal, district, city, lat, lng } = req.query;
 
     const filter: any = {
       verificationStatus: { $ne: 'REJECTED' },
       accountStatus: { $ne: 'BLOCKED' },
-      diningEnabled: { $ne: false },
+      diningEnabled: { $in: [true, 'true'] },
+      operationalStatus: { $nin: ['CLOSED', 'TEMPORARILY_CLOSED'] },
     };
 
+    const userLat = lat !== undefined && lat !== null && !isNaN(Number(lat)) ? Number(lat) : null;
+    const userLng = lng !== undefined && lng !== null && !isNaN(Number(lng)) ? Number(lng) : null;
     const activePincode = (pincode || zipcode || '').toString().trim();
-    if (activePincode) {
-      filter.$or = [
-        { pincode: activePincode },
-        { zipcode: activePincode },
-        { 'address.pincode': activePincode }
-      ];
+    const activeMandal = (mandal || '').toString().trim();
+    const activeDistrict = (district || city || '').toString().trim();
+
+    if (!userLat && !userLng && (activePincode || activeMandal || activeDistrict)) {
+      const locOr: any[] = [];
+      if (activePincode) {
+        locOr.push({ pincode: activePincode });
+        locOr.push({ zipcode: activePincode });
+        locOr.push({ 'address.pincode': activePincode });
+        locOr.push({ address: { $regex: activePincode, $options: 'i' } });
+      }
+      if (activeMandal) {
+        locOr.push({ locality: { $regex: activeMandal, $options: 'i' } });
+        locOr.push({ mandal: { $regex: activeMandal, $options: 'i' } });
+        locOr.push({ address: { $regex: activeMandal, $options: 'i' } });
+      }
+      if (activeDistrict && !activePincode && !activeMandal) {
+        locOr.push({ city: { $regex: activeDistrict, $options: 'i' } });
+        locOr.push({ district: { $regex: activeDistrict, $options: 'i' } });
+      }
+      if (locOr.length > 0) {
+        filter.$or = locOr;
+      }
     }
 
     if (search) {
@@ -400,71 +424,36 @@ export const getDiningVenues = async (req: Request, res: Response): Promise<void
       filter.cuisines = { $in: [String(cuisine)] };
     }
 
-    const restaurants = await RestaurantProfile.find(filter).sort({ rating: -1, createdAt: -1 });
+    let rawRestaurants = await RestaurantProfile.find(filter).sort({ rating: -1, createdAt: -1 });
 
-    const FALLBACK_DINEOUT: any[] = [
-      {
-        id: 'do-1',
-        restaurantId: 'do-1',
-        name: 'Royal Pavilion Fine Dining',
-        cuisine: 'North Indian, Mughlai & Bar',
-        locality: 'Jubilee Hills, Road No 36',
-        rating: 4.9,
-        offer: 'FLAT 30% OFF ON TOTAL BILL',
-        costForTwo: '₹1,500',
-        image: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800&auto=format&fit=crop',
-        gallery: [
-          'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800&auto=format&fit=crop',
-          'https://images.unsplash.com/photo-1550966871-3ed3cdb5ed0c?w=800&auto=format&fit=crop',
-          'https://images.unsplash.com/photo-1559339352-11d035aa65de?w=800&auto=format&fit=crop',
-        ],
-        videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-chef-cooking-food-in-a-pan-43098-large.mp4',
-        tag: 'Exclusive Luxury',
-        description: 'Experience regal dining with authentic Mughlai recipes passed down through generations. Features private dining cabanas, live instrumental music, and curated vintage wine list.',
-        features: ['🍷 Full Bar & Cocktails', '🎻 Live Music Sessions', '🅿️ Free Valet Parking', '❄️ Air Conditioned Cabanas'],
-        timings: '12:00 PM – 11:30 PM (Daily)',
-      },
-      {
-        id: 'do-2',
-        restaurantId: 'do-2',
-        name: 'Skyline Rooftop Bistro & Lounge',
-        cuisine: 'Continental, Asian & Cocktails',
-        locality: 'Banjara Hills, Road No 12',
-        rating: 4.8,
-        offer: 'BUY 1 GET 1 DRINK + 20% OFF FOOD',
-        costForTwo: '₹1,800',
-        image: 'https://images.unsplash.com/photo-1550966871-3ed3cdb5ed0c?w=800&auto=format&fit=crop',
-        gallery: [
-          'https://images.unsplash.com/photo-1550966871-3ed3cdb5ed0c?w=800&auto=format&fit=crop',
-          'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800&auto=format&fit=crop',
-        ],
-        videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-pouring-a-cocktail-in-a-glass-43101-large.mp4',
-        tag: 'Romantic Rooftop',
-        description: 'Breathtaking 360° panoramic city skyline views with signature wood-fired artisan pizzas, hand-crafted cocktails, and ambient lounge seating.',
-        features: ['🌌 Open Air Rooftop', '🍹 Mixology Bar', '🎵 DJ & Acoustic Evenings', '🅿️ Valet Parking'],
-        timings: '04:00 PM – 01:00 AM (Daily)',
-      },
-      {
-        id: 'do-3',
-        restaurantId: 'do-3',
-        name: 'The Spice Route Courtyard',
-        cuisine: 'Hyderabadi, South Indian & Tandoori',
-        locality: 'Madhapur / Hitech City',
-        rating: 4.7,
-        offer: 'FLAT 25% OFF ON DINING BILL',
-        costForTwo: '₹1,200',
-        image: 'https://images.unsplash.com/photo-1559339352-11d035aa65de?w=800&auto=format&fit=crop',
-        gallery: [
-          'https://images.unsplash.com/photo-1559339352-11d035aa65de?w=800&auto=format&fit=crop',
-          'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800&auto=format&fit=crop',
-        ],
-        videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-preparing-a-dish-in-the-kitchen-43095-large.mp4',
-        tag: 'Family Favorite',
-        description: 'Heritage courtyard ambiance serving authentic Hyderabadi Dum Biryanis, sizzling kebabs, and coastal South Indian delicacies.',
-        features: ['🌿 Heritage Courtyard', '👨‍👩‍👧‍👦 Family Seating', '🍚 Unlimited Thalis', '🅿️ Ample Parking'],
-        timings: '11:30 AM – 11:00 PM (Daily)',
-      },
-    ];
+    if (userLat !== null && userLng !== null) {
+      rawRestaurants = rawRestaurants.filter((r) => {
+        const rLng = r.location?.coordinates?.[0];
+        const rLat = r.location?.coordinates?.[1];
+        if (typeof rLat === 'number' && typeof rLng === 'number' && rLat !== 0 && rLng !== 0) {
+          const R = 6371;
+          const dLat = ((rLat - userLat) * Math.PI) / 180;
+          const dLon = ((rLng - userLng) * Math.PI) / 180;
+          const a =
+            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos((userLat * Math.PI) / 180) * Math.cos((rLat * Math.PI) / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+          const dist = Math.round(R * c * 10) / 10;
+          return dist <= 25;
+        }
+        if (activePincode && r.pincode === activePincode) return true;
+        return false;
+      });
+    }
+
+    // Only include venues with diningEnabled: true and operational status active
+    const restaurants = rawRestaurants.filter((r) => {
+      const isEnabled = r.diningEnabled === true || (r.diningEnabled as any) === 'true';
+      if (!isEnabled) return false;
+      if (r.operationalStatus === 'CLOSED' || r.operationalStatus === 'TEMPORARILY_CLOSED') return false;
+      if (r.diningInfo && (r.diningInfo as any).isDiningActive === false) return false;
+      return true;
+    });
 
     const dbVenues = restaurants.map((r: any) => {
       const dInfo = r.diningInfo || {};
@@ -472,9 +461,9 @@ export const getDiningVenues = async (req: Request, res: Response): Promise<void
       const images = dInfo.images && dInfo.images.length > 0
         ? dInfo.images
         : [
-            r.bannerImage || r.coverBanner || r.coverImage || 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800&auto=format&fit=crop',
-            'https://images.unsplash.com/photo-1550966871-3ed3cdb5ed0c?w=800&auto=format&fit=crop',
-          ];
+          r.bannerImage || r.coverBanner || r.coverImage || 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800&auto=format&fit=crop',
+          'https://images.unsplash.com/photo-1550966871-3ed3cdb5ed0c?w=800&auto=format&fit=crop',
+        ];
       const videoUrl = dInfo.videos && dInfo.videos[0]
         ? dInfo.videos[0]
         : 'https://assets.mixkit.co/videos/preview/mixkit-chef-cooking-food-in-a-pan-43098-large.mp4';
@@ -484,28 +473,26 @@ export const getDiningVenues = async (req: Request, res: Response): Promise<void
         restaurantId: r._id.toString(),
         name: r.restaurantName,
         cuisine: Array.isArray(r.cuisines) && r.cuisines.length > 0 ? r.cuisines.join(', ') : 'Multi-Cuisine & Dining',
-        locality: r.locality || r.city || 'Hyderabad',
+        locality: r.locality || r.mandal || r.district || r.city || 'Local Dining',
+        pincode: r.pincode || '',
+        mandal: r.mandal || '',
+        district: r.district || '',
         rating: typeof r.rating === 'object' ? r.rating?.average || 4.8 : (r.rating || 4.8),
         offer: offers,
         costForTwo: dInfo.costForTwo || '₹1,200',
         image: images[0],
         gallery: images,
         videoUrl: videoUrl,
-        tag: dInfo.tag || 'Verified Dining Venue',
+        tag: dInfo.tag || 'Verified Dining Partner',
         description: dInfo.description || r.description || 'Experience premium dining with authentic chef specials, vibrant ambiance, and table service.',
         features: dInfo.amenities || ['🍷 Bar & Drinks', '🅿️ Valet Parking', '❄️ AC Dining', '🌱 Veg/Non-Veg Options'],
         timings: dInfo.openingTime && dInfo.closingTime ? `${dInfo.openingTime} – ${dInfo.closingTime}` : '11:00 AM – 11:00 PM (Daily)',
+        diningEnabled: true,
+        diningInfo: dInfo,
       };
     });
 
-    const combinedVenues: any[] = [...dbVenues];
-    FALLBACK_DINEOUT.forEach((fb) => {
-      if (!combinedVenues.some((v) => v.name === fb.name)) {
-        combinedVenues.push(fb);
-      }
-    });
-
-    res.status(200).json({ success: true, count: combinedVenues.length, venues: combinedVenues });
+    res.status(200).json({ success: true, count: dbVenues.length, venues: dbVenues });
   } catch (error: any) {
     res.status(500).json({ success: false, message: 'Failed to fetch dining venues', error: error.message });
   }

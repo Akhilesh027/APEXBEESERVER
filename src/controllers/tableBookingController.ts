@@ -43,12 +43,23 @@ export const getCustomerTableBookings = async (req: Request, res: Response) => {
   try {
     const { phone, email, userId } = req.query;
 
-    const query: any = {};
-    if (phone) query.customerPhone = String(phone);
-    else if (email) query.customerEmail = String(email);
+    const orConditions: any[] = [];
+    if (phone) {
+      const raw = String(phone).trim();
+      const last10 = raw.replace(/\D/g, '').slice(-10);
+      orConditions.push({ customerPhone: raw });
+      if (last10) {
+        orConditions.push({ customerPhone: { $regex: last10 } });
+      }
+    }
+    if (email) {
+      orConditions.push({ customerEmail: { $regex: String(email).trim(), $options: 'i' } });
+    }
+
+    const query = orConditions.length > 0 ? { $or: orConditions } : {};
 
     const bookings = await TableBooking.find(query)
-      .populate('restaurantId', 'restaurantName name logo coverBanner locality city phone')
+      .populate('restaurantId', 'restaurantName name logo coverBanner bannerImage locality city phone address')
       .sort({ createdAt: -1 });
 
     return res.json({ success: true, count: bookings.length, bookings });
