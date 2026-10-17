@@ -119,21 +119,48 @@ export const getEarningsSummary = async (req: FoodPartnerAuthRequest, res: Respo
       }
     }
 
-    const totalPlatformCommission = menuItems.reduce((sum, item) => sum + (item.platformShareAmount || 0), 0);
-    const totalVendorPayout = menuItems.reduce((sum, item) => sum + (item.vendorPayoutAmount || 0), 0);
+    const totalPlatformCommission = menuItems.reduce((sum, item) => {
+      const sp = (item.offerPrice && item.offerPrice > 0) ? item.offerPrice : item.basePrice;
+      const fee = item.platformShareAmount !== undefined && item.platformShareAmount !== null
+        ? item.platformShareAmount
+        : Math.round(((sp * (item.platformCommissionPercent || 12)) / 100) * 100) / 100;
+      return sum + fee;
+    }, 0);
 
-    const itemCommissionBreakdown = menuItems.map((item) => ({
-      _id: item._id,
-      name: item.name,
-      foodType: item.foodType,
-      basePrice: item.basePrice,
-      offerPrice: item.offerPrice || 0,
-      platformCommissionPercent: item.platformCommissionPercent || 0,
-      platformShareAmount: item.platformShareAmount || 0,
-      vendorPayoutAmount: item.vendorPayoutAmount || 0,
-      approvalStatus: item.approvalStatus || 'PENDING_ADMIN_REVIEW',
-      status: item.status,
-    }));
+    const totalVendorPayout = menuItems.reduce((sum, item) => {
+      const sp = (item.offerPrice && item.offerPrice > 0) ? item.offerPrice : item.basePrice;
+      const fee = item.platformShareAmount !== undefined && item.platformShareAmount !== null
+        ? item.platformShareAmount
+        : Math.round(((sp * (item.platformCommissionPercent || 12)) / 100) * 100) / 100;
+      const payout = item.vendorPayoutAmount !== undefined && item.vendorPayoutAmount !== null
+        ? item.vendorPayoutAmount
+        : Math.max(0, sp - fee);
+      return sum + payout;
+    }, 0);
+
+    const itemCommissionBreakdown = menuItems.map((item) => {
+      const sp = (item.offerPrice && item.offerPrice > 0) ? item.offerPrice : item.basePrice;
+      const fee = item.platformShareAmount !== undefined && item.platformShareAmount !== null
+        ? item.platformShareAmount
+        : Math.round(((sp * (item.platformCommissionPercent || 12)) / 100) * 100) / 100;
+      const payout = item.vendorPayoutAmount !== undefined && item.vendorPayoutAmount !== null
+        ? item.vendorPayoutAmount
+        : Math.max(0, sp - fee);
+
+      return {
+        _id: item._id,
+        name: item.name,
+        foodType: item.foodType,
+        basePrice: item.basePrice,
+        offerPrice: item.offerPrice || 0,
+        sellingPrice: sp,
+        platformCommissionPercent: item.platformCommissionPercent || 0,
+        platformShareAmount: fee,
+        vendorPayoutAmount: payout,
+        approvalStatus: item.approvalStatus || 'PENDING_ADMIN_REVIEW',
+        status: item.status,
+      };
+    });
 
     // Calculate per-order commission breakdown from completed orders
     const orderCommissionBreakdown = allOrders.slice(0, 50).map((o) => ({
