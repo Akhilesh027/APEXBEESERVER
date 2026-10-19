@@ -3,7 +3,7 @@ import mongoose, { Schema, Document } from "mongoose";
 export interface IFeeInvoice extends Document {
   invoiceNumber: string;
   recipientUserId: mongoose.Types.ObjectId;
-  recipientRole: "franchise" | "vendor" | "service_provider" | "entrepreneur" | "user";
+  recipientRole: "franchise" | "vendor" | "service_provider" | "entrepreneur" | "user" | "food_partner" | "restaurant";
   recipientName: string;
   recipientBusinessName?: string;
   recipientEmail?: string;
@@ -59,7 +59,7 @@ const FeeInvoiceSchema = new Schema<IFeeInvoice>(
     },
     recipientRole: {
       type: String,
-      enum: ["franchise", "vendor", "service_provider", "entrepreneur", "user"],
+      enum: ["franchise", "vendor", "service_provider", "entrepreneur", "user", "food_partner", "restaurant"],
       default: "vendor",
       index: true,
     },

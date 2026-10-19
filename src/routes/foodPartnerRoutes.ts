@@ -83,6 +83,12 @@ import {
   generateAllSeparateTableQRs,
 } from '../controllers/tableQrController';
 
+import {
+  getMyInvoices,
+  createInvoiceRazorpayOrder,
+  payInvoice,
+} from '../controllers/feePricingController';
+
 import { protectFoodPartner, restrictFoodStaffPermission } from '../middleware/foodPartnerAuthMiddleware';
 import { protect, restrictTo } from '../middleware/auth';
 
@@ -170,6 +176,11 @@ router.patch('/offers/:id/status', restrictFoodStaffPermission('offers'), toggle
 router.get('/finance/earnings', restrictFoodStaffPermission('finance'), getEarningsSummary);
 router.get('/finance/settlements', restrictFoodStaffPermission('finance'), getSettlementHistory);
 router.get('/analytics', restrictFoodStaffPermission('reports'), getAnalyticsData);
+
+// Admin Fee Invoices & Payment Links
+router.get('/fee-invoices', getMyInvoices);
+router.post('/fee-invoices/create-razorpay-order', createInvoiceRazorpayOrder);
+router.post('/fee-invoices/pay', payInvoice);
 
 // Image Upload Handler for Logo, Banners & Dishes
 router.post('/upload', uploadDisk.single('file'), async (req: any, res: any) => {

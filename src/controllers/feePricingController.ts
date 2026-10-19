@@ -6,6 +6,7 @@ import { FeeInvoice } from "../models/FeeInvoice";
 import { User } from "../models/User";
 import { Franchise } from "../models/Franchise";
 import { Vendor } from "../models/Vendor";
+import { RestaurantProfile } from "../models/RestaurantProfile";
 import { AssignmentCommissionService } from "../services/AssignmentCommissionService";
 import { AuthRequest } from "../middleware/auth";
 import { RazorpayService } from "../services/razorpayService";
@@ -246,6 +247,15 @@ export const sendPaymentLink = async (req: AuthRequest, res: Response) => {
     let user = await User.findById(recipientUserId);
     let vn: any = null;
     let fr: any = null;
+    let rest: any = null;
+
+    if (!user) {
+      // Check if recipientUserId is a Restaurant _id
+      rest = await RestaurantProfile.findById(recipientUserId);
+      if (rest && rest.userId) {
+        user = await User.findById(rest.userId);
+      }
+    }
 
     if (!user) {
       // Check if recipientUserId is a Vendor _id
@@ -278,7 +288,10 @@ export const sendPaymentLink = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ success: false, message: "Recipient partner or user profile not found" });
     }
 
-    // Resolve vendor / franchise details if not already loaded
+    // Resolve restaurant / vendor / franchise details if not already loaded
+    if (!rest && (recipientRole === "food_partner" || recipientRole === "restaurant" || user.roles?.includes("food_partner"))) {
+      rest = await RestaurantProfile.findOne({ $or: [{ userId: user._id }, { _id: user._id }] });
+    }
     if (!vn && (recipientRole === "vendor" || !recipientRole || user.roles?.includes("vendor"))) {
       vn = await Vendor.findOne({ $or: [{ userId: user._id }, { _id: user._id }] });
     }
@@ -298,7 +311,13 @@ export const sendPaymentLink = async (req: AuthRequest, res: Response) => {
 
     // Resolve territory info if available
     let territoryInfo: any = {};
-    if (fr) {
+    if (rest) {
+      territoryInfo = {
+        state: rest.state || user.territory?.state || "",
+        district: rest.city || rest.district || user.territory?.district || "",
+        mandal: rest.locality || user.territory?.mandal || "",
+      };
+    } else if (fr) {
       territoryInfo = {
         state: fr.state || user.territory?.state || "",
         district: fr.district || user.territory?.district || "",
@@ -319,18 +338,23 @@ export const sendPaymentLink = async (req: AuthRequest, res: Response) => {
       };
     }
 
-    const businessName = vn?.businessName || user.sellerProfile?.businessName || fr?.franchiseName || user.name;
-    const recipientPhone = user.phone || user.mobile || vn?.mobile || vn?.whatsappNumber || "";
-    const recipientEmail = (user.email || vn?.email || "").toLowerCase();
+    const businessName = rest?.restaurantName || vn?.businessName || user.sellerProfile?.businessName || fr?.franchiseName || user.name;
+    const recipientPhone = user.phone || user.mobile || rest?.phone || rest?.alternatePhone || vn?.mobile || vn?.whatsappNumber || "";
+    const recipientEmail = (user.email || rest?.email || vn?.email || "").toLowerCase();
 
     const token = crypto.randomBytes(20).toString("hex");
     const invoiceNumber = `INV-${Date.now().toString().slice(-6)}-${Math.floor(100 + Math.random() * 900)}`;
 
+    const determinedRole = recipientRole || (
+      (user.roles?.includes("food_partner") || rest) ? "food_partner" :
+      user.roles?.includes("franchise") ? "franchise" : "vendor"
+    );
+
     const invoice = await FeeInvoice.create({
       invoiceNumber,
       recipientUserId: user._id,
-      recipientRole: recipientRole || (user.roles?.includes("franchise") ? "franchise" : "vendor"),
-      recipientName: user.name || vn?.ownerName || "Valued Partner",
+      recipientRole: determinedRole,
+      recipientName: user.name || rest?.restaurantName || vn?.ownerName || "Valued Partner",
       recipientBusinessName: businessName,
       recipientEmail,
       recipientPhone,
@@ -475,6 +499,21 @@ export const getMyInvoices = async (req: AuthRequest, res: Response) => {
       if (vendor.email) conditions.push({ recipientEmail: vendor.email.toLowerCase() });
     }
 
+    const restaurant = await RestaurantProfile.findOne({
+      $or: [
+        { userId: req.user.id },
+        { _id: req.user.id },
+        ...(vendor ? [{ vendorId: vendor._id }, { storeId: vendor._id }] : [])
+      ]
+    });
+    if (restaurant) {
+      conditions.push({ recipientUserId: restaurant._id });
+      if (restaurant.userId) conditions.push({ recipientUserId: restaurant.userId });
+      if (restaurant.phone) conditions.push({ recipientPhone: restaurant.phone });
+      if (restaurant.alternatePhone) conditions.push({ recipientPhone: restaurant.alternatePhone });
+      if (restaurant.email) conditions.push({ recipientEmail: restaurant.email.toLowerCase() });
+    }
+
     const invoices = await FeeInvoice.find({ $or: conditions }).sort({ createdAt: -1 });
 
     res.json({
@@ -597,6 +636,15 @@ export const payInvoice = async (req: Request, res: Response) => {
         { userId: invoice.recipientUserId },
         { $set: { status: "active", marketplaceStatus: "Approved" } }
       );
+    } else if (invoice.recipientRole === "food_partner" || invoice.recipientRole === "restaurant") {
+      await RestaurantProfile.findOneAndUpdate(
+        { $or: [{ userId: invoice.recipientUserId }, { _id: invoice.recipientUserId }] },
+        { $set: { status: "active", isVerified: true, onboardingStatus: "COMPLETED", verificationStatus: "APPROVED" } }
+      );
+      await Vendor.findOneAndUpdate(
+        { userId: invoice.recipientUserId },
+        { $set: { status: "active", marketplaceStatus: "Approved" } }
+      );
     }
 
     res.json({
@@ -663,6 +711,15 @@ export const markInvoicePaidManual = async (req: AuthRequest, res: Response) => 
         { $set: { status: "active", isVerified: true } }
       );
     } else if (invoice.recipientRole === "vendor") {
+      await Vendor.findOneAndUpdate(
+        { userId: invoice.recipientUserId },
+        { $set: { status: "active", marketplaceStatus: "Approved" } }
+      );
+    } else if (invoice.recipientRole === "food_partner" || invoice.recipientRole === "restaurant") {
+      await RestaurantProfile.findOneAndUpdate(
+        { $or: [{ userId: invoice.recipientUserId }, { _id: invoice.recipientUserId }] },
+        { $set: { status: "active", isVerified: true, onboardingStatus: "COMPLETED", verificationStatus: "APPROVED" } }
+      );
       await Vendor.findOneAndUpdate(
         { userId: invoice.recipientUserId },
         { $set: { status: "active", marketplaceStatus: "Approved" } }
