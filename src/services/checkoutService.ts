@@ -22,6 +22,8 @@ export interface CheckoutInput {
   isScheduledSubscription?: boolean;
   scheduleDetails?: any;
   preOrder?: any;
+  isPreOrder?: boolean;
+  preOrderReleaseDate?: any;
   checkoutIdempotencyKey?: string;
   checkoutRequestHash?: string;
   referralCode?: string;
