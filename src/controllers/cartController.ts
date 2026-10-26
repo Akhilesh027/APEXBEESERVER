@@ -124,10 +124,22 @@ export const getCart = async (req: Request, res: Response) => {
               returnPolicy: 'Non-returnable Food Item',
               allowPickup: true,
               pickupAvailable: true,
-              isPreOrder: false,
-              preOrder: false,
-              availableOn: null,
-              preOrderDate: null,
+              isPreOrder: foodItem.isPreOrder ?? linkedProduct?.isPreOrder ?? false,
+              preOrder: foodItem.isPreOrder ?? linkedProduct?.isPreOrder ?? false,
+              preOrderType: foodItem.preOrderType || linkedProduct?.preOrderType || 'ADVANCE_NOTICE',
+              preOrderLeadTimeDays: foodItem.preOrderLeadTimeDays || linkedProduct?.preOrderLeadTimeDays || 1,
+              preOrderLeadTimeHours: foodItem.preOrderLeadTimeHours || linkedProduct?.preOrderLeadTimeHours || 24,
+              preOrderDailyCutoffTime: foodItem.preOrderDailyCutoffTime || linkedProduct?.preOrderDailyCutoffTime || '18:00',
+              preOrderAllowTimeSlot: foodItem.preOrderAllowTimeSlot !== false && linkedProduct?.preOrderAllowTimeSlot !== false,
+              preOrderAllowCustomMessage: Boolean(foodItem.preOrderAllowCustomMessage || linkedProduct?.preOrderAllowCustomMessage),
+              preOrderCustomMessageLabel: foodItem.preOrderCustomMessageLabel || linkedProduct?.preOrderCustomMessageLabel || 'Message on Cake / Custom Instructions',
+              availableOn: foodItem.preOrderReleaseDate || linkedProduct?.preOrderReleaseDate || null,
+              preOrderDate: foodItem.preOrderReleaseDate || linkedProduct?.preOrderReleaseDate || null,
+              preOrderReleaseDate: foodItem.preOrderReleaseDate || linkedProduct?.preOrderReleaseDate || null,
+              preOrderMessage: foodItem.preOrderMessage || linkedProduct?.preOrderMessage || '',
+              preOrderDeliveryDate: item.preOrderDeliveryDate || null,
+              preOrderTimeSlot: item.preOrderTimeSlot || '',
+              preOrderCustomNote: item.preOrderCustomNote || '',
             };
           }
           return null;
@@ -214,10 +226,22 @@ export const getCart = async (req: Request, res: Response) => {
           returnPolicy: '7-day Easy Return',
           allowPickup: product.attributes?.allowPickup ?? false,
           pickupAvailable: product.attributes?.allowPickup ?? false,
-          isPreOrder: product.attributes?.isPreOrder ?? false,
-          preOrder: product.attributes?.isPreOrder ?? false,
-          availableOn: product.attributes?.availableOn ?? null,
-          preOrderDate: product.attributes?.availableOn ?? null,
+          isPreOrder: product.isPreOrder ?? product.attributes?.isPreOrder ?? false,
+          preOrder: product.isPreOrder ?? product.attributes?.isPreOrder ?? false,
+          preOrderType: product.preOrderType || product.attributes?.preOrderType || 'ADVANCE_NOTICE',
+          preOrderLeadTimeDays: product.preOrderLeadTimeDays || product.attributes?.preOrderLeadTimeDays || 1,
+          preOrderLeadTimeHours: product.preOrderLeadTimeHours || product.attributes?.preOrderLeadTimeHours || 24,
+          preOrderDailyCutoffTime: product.preOrderDailyCutoffTime || product.attributes?.preOrderDailyCutoffTime || '18:00',
+          preOrderAllowTimeSlot: product.preOrderAllowTimeSlot !== false,
+          preOrderAllowCustomMessage: Boolean(product.preOrderAllowCustomMessage || product.attributes?.preOrderAllowCustomMessage),
+          preOrderCustomMessageLabel: product.preOrderCustomMessageLabel || product.attributes?.preOrderCustomMessageLabel || 'Message on Cake / Custom Instructions',
+          availableOn: product.preOrderReleaseDate || product.attributes?.availableOn || null,
+          preOrderDate: product.preOrderReleaseDate || product.attributes?.availableOn || null,
+          preOrderReleaseDate: product.preOrderReleaseDate || product.attributes?.availableOn || null,
+          preOrderMessage: product.preOrderMessage || product.attributes?.preOrderMessage || '',
+          preOrderDeliveryDate: item.preOrderDeliveryDate || null,
+          preOrderTimeSlot: item.preOrderTimeSlot || '',
+          preOrderCustomNote: item.preOrderCustomNote || '',
         };
       })
     );
@@ -232,7 +256,18 @@ export const getCart = async (req: Request, res: Response) => {
 
 export const addToCart = async (req: Request, res: Response) => {
   try {
-    const { userId: bodyUserId, productId, quantity, color, size, selectedColor, selectedSize } = req.body;
+    const {
+      userId: bodyUserId,
+      productId,
+      quantity,
+      color,
+      size,
+      selectedColor,
+      selectedSize,
+      preOrderDeliveryDate,
+      preOrderTimeSlot,
+      preOrderCustomNote,
+    } = req.body;
     const customerId = (req as any).user?.id || (req as any).user?._id || bodyUserId;
 
     if (!customerId || !productId) {
@@ -252,7 +287,16 @@ export const addToCart = async (req: Request, res: Response) => {
       }
     }
 
-    const cart = await CartService.addToCart(customerId, productId, resolvedQty, resolvedColor, resolvedSize);
+    const cart = await CartService.addToCart(
+      customerId,
+      productId,
+      resolvedQty,
+      resolvedColor,
+      resolvedSize,
+      preOrderDeliveryDate || null,
+      preOrderTimeSlot || '',
+      preOrderCustomNote || ''
+    );
     res.status(200).json({ success: true, message: 'Added to cart successfully', cart });
   } catch (error: any) {
     res.status(500).json({ success: false, error: 'Failed to add to cart', message: error.message });

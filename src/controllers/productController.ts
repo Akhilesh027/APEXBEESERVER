@@ -503,6 +503,14 @@ export const createProduct = async (req: Request, res: Response) => {
         isStoreProduct: req.body.isStoreProduct === 'true' || req.body.isStoreProduct === true,
         isSubscriptionAvailable: req.body.isSubscriptionAvailable === 'true' || req.body.isSubscriptionAvailable === true,
         isPreOrder: req.body.isPreOrder === 'true' || req.body.isPreOrder === true,
+        preOrderType: req.body.preOrderType || 'ADVANCE_NOTICE',
+        preOrderLeadTimeDays: Number(req.body.preOrderLeadTimeDays) || 1,
+        preOrderLeadTimeHours: Number(req.body.preOrderLeadTimeHours) || 24,
+        preOrderDailyCutoffTime: req.body.preOrderDailyCutoffTime || '18:00',
+        preOrderAllowTimeSlot: req.body.preOrderAllowTimeSlot === undefined ? true : (req.body.preOrderAllowTimeSlot === 'true' || req.body.preOrderAllowTimeSlot === true),
+        preOrderAllowCustomMessage: req.body.preOrderAllowCustomMessage === 'true' || req.body.preOrderAllowCustomMessage === true,
+        preOrderCustomMessageLabel: req.body.preOrderCustomMessageLabel || 'Message on Cake / Custom Instructions',
+        preOrderAvailableDays: parseJson(req.body.preOrderAvailableDays, []),
         preOrderReleaseDate: req.body.preOrderReleaseDate ? new Date(req.body.preOrderReleaseDate) : null,
         preOrderMessage: req.body.preOrderMessage || '',
         preOrderLimit: Number(req.body.preOrderLimit) || 0,
@@ -1154,6 +1162,30 @@ export const updateProduct = async (req: Request, res: Response) => {
     }
     if (req.body.isPreOrder !== undefined) {
       product.isPreOrder = req.body.isPreOrder === 'true' || req.body.isPreOrder === true;
+    }
+    if (req.body.preOrderType !== undefined) {
+      product.preOrderType = req.body.preOrderType;
+    }
+    if (req.body.preOrderLeadTimeDays !== undefined) {
+      product.preOrderLeadTimeDays = Number(req.body.preOrderLeadTimeDays) || 1;
+    }
+    if (req.body.preOrderLeadTimeHours !== undefined) {
+      product.preOrderLeadTimeHours = Number(req.body.preOrderLeadTimeHours) || 24;
+    }
+    if (req.body.preOrderDailyCutoffTime !== undefined) {
+      product.preOrderDailyCutoffTime = req.body.preOrderDailyCutoffTime || '18:00';
+    }
+    if (req.body.preOrderAllowTimeSlot !== undefined) {
+      product.preOrderAllowTimeSlot = req.body.preOrderAllowTimeSlot === 'true' || req.body.preOrderAllowTimeSlot === true;
+    }
+    if (req.body.preOrderAllowCustomMessage !== undefined) {
+      product.preOrderAllowCustomMessage = req.body.preOrderAllowCustomMessage === 'true' || req.body.preOrderAllowCustomMessage === true;
+    }
+    if (req.body.preOrderCustomMessageLabel !== undefined) {
+      product.preOrderCustomMessageLabel = req.body.preOrderCustomMessageLabel || 'Message on Cake / Custom Instructions';
+    }
+    if (req.body.preOrderAvailableDays !== undefined) {
+      product.preOrderAvailableDays = parseJson(req.body.preOrderAvailableDays, []);
     }
     if (req.body.preOrderReleaseDate !== undefined) {
       product.preOrderReleaseDate = req.body.preOrderReleaseDate ? new Date(req.body.preOrderReleaseDate) : null;

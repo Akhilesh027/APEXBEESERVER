@@ -10,14 +10,17 @@ export class CartService {
     productId: string,
     quantity: number,
     color = 'default',
-    size = 'default'
+    size = 'default',
+    preOrderDeliveryDate: string | null = null,
+    preOrderTimeSlot = '',
+    preOrderCustomNote = ''
   ): Promise<any> {
     // 1. Try to increment quantity of existing matching item atomically
     let cart = await Cart.findOneAndUpdate(
       {
         userId,
         items: {
-          $elemMatch: { productId, color, size },
+          $elemMatch: { productId, color, size, preOrderDeliveryDate },
         },
       },
       {
@@ -41,13 +44,21 @@ export class CartService {
           userId,
           items: {
             $not: {
-              $elemMatch: { productId, color, size },
+              $elemMatch: { productId, color, size, preOrderDeliveryDate },
             },
           },
         },
         {
           $push: {
-            items: { productId, quantity, color, size },
+            items: {
+              productId,
+              quantity,
+              color,
+              size,
+              preOrderDeliveryDate,
+              preOrderTimeSlot,
+              preOrderCustomNote,
+            },
           },
         },
         { new: true }

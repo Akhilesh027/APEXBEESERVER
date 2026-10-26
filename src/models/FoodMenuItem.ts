@@ -47,6 +47,17 @@ export interface IFoodMenuItem extends Document {
     endTime?: string;   // e.g. "11:00"
     daysOfWeek?: string[];
   };
+  isPreOrder?: boolean;
+  preOrderType?: 'ADVANCE_NOTICE' | 'RELEASE_DATE' | 'DAILY_CUTOFF' | 'SPECIFIC_DAYS';
+  preOrderLeadTimeDays?: number;
+  preOrderLeadTimeHours?: number;
+  preOrderDailyCutoffTime?: string;
+  preOrderAllowTimeSlot?: boolean;
+  preOrderAllowCustomMessage?: boolean;
+  preOrderCustomMessageLabel?: string;
+  preOrderReleaseDate?: Date | null;
+  preOrderMessage?: string;
+  preOrderLimit?: number;
   sortOrder: number;
   createdAt: Date;
   updatedAt: Date;
@@ -108,6 +119,21 @@ const FoodMenuItemSchema = new Schema<IFoodMenuItem>(
       endTime: { type: String, default: '' },
       daysOfWeek: [{ type: String }],
     },
+    isPreOrder: { type: Boolean, default: false },
+    preOrderType: {
+      type: String,
+      enum: ['ADVANCE_NOTICE', 'RELEASE_DATE', 'DAILY_CUTOFF', 'SPECIFIC_DAYS'],
+      default: 'ADVANCE_NOTICE',
+    },
+    preOrderLeadTimeDays: { type: Number, default: 1 },
+    preOrderLeadTimeHours: { type: Number, default: 24 },
+    preOrderDailyCutoffTime: { type: String, default: '18:00' },
+    preOrderAllowTimeSlot: { type: Boolean, default: true },
+    preOrderAllowCustomMessage: { type: Boolean, default: false },
+    preOrderCustomMessageLabel: { type: String, default: 'Message on Cake / Custom Instructions' },
+    preOrderReleaseDate: { type: Date, default: null },
+    preOrderMessage: { type: String, default: '' },
+    preOrderLimit: { type: Number, default: 0 },
     sortOrder: { type: Number, default: 0 },
   },
   { timestamps: true }

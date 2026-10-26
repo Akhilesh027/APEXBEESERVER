@@ -10,6 +10,9 @@ export interface IOrderItem {
   categoryName?: string;
   isPreOrder?: boolean;
   preOrderReleaseDate?: Date | null;
+  preOrderDeliveryDate?: Date | null;
+  preOrderTimeSlot?: string;
+  preOrderCustomNote?: string;
 }
 
 export type OrderStatus =
@@ -95,6 +98,9 @@ export interface IOrder extends Document {
   productSharerId?: mongoose.Types.ObjectId;
   isPreOrder?: boolean;
   preOrderReleaseDate?: Date | null;
+  preOrderDeliveryDate?: Date | null;
+  preOrderTimeSlot?: string;
+  preOrderCustomNote?: string;
 }
 
 const OrderItemSchema = new Schema<IOrderItem>({
@@ -107,6 +113,9 @@ const OrderItemSchema = new Schema<IOrderItem>({
   categoryName: { type: String, default: '' },
   isPreOrder: { type: Boolean, default: false },
   preOrderReleaseDate: { type: Date, default: null },
+  preOrderDeliveryDate: { type: Date, default: null },
+  preOrderTimeSlot: { type: String, default: '' },
+  preOrderCustomNote: { type: String, default: '' },
 });
 
 const OrderSchema = new Schema<IOrder>(
@@ -222,6 +231,9 @@ const OrderSchema = new Schema<IOrder>(
     productSharerId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     isPreOrder: { type: Boolean, default: false },
     preOrderReleaseDate: { type: Date, default: null },
+    preOrderDeliveryDate: { type: Date, default: null },
+    preOrderTimeSlot: { type: String, default: '' },
+    preOrderCustomNote: { type: String, default: '' },
   },
   { timestamps: true }
 );

@@ -59,17 +59,27 @@ export class CheckoutService {
     const primaryCategoryName = firstItem.categoryName || '';
     const orderType = firstItem.orderType || 'RETAIL';
 
-    const items = pricing.orderItems.map((item: any) => ({
-      productId: new mongoose.Types.ObjectId(item.productId),
-      productName: item.name,
-      sku: item.sku || item.slug || `SKU-${item.productId}` || 'N/A',
-      quantity: item.quantity,
-      price: item.price,
-      categoryId: item.categoryId || primaryCategoryId,
-      categoryName: item.categoryName || primaryCategoryName,
-      isPreOrder: Boolean(item.isPreOrder),
-      preOrderReleaseDate: item.preOrderReleaseDate || item.availableOn || null,
-    }));
+    const items = pricing.orderItems.map((item: any, idx: number) => {
+      const origInputItem = (input.orderItems && input.orderItems[idx]) || {};
+      const targetDeliveryDate = origInputItem.preOrderDeliveryDate || item.preOrderDeliveryDate || null;
+      const targetTimeSlot = origInputItem.preOrderTimeSlot || item.preOrderTimeSlot || '';
+      const targetCustomNote = origInputItem.preOrderCustomNote || item.preOrderCustomNote || '';
+
+      return {
+        productId: new mongoose.Types.ObjectId(item.productId),
+        productName: item.name,
+        sku: item.sku || item.slug || `SKU-${item.productId}` || 'N/A',
+        quantity: item.quantity,
+        price: item.price,
+        categoryId: item.categoryId || primaryCategoryId,
+        categoryName: item.categoryName || primaryCategoryName,
+        isPreOrder: Boolean(item.isPreOrder || origInputItem.isPreOrder),
+        preOrderReleaseDate: item.preOrderReleaseDate || item.availableOn || origInputItem.preOrderReleaseDate || null,
+        preOrderDeliveryDate: targetDeliveryDate ? new Date(targetDeliveryDate) : null,
+        preOrderTimeSlot: targetTimeSlot,
+        preOrderCustomNote: targetCustomNote,
+      };
+    });
 
     const isPaidOnline = input.paymentDetails?.status === 'completed' || input.paymentDetails?.method === 'razorpay' || input.paymentDetails?.method === 'wallet';
     const resolvedPaymentMethod = input.paymentDetails?.method || 'cod';
@@ -142,6 +152,9 @@ export class CheckoutService {
       preOrder: input.preOrder,
       isPreOrder: Boolean(input.isPreOrder || input.preOrder?.enabled || items.some((it: any) => it.isPreOrder)),
       preOrderReleaseDate: input.preOrderReleaseDate || input.preOrder?.availableFrom || null,
+      preOrderDeliveryDate: input.preOrderDeliveryDate || input.preOrder?.deliveryDate || items.find((it: any) => it.preOrderDeliveryDate)?.preOrderDeliveryDate || null,
+      preOrderTimeSlot: input.preOrderTimeSlot || input.preOrder?.timeSlot || items.find((it: any) => it.preOrderTimeSlot)?.preOrderTimeSlot || '',
+      preOrderCustomNote: input.preOrderCustomNote || input.preOrder?.customNote || items.find((it: any) => it.preOrderCustomNote)?.preOrderCustomNote || '',
       isScheduledSubscription: input.isScheduledSubscription || false,
       scheduleDetails: input.scheduleDetails,
       orderStatusObj,

@@ -6,6 +6,9 @@ export interface ICartItem {
   quantity: number;
   color: string;
   size: string;
+  preOrderDeliveryDate?: string | null;
+  preOrderTimeSlot?: string;
+  preOrderCustomNote?: string;
 }
 
 export interface ICart extends Document {
@@ -33,6 +36,18 @@ const CartItemSchema = new Schema<ICartItem>(
     size: {
       type: String,
       default: 'default',
+    },
+    preOrderDeliveryDate: {
+      type: String,
+      default: null,
+    },
+    preOrderTimeSlot: {
+      type: String,
+      default: '',
+    },
+    preOrderCustomNote: {
+      type: String,
+      default: '',
     },
   },
   { _id: true }

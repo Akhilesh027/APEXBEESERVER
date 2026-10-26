@@ -239,6 +239,17 @@ export const createMenuItem = async (req: FoodPartnerAuthRequest, res: Response)
       vendorPayoutAmount: vendorPayout,
       soldOut: false,
       availabilitySchedule,
+      isPreOrder: Boolean(req.body.isPreOrder),
+      preOrderType: req.body.preOrderType || 'ADVANCE_NOTICE',
+      preOrderLeadTimeDays: req.body.preOrderLeadTimeDays !== undefined ? Number(req.body.preOrderLeadTimeDays) : 2,
+      preOrderLeadTimeHours: req.body.preOrderLeadTimeHours !== undefined ? Number(req.body.preOrderLeadTimeHours) : 0,
+      preOrderDailyCutoffTime: req.body.preOrderDailyCutoffTime || '18:00',
+      preOrderAllowTimeSlot: req.body.preOrderAllowTimeSlot !== undefined ? Boolean(req.body.preOrderAllowTimeSlot) : true,
+      preOrderAllowCustomMessage: req.body.preOrderAllowCustomMessage !== undefined ? Boolean(req.body.preOrderAllowCustomMessage) : false,
+      preOrderCustomMessageLabel: req.body.preOrderCustomMessageLabel || 'Message on Cake / Custom Inscription',
+      preOrderReleaseDate: req.body.preOrderReleaseDate ? new Date(req.body.preOrderReleaseDate) : null,
+      preOrderMessage: req.body.preOrderMessage || '',
+      preOrderLimit: req.body.preOrderLimit ? Number(req.body.preOrderLimit) : 0,
     });
 
     await item.save();
@@ -264,6 +275,17 @@ export const createMenuItem = async (req: FoodPartnerAuthRequest, res: Response)
         sku: `FOOD-${item._id.toString().slice(-6).toUpperCase()}`,
         adminPricingApproved: false,
         sellerPricingAccepted: false,
+        isPreOrder: Boolean(req.body.isPreOrder),
+        preOrderType: req.body.preOrderType || 'ADVANCE_NOTICE',
+        preOrderLeadTimeDays: req.body.preOrderLeadTimeDays !== undefined ? Number(req.body.preOrderLeadTimeDays) : 2,
+        preOrderLeadTimeHours: req.body.preOrderLeadTimeHours !== undefined ? Number(req.body.preOrderLeadTimeHours) : 0,
+        preOrderDailyCutoffTime: req.body.preOrderDailyCutoffTime || '18:00',
+        preOrderAllowTimeSlot: req.body.preOrderAllowTimeSlot !== undefined ? Boolean(req.body.preOrderAllowTimeSlot) : true,
+        preOrderAllowCustomMessage: req.body.preOrderAllowCustomMessage !== undefined ? Boolean(req.body.preOrderAllowCustomMessage) : false,
+        preOrderCustomMessageLabel: req.body.preOrderCustomMessageLabel || 'Message on Cake / Custom Inscription',
+        preOrderReleaseDate: req.body.preOrderReleaseDate ? new Date(req.body.preOrderReleaseDate) : null,
+        preOrderMessage: req.body.preOrderMessage || '',
+        preOrderLimit: req.body.preOrderLimit ? Number(req.body.preOrderLimit) : 0,
       });
       await prod.save();
     } catch (e) {
@@ -441,16 +463,33 @@ export const updateMenuItem = async (req: FoodPartnerAuthRequest, res: Response)
       return;
     }
 
-    // Sync image to Product model if present
-    if (itemImage) {
-      try {
+    // Sync image & pre-order settings to Product model if present
+    try {
+      const prodSync: any = {};
+      if (itemImage) {
+        prodSync.thumbnail = itemImage;
+        prodSync.images = [itemImage];
+      }
+      if (updateData.isPreOrder !== undefined) prodSync.isPreOrder = Boolean(updateData.isPreOrder);
+      if (updateData.preOrderType !== undefined) prodSync.preOrderType = updateData.preOrderType;
+      if (updateData.preOrderLeadTimeDays !== undefined) prodSync.preOrderLeadTimeDays = Number(updateData.preOrderLeadTimeDays);
+      if (updateData.preOrderLeadTimeHours !== undefined) prodSync.preOrderLeadTimeHours = Number(updateData.preOrderLeadTimeHours);
+      if (updateData.preOrderDailyCutoffTime !== undefined) prodSync.preOrderDailyCutoffTime = updateData.preOrderDailyCutoffTime;
+      if (updateData.preOrderAllowTimeSlot !== undefined) prodSync.preOrderAllowTimeSlot = Boolean(updateData.preOrderAllowTimeSlot);
+      if (updateData.preOrderAllowCustomMessage !== undefined) prodSync.preOrderAllowCustomMessage = Boolean(updateData.preOrderAllowCustomMessage);
+      if (updateData.preOrderCustomMessageLabel !== undefined) prodSync.preOrderCustomMessageLabel = updateData.preOrderCustomMessageLabel;
+      if (updateData.preOrderReleaseDate !== undefined) prodSync.preOrderReleaseDate = updateData.preOrderReleaseDate ? new Date(updateData.preOrderReleaseDate) : null;
+      if (updateData.preOrderMessage !== undefined) prodSync.preOrderMessage = updateData.preOrderMessage;
+      if (updateData.preOrderLimit !== undefined) prodSync.preOrderLimit = Number(updateData.preOrderLimit);
+
+      if (Object.keys(prodSync).length > 0) {
         await Product.findOneAndUpdate(
           { foodMenuItemId: item._id },
-          { thumbnail: itemImage, images: [itemImage] }
+          prodSync
         );
-      } catch (e) {
-        console.warn('[updateMenuItem] Product thumbnail sync warning:', e);
       }
+    } catch (e) {
+      console.warn('[updateMenuItem] Product preOrder/thumbnail sync warning:', e);
     }
 
     const doc = item.toObject();
