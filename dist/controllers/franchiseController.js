@@ -468,8 +468,8 @@ const getFranchisePerformance = async (req, res) => {
         const commissionEarned = Number((availableBalance + withdrawnBalance).toFixed(2));
         // Calculate actual sales from orders linked to settlements
         const settlements = await CommissionSettlement_1.CommissionSettlement.find({ recipientId: franchise.userId });
-        const orderIds = settlements.map(s => s.orderId);
-        const uniqueOrderIds = Array.from(new Set(orderIds.map(id => id.toString())));
+        const orderIds = settlements.map(s => s.orderId).filter(Boolean);
+        const uniqueOrderIds = Array.from(new Set(orderIds.map(id => (id ? id.toString() : '')))).filter(Boolean);
         const orders = await Order_1.Order.find({ _id: { $in: uniqueOrderIds } });
         const totalSales = orders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
         // Count actual child entities

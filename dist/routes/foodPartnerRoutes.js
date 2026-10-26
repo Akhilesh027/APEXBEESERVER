@@ -15,6 +15,8 @@ const foodOrderController_1 = require("../controllers/foodOrderController");
 const foodOfferController_1 = require("../controllers/foodOfferController");
 const foodFinanceController_1 = require("../controllers/foodFinanceController");
 const foodDiningController_1 = require("../controllers/foodDiningController");
+const tableQrController_1 = require("../controllers/tableQrController");
+const feePricingController_1 = require("../controllers/feePricingController");
 const foodPartnerAuthMiddleware_1 = require("../middleware/foodPartnerAuthMiddleware");
 const auth_1 = require("../middleware/auth");
 const router = (0, express_1.Router)();
@@ -72,6 +74,12 @@ router.post('/dining/bookings', (0, foodPartnerAuthMiddleware_1.restrictFoodStaf
 router.patch('/dining/bookings/:id/status', (0, foodPartnerAuthMiddleware_1.restrictFoodStaffPermission)('orders'), foodDiningController_1.updateDiningBookingStatus);
 router.get('/dining/info', foodDiningController_1.getDiningInfo);
 router.put('/dining/info', (0, foodPartnerAuthMiddleware_1.restrictFoodStaffPermission)('profile', 'settings'), foodDiningController_1.updateDiningInfo);
+// Dining Tables & Separate QR Codes Engine
+router.get('/tables/qr', tableQrController_1.getTablesWithQRs);
+router.post('/tables/qr', tableQrController_1.createTableWithQR);
+router.put('/tables/qr/:id', tableQrController_1.updateTableQR);
+router.delete('/tables/qr/:id', tableQrController_1.deleteTableQR);
+router.post('/tables/qr/generate-all', tableQrController_1.generateAllSeparateTableQRs);
 // Offers & Commercial
 router.get('/offers', foodOfferController_1.getRestaurantOffers);
 router.post('/offers', (0, foodPartnerAuthMiddleware_1.restrictFoodStaffPermission)('offers'), foodOfferController_1.createRestaurantOffer);
@@ -80,6 +88,10 @@ router.patch('/offers/:id/status', (0, foodPartnerAuthMiddleware_1.restrictFoodS
 router.get('/finance/earnings', (0, foodPartnerAuthMiddleware_1.restrictFoodStaffPermission)('finance'), foodFinanceController_1.getEarningsSummary);
 router.get('/finance/settlements', (0, foodPartnerAuthMiddleware_1.restrictFoodStaffPermission)('finance'), foodFinanceController_1.getSettlementHistory);
 router.get('/analytics', (0, foodPartnerAuthMiddleware_1.restrictFoodStaffPermission)('reports'), foodFinanceController_1.getAnalyticsData);
+// Admin Fee Invoices & Payment Links
+router.get('/fee-invoices', feePricingController_1.getMyInvoices);
+router.post('/fee-invoices/create-razorpay-order', feePricingController_1.createInvoiceRazorpayOrder);
+router.post('/fee-invoices/pay', feePricingController_1.payInvoice);
 // Image Upload Handler for Logo, Banners & Dishes
 router.post('/upload', multer_1.uploadDisk.single('file'), async (req, res) => {
     try {

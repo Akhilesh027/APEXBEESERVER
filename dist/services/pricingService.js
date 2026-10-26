@@ -52,10 +52,18 @@ class PricingService {
                 const unitMrp = foodItem.basePrice || unitSelling;
                 const itemPacking = foodItem.packagingCharge || 0;
                 const itemTotal = unitSelling * item.quantity;
+                // Platform fee determination (Food items collect platform fee unless configured as apexbee_commission)
+                const distFrom = foodItem.distributedFrom || 'platform_fee';
+                let itemPlatformFee = 0;
+                if (distFrom !== 'apexbee_commission' && distFrom !== 'vendor' && distFrom !== 'vendor_commission') {
+                    const feePct = foodItem.platformCommissionPercent !== undefined ? foodItem.platformCommissionPercent : 5;
+                    const directFee = foodItem.platformShareAmount || 0;
+                    itemPlatformFee = directFee > 0 ? directFee : Math.round((unitSelling * feePct) / 100);
+                }
                 subtotal += itemTotal;
                 totalMrp += unitMrp * item.quantity;
                 packingFee += itemPacking * item.quantity;
-                platformFee += Math.round((unitSelling * 10) / 100) * item.quantity;
+                platformFee += itemPlatformFee * item.quantity;
                 orderItems.push({
                     productId: foodItem._id.toString(),
                     name: foodItem.name,
@@ -71,6 +79,10 @@ class PricingService {
                     categoryId: foodItem.categoryId || 'Food & Dining',
                     categoryName: 'Food & Dining',
                     orderType: 'FOOD',
+                    platformFeePercent: foodItem.platformCommissionPercent !== undefined ? foodItem.platformCommissionPercent : 5,
+                    platformFeeAmount: itemPlatformFee,
+                    distributedFrom: distFrom,
+                    vendorCommissionPercent: foodItem.vendorCommissionPercent || 0,
                 });
                 continue;
             }
@@ -116,11 +128,17 @@ class PricingService {
             const resolvedMrp = unitMrp > unitSelling ? unitMrp : unitSelling;
             const itemShipping = product.adminPricing?.shippingCharge ?? 0;
             const itemPacking = product.adminPricing?.packingCharge ?? 0;
-            // Platform fee (10% or direct fee)
+            // Platform fee (check distributedFrom: if apexbee_commission/vendor, customer pays 0 platform fee)
             const pAny = product;
-            const directPlatformFee = pAny.adminPricing?.platformFeeAmount ?? pAny.platformFeeAmount ?? 0;
-            const platformFeePct = pAny.adminPricing?.platformFeePercent ?? pAny.platformFeePercent ?? 10;
-            const itemPlatformFee = directPlatformFee > 0 ? directPlatformFee : Math.round((unitSelling * platformFeePct) / 100);
+            const isFoodProd = Boolean(pAny.foodMenuItemId || pAny.itemType === 'FOOD');
+            const distFrom = pAny.adminPricing?.distributedFrom ?? pAny.attributes?.distributedFrom ?? pAny.distributedFrom ?? 'platform_fee';
+            let itemPlatformFee = 0;
+            if (distFrom !== 'apexbee_commission' && distFrom !== 'vendor' && distFrom !== 'vendor_commission') {
+                const directPlatformFee = pAny.adminPricing?.platformFeeAmount ?? pAny.platformFeeAmount ?? 0;
+                const defaultPct = isFoodProd ? 5 : 5;
+                const platformFeePct = pAny.adminPricing?.platformFeePercent ?? pAny.platformFeePercent ?? defaultPct;
+                itemPlatformFee = directPlatformFee > 0 ? directPlatformFee : Math.round((unitSelling * platformFeePct) / 100);
+            }
             const itemTotal = unitSelling * item.quantity;
             subtotal += itemTotal;
             totalMrp += resolvedMrp * item.quantity;

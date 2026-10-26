@@ -20,11 +20,20 @@ router.post('/inventory/movements', auth_1.protect, productController_1.createIn
 router.post('/bulk-update', auth_1.protect, (0, auth_1.restrictTo)('vendor', 'wholesaler', 'manufacturer', 'admin'), productController_1.bulkUpdateProducts);
 router.post('/ai-generator', auth_1.protect, (0, auth_1.restrictTo)('vendor', 'wholesaler', 'manufacturer', 'admin'), productController_1.getAiProductSuggestions);
 router.get('/sku/:sku', productController_1.getProductBySku);
-router.get('/:id', productController_1.getProductById);
+router.get('/:id/share-preview', productController_1.getProductSocialSharePreview);
+router.get('/:id/og', productController_1.getProductSocialSharePreview);
+router.get('/:id', (req, res, next) => {
+    const userAgent = req.headers['user-agent'] || '';
+    if (/facebookexternalhit|WhatsApp|Twitterbot|TelegramBot|Slackbot|LinkedInBot|Pinterest|Discordbot/i.test(userAgent)) {
+        return (0, productController_1.getProductSocialSharePreview)(req, res);
+    }
+    return (0, productController_1.getProductById)(req, res);
+});
 // Seller/Admin only routes for product creation & edit
 router.post('/', auth_1.protect, (0, auth_1.restrictTo)('vendor', 'wholesaler', 'manufacturer', 'admin'), multer_1.productUpload, vendorCategoryAccessMiddleware_1.assertVendorCategoryAccess, vendorCategoryAccessMiddleware_1.validateCategoryProductPayload, productController_1.createProduct);
 router.put('/:id', auth_1.protect, (0, auth_1.restrictTo)('vendor', 'wholesaler', 'manufacturer', 'admin'), multer_1.productUpload, vendorCategoryAccessMiddleware_1.assertVendorCategoryAccess, vendorCategoryAccessMiddleware_1.validateCategoryProductPayload, productController_1.updateProduct);
 router.post('/:id/duplicate', auth_1.protect, (0, auth_1.restrictTo)('vendor', 'wholesaler', 'manufacturer', 'admin'), vendorCategoryAccessMiddleware_1.assertVendorCategoryAccess, productController_1.duplicateProduct);
+router.patch('/:id/toggle-status', auth_1.protect, (0, auth_1.restrictTo)('vendor', 'wholesaler', 'manufacturer', 'admin'), productController_1.toggleProductStatus);
 router.patch('/:id/archive', auth_1.protect, (0, auth_1.restrictTo)('vendor', 'wholesaler', 'manufacturer', 'admin'), productController_1.archiveProduct);
 router.delete('/:id', auth_1.protect, (0, auth_1.restrictTo)('vendor', 'wholesaler', 'manufacturer', 'admin'), productController_1.deleteProduct);
 router.post('/bulk-update', auth_1.protect, (0, auth_1.restrictTo)('vendor', 'wholesaler', 'manufacturer', 'admin'), productController_1.bulkUpdateProducts);

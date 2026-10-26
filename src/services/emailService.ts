@@ -33,6 +33,12 @@ export class EmailService {
             rejectUnauthorized: false,
           },
           () => {
+            socket.setTimeout(8000, () => {
+              console.warn('[SMTP] Connection timed out after 8000ms for recipient:', options.to);
+              socket.destroy();
+              resolve(false);
+            });
+
             let step = 0;
 
             const send = (cmd: string) => {

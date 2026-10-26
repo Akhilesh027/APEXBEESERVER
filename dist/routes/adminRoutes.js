@@ -10,6 +10,8 @@ const router = (0, express_1.Router)();
 // Restrict all routes under admin to users with 'admin' role
 router.get('/applications', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.getApplications);
 router.get('/applications/:id', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.getApplicationById);
+router.put('/applications/:id', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.updateApplicationDetails);
+router.patch('/applications/:id', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.updateApplicationDetails);
 router.patch('/applications/:id/approve', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.approveApplication);
 router.patch('/applications/:id/reject', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.rejectApplication);
 router.patch('/applications/:id/review', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.reviewApplication);
@@ -24,6 +26,8 @@ router.get('/vendors', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminCon
 router.get('/vendors/:userId/products', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.getVendorProducts);
 router.patch('/vendors/:userId/documents/:docId', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.updateVendorDocumentStatus);
 router.patch('/vendors/:userId/status', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.updateVendorStatus);
+router.put('/vendors/:userId/profile', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.updateAdminVendorProfile);
+router.patch('/vendors/:userId/profile', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.updateAdminVendorProfile);
 router.put('/vendors/:userId/category-governance', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.updateVendorCategoryGovernance);
 router.get('/service-providers/kyc', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.getServiceProviderKycs);
 router.patch('/service-providers/kyc/:id', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.updateServiceProviderKycStatus);
@@ -53,6 +57,12 @@ router.post('/entrepreneurs/:userId/release-commission', auth_1.protect, (0, aut
 router.get('/wallets', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.getWallets);
 router.get('/reconciliation', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.getReconciliationStats);
 router.get('/treasury-master', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.getTreasuryMasterStats);
+// Transaction Management routes
+router.get('/transactions', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.getAllTransactions);
+router.delete('/transactions/all', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.deleteAllTransactions);
+router.post('/transactions/delete-all', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.deleteAllTransactions);
+router.put('/transactions/:id', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.updateTransaction);
+router.delete('/transactions/:id', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.deleteTransaction);
 router.post('/settlements/release', auth_1.protect, (0, auth_1.restrictTo)('admin'), referralController_1.processReferralReleases);
 router.post('/inventory/cleanup-expired-reservations', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.cleanupExpiredReservations);
 router.get('/feature-flags', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.getFeatureFlag);

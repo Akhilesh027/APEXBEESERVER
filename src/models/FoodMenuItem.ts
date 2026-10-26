@@ -92,7 +92,7 @@ const FoodMenuItemSchema = new Schema<IFoodMenuItem>(
       ],
       default: 'PENDING_ADMIN_REVIEW',
     },
-    platformCommissionPercent: { type: Number, default: 12 },
+    platformCommissionPercent: { type: Number, default: 5 },
     vendorCommissionPercent: { type: Number, default: 0 },
     vendorCommissionAmount: { type: Number, default: 0 },
     distributedFrom: { type: String, default: 'platform_fee' },

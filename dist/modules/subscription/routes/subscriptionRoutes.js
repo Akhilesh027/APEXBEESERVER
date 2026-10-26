@@ -19,6 +19,7 @@ router.get('/vendor/subscription-products/plans', auth_1.protect, vendorSubscrip
 router.get('/vendor/subscription-products/addons', auth_1.protect, vendorSubscriptionController_1.VendorSubscriptionController.getAvailableAddons);
 router.post('/vendor/subscription-quotes', auth_1.protect, vendorSubscriptionController_1.VendorSubscriptionController.createQuote);
 router.post('/vendor/subscription-orders', auth_1.protect, vendorSubscriptionController_1.VendorSubscriptionController.createOrder);
+router.post('/vendor/subscription-orders/razorpay', auth_1.protect, vendorSubscriptionController_1.VendorSubscriptionController.createRazorpayOrder);
 router.post('/vendor/subscription-payments/create', auth_1.protect, vendorSubscriptionController_1.VendorSubscriptionController.processPayment);
 router.post('/vendor/subscriptions/clear-all', auth_1.protect, vendorSubscriptionController_1.VendorSubscriptionController.clearAllSubscriptions);
 router.get('/vendor/subscription-invoices', auth_1.protect, vendorSubscriptionController_1.VendorSubscriptionController.getInvoices);

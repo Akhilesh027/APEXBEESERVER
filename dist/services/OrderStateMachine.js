@@ -18,6 +18,8 @@ class OrderStateMachine {
     // changes that make sense, but reject illegal or duplicate transitions and enforce safety.
     static transitions = {
         'Placed': [
+            'Accepted',
+            'accepted',
             'Confirmed',
             'Packed',
             'Preparing',
@@ -33,6 +35,8 @@ class OrderStateMachine {
             'Payment Rejected'
         ],
         'placed': [
+            'Accepted',
+            'accepted',
             'Confirmed',
             'Packed',
             'Preparing',
@@ -383,7 +387,13 @@ class OrderStateMachine {
     }
     static async transition(orderId, toStatus, meta, session) {
         const executeTransition = async (sessionToUse) => {
-            const order = await Order_1.Order.findById(orderId).session(sessionToUse);
+            let order = null;
+            if (mongoose_1.default.Types.ObjectId.isValid(orderId)) {
+                order = await Order_1.Order.findById(orderId).session(sessionToUse);
+            }
+            if (!order) {
+                order = await Order_1.Order.findOne({ orderNumber: String(orderId) }).session(sessionToUse);
+            }
             if (!order) {
                 throw new Error('Order not found');
             }

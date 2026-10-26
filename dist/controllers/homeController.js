@@ -544,21 +544,8 @@ const getPersonalizationDetails = async (req, res) => {
                         status: { $in: liveStatuses },
                         isActive: true,
                         isArchived: { $ne: true }
-                    }).limit(4);
+                    }).limit(8);
                 }
-            }
-            // Fallback
-            if (continueShopping.length < 4) {
-                const liveStatuses = ['Live', 'Active', 'Approved', 'approved', 'active', 'published'];
-                const needed = 4 - continueShopping.length;
-                const skipIds = continueShopping.map(p => p._id);
-                const fallbacks = await Product_1.default.find({
-                    _id: { $nin: skipIds },
-                    status: { $in: liveStatuses },
-                    isActive: true,
-                    isArchived: { $ne: true }
-                }).limit(needed);
-                continueShopping = [...continueShopping, ...fallbacks];
             }
         }
         catch (err) {

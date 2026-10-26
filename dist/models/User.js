@@ -78,6 +78,10 @@ const UserSchema = new mongoose_1.Schema({
             required: true,
         },
     ],
+    franchiseLevel: {
+        type: String,
+        enum: ["state", "district", "mandal"],
+    },
     status: { type: String, default: "active" },
     isVerified: { type: Boolean, default: false },
     profileImage: { type: String, default: "" },

@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getAttributePresets = exports.upsertCategoryProductSchema = exports.getCategoryProductSchema = exports.getMergedCategoryAttributes = exports.verifyAcademyController = exports.seedAcademyController = exports.verifyServicesController = exports.seedServicesController = exports.verifyShoppingController = exports.seedShoppingController = exports.verifyDailyNeedsController = exports.seedDailyNeedsController = exports.verifyCatalogueCoreController = exports.seedCatalogueCoreController = exports.seedFullMvpController = exports.applyAttributePreset = exports.ATTRIBUTE_PRESETS = exports.seedVendorController = exports.getCategorySubcategories = exports.deleteCategory = exports.updateCategory = exports.getCategoryById = exports.getCategoryDropdown = exports.getCategoryTree = exports.getCategories = exports.createCategory = void 0;
+exports.getAttributePresets = exports.upsertCategoryProductSchema = exports.getCategoryProductSchema = exports.getMergedCategoryAttributes = exports.verifyAcademyController = exports.seedAcademyController = exports.verifyServicesController = exports.seedServicesController = exports.verifyShoppingController = exports.seedShoppingController = exports.verifyDailyNeedsController = exports.seedDailyNeedsController = exports.verifyCatalogueCoreController = exports.seedCatalogueCoreController = exports.seedFullMvpController = exports.applyAttributePreset = exports.ATTRIBUTE_PRESETS = exports.seedVendorController = exports.getCategorySubcategories = exports.deleteCategory = exports.updateCategory = exports.getCategoryById = exports.getCategoryDropdown = exports.getCategoryTree = exports.getCategories = exports.invalidateCategoriesCache = exports.createCategory = void 0;
 const streamifier_1 = __importDefault(require("streamifier"));
 const mongoose_1 = __importDefault(require("mongoose"));
 const Category_1 = __importDefault(require("../models/Category"));
@@ -158,6 +158,7 @@ const createCategory = async (req, res) => {
             isActive: isActive === 'false' ? false : true,
             sortOrder: Number(sortOrder) || 0,
         });
+        (0, exports.invalidateCategoriesCache)();
         res.status(201).json({
             message: 'Category created successfully',
             category,
@@ -171,11 +172,26 @@ const createCategory = async (req, res) => {
     }
 };
 exports.createCategory = createCategory;
+let cachedCategories = null;
+let cachedCategoriesExpiry = 0;
+const invalidateCategoriesCache = () => {
+    cachedCategories = null;
+    cachedCategoriesExpiry = 0;
+};
+exports.invalidateCategoriesCache = invalidateCategoriesCache;
 const getCategories = async (_req, res) => {
     try {
+        const now = Date.now();
+        if (cachedCategories && now < cachedCategoriesExpiry) {
+            return res.json({ success: true, categories: cachedCategories });
+        }
         const categories = await Category_1.default.find()
+            .select('name slug level parentId image banner sortOrder isActive')
             .populate('parentId', 'name slug level')
-            .sort({ level: 1, sortOrder: 1, createdAt: -1 });
+            .sort({ level: 1, sortOrder: 1, createdAt: -1 })
+            .lean();
+        cachedCategories = categories;
+        cachedCategoriesExpiry = now + 5 * 60 * 1000; // 5 minutes cache
         res.json({ success: true, categories });
     }
     catch (error) {
@@ -333,6 +349,7 @@ const updateCategory = async (req, res) => {
         category.sortOrder =
             sortOrder === undefined ? category.sortOrder : Number(sortOrder) || 0;
         await category.save();
+        (0, exports.invalidateCategoriesCache)();
         res.json({
             message: 'Category updated successfully',
             category,
@@ -360,6 +377,7 @@ const deleteCategory = async (req, res) => {
         if (!category) {
             return res.status(404).json({ message: 'Category not found' });
         }
+        (0, exports.invalidateCategoriesCache)();
         res.status(200).json({ message: 'Category deleted successfully' });
     }
     catch (error) {

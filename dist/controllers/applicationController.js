@@ -11,6 +11,7 @@ const Vendor_1 = require("../models/Vendor");
 const User_1 = require("../models/User");
 const Territory_1 = require("../models/Territory");
 const Referral_1 = require("../models/Referral");
+const Franchise_1 = require("../models/Franchise");
 const notificationHelper_1 = require("../services/notificationHelper");
 const mapApplicationTypeToRole = (appType) => {
     const type = appType.toLowerCase().trim();
@@ -180,8 +181,41 @@ const createApplication = async (req, res) => {
             sampleVideoLink,
             vehicleType,
             licenseNumber,
-            primaryCategory: req.body.primaryCategory || req.body.category || "",
-            category: req.body.primaryCategory || req.body.category || "",
+            categories: (() => {
+                const raw = req.body.categories;
+                if (Array.isArray(raw) && raw.length > 0) {
+                    return raw.flatMap((s) => typeof s === 'string' && s.includes(',') ? s.split(',').map((x) => x.trim()) : String(s).trim()).filter(Boolean);
+                }
+                const single = req.body.category || req.body.primaryCategory;
+                if (typeof single === 'string' && single.trim()) {
+                    return single.split(',').map((s) => s.trim()).filter(Boolean);
+                }
+                return [];
+            })(),
+            primaryCategory: (() => {
+                const raw = req.body.categories;
+                if (Array.isArray(raw) && raw.length > 0) {
+                    const first = typeof raw[0] === 'string' && raw[0].includes(',') ? raw[0].split(',')[0].trim() : String(raw[0]).trim();
+                    if (first)
+                        return first;
+                }
+                if (req.body.primaryCategory && typeof req.body.primaryCategory === 'string') {
+                    return req.body.primaryCategory.split(',')[0].trim();
+                }
+                if (req.body.category && typeof req.body.category === 'string') {
+                    return req.body.category.split(',')[0].trim();
+                }
+                return "";
+            })(),
+            category: (() => {
+                const raw = req.body.categories;
+                if (Array.isArray(raw) && raw.length > 0) {
+                    const flat = raw.flatMap((s) => typeof s === 'string' && s.includes(',') ? s.split(',').map((x) => x.trim()) : String(s).trim()).filter(Boolean);
+                    if (flat.length > 0)
+                        return flat.join(", ");
+                }
+                return req.body.category || req.body.primaryCategory || "";
+            })(),
             subCategory: (Array.isArray(req.body.approvedSubcategories) && req.body.approvedSubcategories.length > 0)
                 ? req.body.approvedSubcategories[0]
                 : (Array.isArray(req.body.subCategories) && req.body.subCategories.length > 0)
@@ -244,34 +278,118 @@ exports.createApplication = createApplication;
 const getUserApplications = async (req, res) => {
     try {
         const { userId } = req.params;
+        const queryEmail = req.query.email?.trim();
+        const queryPhone = (req.query.phone || req.query.mobile)?.trim();
         const queryFilters = [];
-        if (userId) {
-            queryFilters.push({ userId });
-            if (mongoose_1.default.Types.ObjectId.isValid(userId)) {
-                queryFilters.push({ userId: new mongoose_1.default.Types.ObjectId(userId) });
+        // Helper to register an email filter and lookup matching user
+        const addEmailFilter = async (em) => {
+            if (!em)
+                return;
+            const clean = em.trim();
+            queryFilters.push({ email: new RegExp(`^${clean}$`, "i") });
+            const u = await User_1.User.findOne({ email: new RegExp(`^${clean}$`, "i") });
+            if (u) {
+                queryFilters.push({ userId: u._id });
+                if (u.phone)
+                    queryFilters.push({ mobile: u.phone.trim() });
+            }
+        };
+        // Helper to register a phone filter and lookup matching user
+        const addPhoneFilter = async (ph) => {
+            if (!ph)
+                return;
+            const clean = ph.trim();
+            queryFilters.push({ mobile: clean });
+            const u = await User_1.User.findOne({ phone: clean });
+            if (u) {
+                queryFilters.push({ userId: u._id });
+                if (u.email)
+                    queryFilters.push({ email: new RegExp(`^${u.email.trim()}$`, "i") });
+            }
+        };
+        if (userId && userId !== "all" && userId !== "undefined" && userId !== "null") {
+            const decodedParam = decodeURIComponent(userId).trim();
+            if (mongoose_1.default.Types.ObjectId.isValid(decodedParam)) {
+                const objId = new mongoose_1.default.Types.ObjectId(decodedParam);
+                queryFilters.push({ userId: objId });
+                queryFilters.push({ userId: decodedParam });
+                const user = await User_1.User.findById(objId);
+                if (user) {
+                    if (user.email)
+                        queryFilters.push({ email: new RegExp(`^${user.email.trim()}$`, "i") });
+                    if (user.phone)
+                        queryFilters.push({ mobile: user.phone.trim() });
+                }
+            }
+            else if (decodedParam.includes("@")) {
+                await addEmailFilter(decodedParam);
+            }
+            else if (/^\d{10}$/.test(decodedParam)) {
+                await addPhoneFilter(decodedParam);
+            }
+            else {
+                queryFilters.push({ userId: decodedParam });
             }
         }
-        // Also look up user in DB to find their email/phone
-        if (userId && mongoose_1.default.Types.ObjectId.isValid(userId)) {
-            const user = await User_1.User.findById(userId);
-            if (user) {
-                if (user.email)
-                    queryFilters.push({ email: new RegExp(`^${user.email.trim()}$`, "i") });
-                if (user.phone)
-                    queryFilters.push({ mobile: user.phone.trim() });
-            }
+        if (queryEmail) {
+            await addEmailFilter(queryEmail);
+        }
+        if (queryPhone) {
+            await addPhoneFilter(queryPhone);
         }
         if (req.user) {
-            if (req.user._id)
-                queryFilters.push({ userId: req.user._id });
-            if (req.user.email)
-                queryFilters.push({ email: new RegExp(`^${req.user.email.trim()}$`, "i") });
-            if (req.user.phone)
-                queryFilters.push({ mobile: req.user.phone.trim() });
+            const authedUser = req.user;
+            if (authedUser._id)
+                queryFilters.push({ userId: authedUser._id });
+            if (authedUser.email)
+                queryFilters.push({ email: new RegExp(`^${authedUser.email.trim()}$`, "i") });
+            if (authedUser.phone)
+                queryFilters.push({ mobile: authedUser.phone.trim() });
         }
-        const applications = await BusinessApplication_1.BusinessApplication.find(queryFilters.length > 0 ? { $or: queryFilters } : { userId }).sort({
-            createdAt: -1,
-        });
+        let applications = [];
+        if (queryFilters.length > 0) {
+            applications = await BusinessApplication_1.BusinessApplication.find({ $or: queryFilters }).sort({
+                createdAt: -1,
+            });
+            // Auto-heal / backfill: check if applicant has a Franchise record without BusinessApplication
+            try {
+                const franchiseFilters = queryFilters.filter(f => f.email || f.mobile || f.userId);
+                if (franchiseFilters.length > 0) {
+                    const franchises = await Franchise_1.Franchise.find({ $or: franchiseFilters });
+                    for (const fc of franchises) {
+                        const hasApp = applications.some((a) => String(a.applicationType).toLowerCase().includes("franchise") ||
+                            String(a.roleId).toLowerCase().includes("franchise"));
+                        if (!hasApp) {
+                            const newApp = await BusinessApplication_1.BusinessApplication.create({
+                                userId: fc.userId,
+                                applicationType: "franchise",
+                                roleId: "franchise",
+                                businessName: fc.businessName || `${fc.ownerName}'s Franchise`,
+                                ownerName: fc.ownerName,
+                                mobile: fc.mobile,
+                                email: fc.email,
+                                state: fc.state,
+                                district: fc.district || "",
+                                mandal: fc.mandal || "",
+                                address: fc.address || "Address Pending",
+                                pincode: fc.pincode || "",
+                                franchiseLevel: fc.franchiseLevel || "mandal",
+                                investmentCapacity: String(fc.securityDeposit?.amountPaid || ""),
+                                status: fc.status === "active" ? "approved" : "pre_approved",
+                                kycStatus: fc.kycStatus === "Approved" ? "verified" : "pending",
+                                assignedFranchise: {
+                                    mandalFranchiseId: fc._id,
+                                },
+                            });
+                            applications.unshift(newApp);
+                        }
+                    }
+                }
+            }
+            catch (autoErr) {
+                console.warn("[Auto-backfill Franchise Application Error]:", autoErr);
+            }
+        }
         const normalizedApps = applications.map((app) => ({
             _id: app._id,
             userId: app.userId,
@@ -287,6 +405,11 @@ const getUserApplications = async (req, res) => {
             state: app.state,
             district: app.district,
             mandal: app.mandal,
+            address: app.address,
+            pincode: app.pincode,
+            primaryCategory: app.primaryCategory || app.category || "",
+            category: app.category || app.primaryCategory || "",
+            subCategory: app.subCategory || "",
             restaurantName: app.restaurantName || app.businessName,
             foodBusinessType: app.foodBusinessType || "RESTAURANT",
             fssaiNumber: app.fssaiNumber || "",

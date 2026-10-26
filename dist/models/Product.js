@@ -75,6 +75,10 @@ const ProductSchema = new mongoose_1.Schema({
     attributes: { type: mongoose_1.Schema.Types.Mixed },
     isStoreProduct: { type: Boolean, default: false },
     isSubscriptionAvailable: { type: Boolean, default: false },
+    isPreOrder: { type: Boolean, default: false },
+    preOrderReleaseDate: { type: Date, default: null },
+    preOrderMessage: { type: String, default: '' },
+    preOrderLimit: { type: Number, default: 0 },
     isSelfPickup: { type: Boolean, default: true },
     deliveryScope: { type: String, enum: ['local', 'pan_india', 'both'], default: 'local' },
     isLocalDelivery: { type: Boolean, default: true },
@@ -122,5 +126,14 @@ ProductSchema.index({ moderationStatus: 1 });
 ProductSchema.index({ isActive: 1 });
 ProductSchema.index({ seedKey: 1 }, { unique: true, sparse: true });
 ProductSchema.index({ catalogueSource: 1 });
+ProductSchema.index({ status: 1, isActive: 1, isArchived: 1, createdAt: -1 });
+ProductSchema.index({ categoryId: 1, status: 1, isActive: 1, createdAt: -1 });
+ProductSchema.index({ sellerId: 1, isArchived: 1, createdAt: -1 });
+ProductSchema.index({ createdAt: -1 });
+ProductSchema.index({ status: 1 });
+ProductSchema.index({ isArchived: 1 });
+ProductSchema.index({ sellerId: 1 });
+ProductSchema.index({ deliveryScope: 1 });
+ProductSchema.index({ isPanIndia: 1 });
 exports.Product = mongoose_1.default.model('Product', ProductSchema);
 exports.default = exports.Product;

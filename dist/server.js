@@ -136,11 +136,19 @@ app.use("/api/territories", territoryRoutes_1.default);
 app.use('/api/business-relationships', businessRelationshipRoutes_1.default);
 app.use('/api/leads', leadRoutes_1.default);
 app.use('/api/commission-rules', commissionRuleRoutes_1.default);
+const feePricingRoutes_1 = __importDefault(require("./routes/feePricingRoutes"));
+app.use('/api/fee-pricing', feePricingRoutes_1.default);
+app.use('/api/admin/fee-pricing', feePricingRoutes_1.default);
 app.use("/api/referrals", referralRoutes_1.default);
 app.use("/api/referral", referralRoutes_1.default);
 app.use("/api/wallet", walletRoutes_1.default);
 app.use("/api/payment", paymentRoutes_1.default);
+app.use("/api/razorpay", paymentRoutes_1.default);
 app.use("/api/products", productRoutes_1.default);
+const productController_1 = require("./controllers/productController");
+app.get('/product/:id', productController_1.getProductSocialSharePreview);
+app.get('/p/:id', productController_1.getProductSocialSharePreview);
+app.get('/share/product/:id', productController_1.getProductSocialSharePreview);
 app.use("/api/reviews", productReviewRoutes_1.default);
 app.use("/api/product/reviews", productReviewRoutes_1.default);
 app.use("/api/product-reviews", productReviewRoutes_1.default);
@@ -365,6 +373,65 @@ const startServer = async () => {
                 console.error('syncApprovedFoodPartnerApplications error:', err.message);
             }
         };
+        const cleanupUnpaidVendorCommission = async () => {
+            try {
+                const db = mongoose_1.default.connection.db;
+                if (!db)
+                    return;
+                const txCol = db.collection('wallettransactions');
+                const walletCol = db.collection('wallets');
+                const commCol = db.collection('commissionsettlements');
+                const query = {
+                    $or: [
+                        { remarks: { $regex: /ASFDASDF/i } },
+                        { notes: { $regex: /ASFDASDF/i } },
+                        { referenceId: new mongoose_1.default.Types.ObjectId("6ad08de7bbcfcd01d71ebc0b") }
+                    ]
+                };
+                const txs = await txCol.find(query).toArray();
+                for (const tx of txs) {
+                    if (tx.amount > 0 && tx.userId) {
+                        const wallet = await walletCol.findOne({ userId: tx.userId });
+                        if (wallet) {
+                            const newBalance = Math.max(0, (wallet.balance || 0) - tx.amount);
+                            const updatedLedger = Array.isArray(wallet.ledger)
+                                ? wallet.ledger.filter((entry) => String(entry.referenceId) !== "6ad08de7bbcfcd01d71ebc0b" &&
+                                    !entry.remarks?.includes("ASFDASDF"))
+                                : [];
+                            await walletCol.updateOne({ _id: wallet._id }, { $set: { balance: newBalance, ledger: updatedLedger } });
+                            console.log(`[Cleanup] Reverted ₹${tx.amount} from wallet for ASFDASDF (new balance: ₹${newBalance})`);
+                        }
+                    }
+                    await txCol.deleteOne({ _id: tx._id });
+                }
+                await commCol.deleteMany(query);
+            }
+            catch (err) {
+                console.error('[Cleanup] cleanupUnpaidVendorCommission error:', err.message);
+            }
+        };
+        const sanitizeRestaurantDiningProfiles = async () => {
+            try {
+                // Specifically update bakeries, sweets and cafes to ensure they do not show in Dineout reservations
+                await RestaurantProfile_1.RestaurantProfile.updateMany({
+                    $or: [
+                        { restaurantName: { $regex: /bakery|sweets|sweet|cafe|chai|biscuit|cake/i } },
+                        { businessType: { $in: ['CAFE_BAKERY', 'CAFE_BAKERY_BEVERAGES', 'SWEETS_DESSERTS', 'STREET_FOOD'] } }
+                    ]
+                }, {
+                    $set: {
+                        diningEnabled: false
+                    }
+                });
+                // Ensure specific vendors identified by user are categorized as bakeries/sweets
+                await RestaurantProfile_1.RestaurantProfile.updateMany({ restaurantName: { $regex: /bb cafe|cafe&bakery/i } }, { $set: { businessType: 'CAFE_BAKERY', diningEnabled: false } });
+                await RestaurantProfile_1.RestaurantProfile.updateMany({ restaurantName: { $regex: /siva nandini/i } }, { $set: { businessType: 'SWEETS_DESSERTS', diningEnabled: false } });
+                console.log('[Sanitizer] Dining profiles sanitized: Bakeries and sweet shops excluded from table reservations.');
+            }
+            catch (err) {
+                console.error('[Sanitizer] sanitizeRestaurantDiningProfiles error:', err.message);
+            }
+        };
         if (process.env.NODE_APP_INSTANCE === undefined || process.env.NODE_APP_INSTANCE === '0') {
             try {
                 await (0, seed_1.seedDatabase)();
@@ -383,6 +450,18 @@ const startServer = async () => {
             }
             catch (e) {
                 console.error('syncApprovedFoodPartnerApplications non-fatal error:', e.message);
+            }
+            try {
+                await sanitizeRestaurantDiningProfiles();
+            }
+            catch (e) {
+                console.error('sanitizeRestaurantDiningProfiles non-fatal error:', e.message);
+            }
+            try {
+                await cleanupUnpaidVendorCommission();
+            }
+            catch (e) {
+                console.error('cleanupUnpaidVendorCommission non-fatal error:', e.message);
             }
         }
         else {
@@ -465,4 +544,4 @@ const startServer = async () => {
 if (process.env.NODE_ENV !== 'test') {
     startServer();
 }
-// Trigger reload 51
+// Trigger reload 56

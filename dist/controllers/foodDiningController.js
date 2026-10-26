@@ -44,84 +44,14 @@ const getDiningBookings = async (req, res) => {
                 { tableType: searchRegex }
             ];
         }
-        let bookings = await TableBooking_1.TableBooking.find(query).sort({ createdAt: -1 });
-        // Initial sample table reservations if none exist for demonstration
-        if (bookings.length === 0 && !status && !date && !search) {
-            const todayStr = new Date().toISOString().split('T')[0];
-            const tomorrowObj = new Date();
-            tomorrowObj.setDate(tomorrowObj.getDate() + 1);
-            const tomorrowStr = tomorrowObj.toISOString().split('T')[0];
-            const sampleBookings = [
-                {
-                    restaurantId: profile._id,
-                    bookingNumber: `TB-${Math.floor(100000 + Math.random() * 900000)}`,
-                    customerName: 'Akhilesh Reddy',
-                    customerPhone: '9707010797',
-                    customerEmail: 'akhilesh@apexbee.in',
-                    guestCount: 4,
-                    bookingDate: todayStr,
-                    bookingTime: '08:00 PM',
-                    tableType: 'VIP Booth Section',
-                    occasion: 'Birthday Celebration 🎂',
-                    specialRequests: 'Window side booth with candlelight setup preferred',
-                    status: 'PENDING',
-                    tableNumber: 'T-04',
-                    depositAmount: 500,
-                    depositStatus: 'PAID'
-                },
-                {
-                    restaurantId: profile._id,
-                    bookingNumber: `TB-${Math.floor(100000 + Math.random() * 900000)}`,
-                    customerName: 'Priya Sharma',
-                    customerPhone: '9848012345',
-                    customerEmail: 'priya.s@gmail.com',
-                    guestCount: 2,
-                    bookingDate: todayStr,
-                    bookingTime: '07:30 PM',
-                    tableType: 'Rooftop Terrace',
-                    occasion: 'Anniversary Dinner 💖',
-                    specialRequests: 'Quiet corner table, quiet ambiance',
-                    status: 'CONFIRMED',
-                    tableNumber: 'RT-02',
-                    depositAmount: 300,
-                    depositStatus: 'PAID'
-                },
-                {
-                    restaurantId: profile._id,
-                    bookingNumber: `TB-${Math.floor(100000 + Math.random() * 900000)}`,
-                    customerName: 'Rajesh Varma',
-                    customerPhone: '9177176969',
-                    customerEmail: 'varma.corp@gmail.com',
-                    guestCount: 6,
-                    bookingDate: todayStr,
-                    bookingTime: '01:30 PM',
-                    tableType: 'Family Dining Suite',
-                    occasion: 'Business Lunch 💼',
-                    specialRequests: 'High chair needed for 1 kid',
-                    status: 'SEATED',
-                    tableNumber: 'F-01',
-                    depositAmount: 0,
-                    depositStatus: 'PAID'
-                },
-                {
-                    restaurantId: profile._id,
-                    bookingNumber: `TB-${Math.floor(100000 + Math.random() * 900000)}`,
-                    customerName: 'Ananya Deshmukh',
-                    customerPhone: '9988776655',
-                    guestCount: 3,
-                    bookingDate: tomorrowStr,
-                    bookingTime: '08:30 PM',
-                    tableType: 'Standard Indoor',
-                    occasion: 'Casual Dining',
-                    status: 'CONFIRMED',
-                    tableNumber: 'T-08',
-                    depositAmount: 0,
-                    depositStatus: 'PAID'
-                }
-            ];
-            await TableBooking_1.TableBooking.insertMany(sampleBookings);
-            bookings = await TableBooking_1.TableBooking.find(query).sort({ createdAt: -1 });
-        }
+        // Purge any previously seeded demo table bookings
+        await TableBooking_1.TableBooking.deleteMany({
+            $or: [
+                { customerName: { $in: ['Akhilesh Reddy', 'Priya Sharma', 'Rajesh Varma', 'Ananya Deshmukh'] } },
+                { customerPhone: { $in: ['9707010797', '9848012345', '9177176969', '9988776655'] } },
+            ],
+        }).catch(() => { });
+        const bookings = await TableBooking_1.TableBooking.find(query).sort({ createdAt: -1 });
         const counts = {
             total: bookings.length,
             pending: bookings.filter((b) => b.status === 'PENDING').length,
@@ -231,12 +161,13 @@ const getDiningInfo = async (req, res) => {
         const objectIds = rawIds
             .filter((id) => mongoose_1.default.Types.ObjectId.isValid(String(id)))
             .map((id) => new mongoose_1.default.Types.ObjectId(String(id)));
+        const allIds = [...objectIds, ...rawIds.map(String)];
         const profile = await RestaurantProfile_1.RestaurantProfile.findOne({
             $or: [
-                { _id: { $in: objectIds } },
-                { vendorId: { $in: objectIds } },
-                { userId: { $in: objectIds } },
-                { storeId: { $in: objectIds } },
+                { _id: { $in: allIds } },
+                { vendorId: { $in: allIds } },
+                { userId: { $in: allIds } },
+                { storeId: { $in: allIds } },
             ],
         });
         if (!profile) {
@@ -299,6 +230,7 @@ const updateDiningInfo = async (req, res) => {
         const objectIds = rawIds
             .filter((id) => mongoose_1.default.Types.ObjectId.isValid(String(id)))
             .map((id) => new mongoose_1.default.Types.ObjectId(String(id)));
+        const allIds = [...objectIds, ...rawIds.map(String)];
         const { diningEnabled, diningInfo } = req.body;
         const updateData = {};
         if (typeof diningEnabled === 'boolean') {
@@ -309,10 +241,10 @@ const updateDiningInfo = async (req, res) => {
         }
         const profile = await RestaurantProfile_1.RestaurantProfile.findOneAndUpdate({
             $or: [
-                { _id: { $in: objectIds } },
-                { vendorId: { $in: objectIds } },
-                { userId: { $in: objectIds } },
-                { storeId: { $in: objectIds } },
+                { _id: { $in: allIds } },
+                { vendorId: { $in: allIds } },
+                { userId: { $in: allIds } },
+                { storeId: { $in: allIds } },
             ],
         }, updateData, { new: true });
         if (!profile) {

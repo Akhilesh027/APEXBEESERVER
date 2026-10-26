@@ -36,36 +36,30 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.ReferralTransaction = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
 const ReferralTransactionSchema = new mongoose_1.Schema({
-    recipientUserId: { type: mongoose_1.Schema.Types.ObjectId, ref: "User", required: true, index: true },
-    referredUserId: { type: mongoose_1.Schema.Types.ObjectId, ref: "User", required: true, index: true },
-    orderId: { type: mongoose_1.Schema.Types.ObjectId, ref: "Order", required: true },
-    level: { type: Number, required: true },
-    amount: { type: Number, required: true },
+    recipientUserId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    referredUserId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    orderId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Order', index: true },
+    level: { type: Number, default: 1 },
+    amount: { type: Number, required: true, min: 0 },
     transactionType: {
         type: String,
-        enum: ["first_order_bonus", "product_commission", "first_purchase_product_commission"],
-        required: true
+        required: true,
+        index: true,
     },
-    rewardReason: {
-        type: String,
-        enum: ["first_order_bonus", "product_commission", "first_purchase_product_commission"],
-        required: true
-    },
-    notes: { type: String, default: "" },
+    rewardReason: { type: String, default: '' },
+    releaseDate: { type: Date, index: true },
     status: {
         type: String,
-        enum: ["placed", "pending", "released", "cancelled"],
-        default: "placed",
-        index: true
+        enum: ['placed', 'pending', 'released', 'cancelled'],
+        default: 'placed',
+        index: true,
     },
     released: { type: Boolean, default: false },
     walletCredited: { type: Boolean, default: false },
-    releasedBy: { type: mongoose_1.Schema.Types.ObjectId, ref: "User", default: null },
-    releaseDate: { type: Date, required: true },
-    releasedAt: { type: Date, default: null }
-}, { timestamps: true });
-// Compound unique index to prevent duplicate payouts
-ReferralTransactionSchema.index({ referredUserId: 1, orderId: 1, level: 1, transactionType: 1 }, { unique: true });
-ReferralTransactionSchema.index({ orderId: 1, recipientUserId: 1, level: 1, transactionType: 1 }, { unique: true });
-ReferralTransactionSchema.index({ recipientUserId: 1, transactionType: 1, createdAt: -1 });
-exports.ReferralTransaction = mongoose_1.default.model("ReferralTransaction", ReferralTransactionSchema);
+    releasedAt: { type: Date },
+    releasedBy: { type: mongoose_1.Schema.Types.Mixed },
+    releasedTransactionId: { type: String },
+}, { timestamps: true, strict: false });
+ReferralTransactionSchema.index({ referredUserId: 1, orderId: 1, level: 1, transactionType: 1 });
+exports.ReferralTransaction = mongoose_1.default.model('ReferralTransaction', ReferralTransactionSchema);
+exports.default = exports.ReferralTransaction;

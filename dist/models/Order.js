@@ -36,17 +36,19 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.Order = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
 const OrderItemSchema = new mongoose_1.Schema({
-    productId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Product', required: true },
+    productId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Product', required: false },
     productName: { type: String, required: true },
     sku: { type: String, default: 'N/A' },
     quantity: { type: Number, required: true, default: 1 },
     price: { type: Number, required: true },
     categoryId: { type: mongoose_1.Schema.Types.Mixed },
     categoryName: { type: String, default: '' },
+    isPreOrder: { type: Boolean, default: false },
+    preOrderReleaseDate: { type: Date, default: null },
 });
 const OrderSchema = new mongoose_1.Schema({
     orderNumber: { type: String, required: true, unique: true },
-    customerId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true },
+    customerId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: false },
     sellerId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true },
     items: { type: [OrderItemSchema], required: true },
     totalAmount: { type: Number, required: true },
@@ -90,6 +92,10 @@ const OrderSchema = new mongoose_1.Schema({
             'Returned',
             'Payment Verified',
             'Payment Rejected',
+            'ready',
+            'served',
+            'Served',
+            'completed',
             'Cancelled',
         ],
         default: 'placed',
@@ -141,12 +147,17 @@ const OrderSchema = new mongoose_1.Schema({
     categoryId: { type: mongoose_1.Schema.Types.Mixed },
     categoryName: { type: String, default: '' },
     orderType: { type: String, default: 'RETAIL' },
+    tableNumber: { type: String, default: '' },
     estimatedDeliveryMinutes: { type: Number, default: 20 },
     acceptedAt: { type: Date, default: null },
     estimatedDeliveryTime: { type: Date, default: null },
     prepStatus: { type: String, default: 'pending' },
     paymentMethod: { type: String, default: 'cod' },
     paymentDetails: { type: mongoose_1.Schema.Types.Mixed },
+    referralCode: { type: String, default: null, trim: true },
+    productSharerId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', default: null },
+    isPreOrder: { type: Boolean, default: false },
+    preOrderReleaseDate: { type: Date, default: null },
 }, { timestamps: true });
 OrderSchema.index({ orderNumber: 1 });
 OrderSchema.index({ customerId: 1 });

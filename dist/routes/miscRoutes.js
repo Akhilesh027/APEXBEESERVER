@@ -4,6 +4,8 @@ const express_1 = require("express");
 const auth_1 = require("../middleware/auth");
 const miscController_1 = require("../controllers/miscController");
 const router = (0, express_1.Router)();
+// Test SMS Route
+router.post("/sms/test", miscController_1.testSendSms);
 // Test Seeding & Product Scope Routes
 router.get("/seed-location-test", miscController_1.triggerLocationSeed);
 router.post("/seed-location-test", miscController_1.triggerLocationSeed);

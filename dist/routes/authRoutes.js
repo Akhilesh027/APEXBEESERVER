@@ -4,6 +4,7 @@ const express_1 = require("express");
 const authController_1 = require("../controllers/authController");
 const auth_1 = require("../middleware/auth");
 const router = (0, express_1.Router)();
+router.post('/check-exists', authController_1.checkUserExists);
 router.post('/send-otp', authController_1.sendOtp);
 router.post('/verify-otp', authController_1.verifyOtp);
 router.post('/vendor-send-otp', authController_1.sendVendorLoginOtp);
@@ -13,4 +14,10 @@ router.post('/login', authController_1.login);
 router.post('/google', authController_1.googleAuth);
 router.get('/me', auth_1.protect, authController_1.getMe);
 router.post('/change-password', auth_1.protect, authController_1.changePassword);
+router.post('/reset-password', authController_1.resetPassword);
+// Aliases for forgot/reset password flows
+router.post('/forgot-password', authController_1.sendOtp);
+router.post('/forgot-password-otp/check', authController_1.sendOtp);
+router.post('/verify-reset-otp/check', authController_1.verifyOtp);
+router.post('/reset-password-otp/check', authController_1.resetPassword);
 exports.default = router;

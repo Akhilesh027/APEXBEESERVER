@@ -42,13 +42,21 @@ exports.createTableBooking = createTableBooking;
 const getCustomerTableBookings = async (req, res) => {
     try {
         const { phone, email, userId } = req.query;
-        const query = {};
-        if (phone)
-            query.customerPhone = String(phone);
-        else if (email)
-            query.customerEmail = String(email);
+        const orConditions = [];
+        if (phone) {
+            const raw = String(phone).trim();
+            const last10 = raw.replace(/\D/g, '').slice(-10);
+            orConditions.push({ customerPhone: raw });
+            if (last10) {
+                orConditions.push({ customerPhone: { $regex: last10 } });
+            }
+        }
+        if (email) {
+            orConditions.push({ customerEmail: { $regex: String(email).trim(), $options: 'i' } });
+        }
+        const query = orConditions.length > 0 ? { $or: orConditions } : {};
         const bookings = await TableBooking_1.default.find(query)
-            .populate('restaurantId', 'restaurantName name logo coverBanner locality city phone')
+            .populate('restaurantId', 'restaurantName name logo coverBanner bannerImage locality city phone address')
             .sort({ createdAt: -1 });
         return res.json({ success: true, count: bookings.length, bookings });
     }

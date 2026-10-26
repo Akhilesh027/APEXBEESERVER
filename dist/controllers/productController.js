@@ -36,7 +36,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.removeSeededProducts = exports.seedProductsForAllCategories = exports.getBuyAgainProducts = exports.getProductBySku = exports.createInventoryMovement = exports.getInventoryMovements = exports.getAiProductSuggestions = exports.archiveProduct = exports.duplicateProduct = exports.getProductsByVendor = exports.bulkUpdateProducts = exports.bulkRejectProducts = exports.bulkApproveProducts = exports.quickApproveVendorEdit = exports.rejectProduct = exports.sellerNegotiatePricing = exports.sellerAcceptPricing = exports.configureAdminPricing = exports.deleteProduct = exports.updateProduct = exports.getProductById = exports.getMyProducts = exports.getAllProducts = exports.createProduct = void 0;
+exports.getProductSocialSharePreview = exports.removeSeededProducts = exports.seedProductsForAllCategories = exports.getBuyAgainProducts = exports.getProductBySku = exports.createInventoryMovement = exports.getInventoryMovements = exports.getAiProductSuggestions = exports.toggleProductStatus = exports.archiveProduct = exports.duplicateProduct = exports.getProductsByVendor = exports.bulkUpdateProducts = exports.bulkRejectProducts = exports.bulkApproveProducts = exports.quickApproveVendorEdit = exports.rejectProduct = exports.sellerNegotiatePricing = exports.sellerAcceptPricing = exports.configureAdminPricing = exports.deleteProduct = exports.updateProduct = exports.getProductById = exports.getMyProducts = exports.getAllProducts = exports.createProduct = void 0;
 const mongoose_1 = __importDefault(require("mongoose"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const Product_1 = __importDefault(require("../models/Product"));
@@ -139,6 +139,13 @@ const populateProduct = (query) => {
         .populate('categoryId', 'name slug level brands attributes')
         .populate('subCategoryId', 'name slug level brands attributes')
         .populate('childCategoryId', 'name slug level brands attributes');
+};
+const populateProductList = (query) => {
+    return query
+        .populate('sellerId', 'name email mobile roles shopName storeName businessName storeLogo profilePicture logo pincode pinCode mandal district location')
+        .populate('categoryId', 'name slug level image')
+        .populate('subCategoryId', 'name slug level')
+        .populate('childCategoryId', 'name slug level');
 };
 const roundMoney = (val) => Math.round((val + Number.EPSILON) * 100) / 100;
 const buildAdminPricing = (body) => {
@@ -422,6 +429,10 @@ const createProduct = async (req, res) => {
                 submittedAt: new Date(),
                 isStoreProduct: req.body.isStoreProduct === 'true' || req.body.isStoreProduct === true,
                 isSubscriptionAvailable: req.body.isSubscriptionAvailable === 'true' || req.body.isSubscriptionAvailable === true,
+                isPreOrder: req.body.isPreOrder === 'true' || req.body.isPreOrder === true,
+                preOrderReleaseDate: req.body.preOrderReleaseDate ? new Date(req.body.preOrderReleaseDate) : null,
+                preOrderMessage: req.body.preOrderMessage || '',
+                preOrderLimit: Number(req.body.preOrderLimit) || 0,
                 isSelfPickup: req.body.isSelfPickup === undefined ? true : (req.body.isSelfPickup === 'true' || req.body.isSelfPickup === true),
                 deliveryScope: req.body.deliveryScope || (req.body.isPanIndia === 'true' || req.body.isPanIndia === true ? 'pan_india' : 'local'),
                 isPanIndia: req.body.deliveryScope === 'pan_india' || req.body.isPanIndia === 'true' || req.body.isPanIndia === true,
@@ -503,7 +514,7 @@ const getAllProducts = async (req, res) => {
                 // Fetch active vendors and filter by coordinate distance <= deliveryRadiusKm (or max 20km)
                 const allActiveVendors = await Vendor_1.Vendor.find({
                     status: { $in: ['active', 'Approved', 'approved', 'ACTIVE', 'Active'] }
-                }).select('_id userId location pincode mandal district deliveryRadiusKm');
+                }).select('_id userId location pincode mandal district deliveryRadiusKm').lean();
                 matchingVendors = allActiveVendors.filter(v => {
                     const vLng = v.location?.coordinates?.[0];
                     const vLat = v.location?.coordinates?.[1];
@@ -522,9 +533,9 @@ const getAllProducts = async (req, res) => {
             else {
                 const vendorLocationOr = [];
                 if (pincode) {
-                    vendorLocationOr.push({ pincode: String(pincode).trim() });
-                    vendorLocationOr.push({ pinCode: String(pincode).trim() });
-                    vendorLocationOr.push({ address: { $regex: String(pincode).trim(), $options: 'i' } });
+                    const cleanPin = String(pincode).trim();
+                    vendorLocationOr.push({ pincode: cleanPin });
+                    vendorLocationOr.push({ pinCode: cleanPin });
                 }
                 if (mandal) {
                     const cleanMandal = mandal.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
@@ -539,7 +550,7 @@ const getAllProducts = async (req, res) => {
                     matchingVendors = await Vendor_1.Vendor.find({
                         status: { $in: ['active', 'Approved', 'approved', 'ACTIVE', 'Active'] },
                         $or: vendorLocationOr
-                    }).select('_id userId');
+                    }).select('_id userId').lean();
                 }
             }
             const allowedSellerIds = matchingVendors.flatMap(v => [v._id, v.userId]).filter(Boolean);
@@ -579,10 +590,10 @@ const getAllProducts = async (req, res) => {
             // Admin query for all products: do not restrict by status or active state
         }
         else {
-            if (status && status !== 'draft' && status !== 'pending' && status !== 'rejected') {
+            if (status && status !== 'draft' && status !== 'pending' && status !== 'rejected' && status !== 'Inactive' && status !== 'inactive') {
                 andConditions.push({ status: { $in: liveStatuses } });
             }
-            else if (!status && !sellerId) {
+            else if (!status) {
                 andConditions.push({ status: { $in: liveStatuses } });
             }
             else if (status) {
@@ -591,13 +602,11 @@ const getAllProducts = async (req, res) => {
             if (isActive !== undefined) {
                 andConditions.push({ isActive: isActive === 'true' });
             }
-            else if (!sellerId) {
+            else {
                 andConditions.push({ isActive: true });
             }
-            if (!sellerId) {
-                andConditions.push({ isArchived: { $ne: true } });
-                andConditions.push({ moderationStatus: { $ne: 'rejected' } });
-            }
+            andConditions.push({ isArchived: { $ne: true } });
+            andConditions.push({ moderationStatus: { $ne: 'rejected' } });
         }
         // 4. Category filtering
         if (category || categoryId) {
@@ -605,7 +614,7 @@ const getAllProducts = async (req, res) => {
             const cleanParam = catParam.replace(/[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDC00-\uDFFF]/g, '').trim();
             let foundCategory = null;
             if (mongoose_1.default.Types.ObjectId.isValid(catParam)) {
-                foundCategory = await Category_1.default.findById(catParam);
+                foundCategory = await Category_1.default.findById(catParam).select('_id').lean();
             }
             if (!foundCategory && cleanParam) {
                 const regex = new RegExp(cleanParam.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&'), 'i');
@@ -615,12 +624,12 @@ const getAllProducts = async (req, res) => {
                         { slug: catParam.toLowerCase() },
                         { slug: cleanParam.toLowerCase().replace(/[^a-z0-9]+/g, '-') }
                     ]
-                });
+                }).select('_id').lean();
             }
             if (foundCategory) {
-                const childCats = await Category_1.default.find({ parentId: foundCategory._id }).select('_id');
+                const childCats = await Category_1.default.find({ parentId: foundCategory._id }).select('_id').lean();
                 const childCatIds = childCats.map((c) => c._id);
-                const grandChildCats = await Category_1.default.find({ parentId: { $in: childCatIds } }).select('_id');
+                const grandChildCats = await Category_1.default.find({ parentId: { $in: childCatIds } }).select('_id').lean();
                 const allCatIds = [foundCategory._id, ...childCatIds, ...grandChildCats.map((c) => c._id)];
                 andConditions.push({
                     $or: [
@@ -663,10 +672,15 @@ const getAllProducts = async (req, res) => {
         let query = Product_1.default.find(filter)
             .sort({ createdAt: -1 })
             .skip((pageNum - 1) * limitNum)
-            .limit(limitNum);
-        const rawProducts = await populateProduct(query.select(selectString));
+            .limit(limitNum)
+            .lean();
+        const rawProducts = await populateProductList(query.select(selectString));
         const sellerIds = rawProducts.flatMap((p) => [p.sellerId?._id, p.sellerId, p.createdBy]).filter(Boolean);
-        const vendors = await Vendor_1.Vendor.find({ $or: [{ userId: { $in: sellerIds } }, { _id: { $in: sellerIds } }] });
+        const vendors = sellerIds.length > 0
+            ? await Vendor_1.Vendor.find({ $or: [{ userId: { $in: sellerIds } }, { _id: { $in: sellerIds } }] })
+                .select('_id userId businessName ownerName shopName storeName location pincode mandal district state deliveryMode storeDesign')
+                .lean()
+            : [];
         const vendorMap = new Map();
         vendors.forEach((v) => {
             if (v.userId)
@@ -675,7 +689,7 @@ const getAllProducts = async (req, res) => {
                 vendorMap.set(v._id.toString(), v);
         });
         const products = rawProducts.map((p) => {
-            const productObj = p.toObject ? p.toObject() : p;
+            const productObj = p;
             const sellerIdStr = (p.sellerId?._id || p.sellerId || '').toString();
             const createdByStr = (p.createdBy?._id || p.createdBy || '').toString();
             const vendor = vendorMap.get(sellerIdStr) || vendorMap.get(createdByStr);
@@ -806,9 +820,9 @@ const getMyProducts = async (req, res) => {
             });
             return;
         }
-        const products = await populateProduct(Product_1.default.find({ sellerId, isArchived: { $ne: true } })).sort({
-            createdAt: -1,
-        });
+        const products = await populateProductList(Product_1.default.find({ sellerId, isArchived: { $ne: true } })
+            .sort({ createdAt: -1 })
+            .lean());
         res.json({ products });
     }
     catch (error) {
@@ -922,6 +936,10 @@ const updateProduct = async (req, res) => {
                 minimumOrderQuantity: product.minimumOrderQuantity || 1,
                 isStoreProduct: product.isStoreProduct,
                 isSubscriptionAvailable: product.isSubscriptionAvailable,
+                isPreOrder: product.isPreOrder,
+                preOrderReleaseDate: product.preOrderReleaseDate,
+                preOrderMessage: product.preOrderMessage,
+                preOrderLimit: product.preOrderLimit,
                 deliveryScope: product.deliveryScope,
                 brand: product.brand,
                 snapshotAt: new Date(),
@@ -1004,6 +1022,18 @@ const updateProduct = async (req, res) => {
         }
         if (req.body.isSubscriptionAvailable !== undefined) {
             product.isSubscriptionAvailable = req.body.isSubscriptionAvailable === 'true' || req.body.isSubscriptionAvailable === true;
+        }
+        if (req.body.isPreOrder !== undefined) {
+            product.isPreOrder = req.body.isPreOrder === 'true' || req.body.isPreOrder === true;
+        }
+        if (req.body.preOrderReleaseDate !== undefined) {
+            product.preOrderReleaseDate = req.body.preOrderReleaseDate ? new Date(req.body.preOrderReleaseDate) : null;
+        }
+        if (req.body.preOrderMessage !== undefined) {
+            product.preOrderMessage = req.body.preOrderMessage || '';
+        }
+        if (req.body.preOrderLimit !== undefined) {
+            product.preOrderLimit = Number(req.body.preOrderLimit) || 0;
         }
         if (req.body.isSelfPickup !== undefined) {
             product.isSelfPickup = req.body.isSelfPickup === 'true' || req.body.isSelfPickup === true;
@@ -1592,6 +1622,9 @@ const getProductsByVendor = async (req, res) => {
                 subcategory: pObj.subCategoryId?.name || pObj.subcategory || '',
                 status: pObj.status,
                 isSubscriptionAvailable: !!pObj.isSubscriptionAvailable,
+                isPreOrder: !!pObj.isPreOrder,
+                preOrderReleaseDate: pObj.preOrderReleaseDate || null,
+                preOrderMessage: pObj.preOrderMessage || '',
                 brand: pObj.brand || 'Fresh & Local',
                 deliveryFee: 0
             };
@@ -1655,6 +1688,10 @@ const duplicateProduct = async (req, res) => {
             isActive: false,
             isStoreProduct: product.isStoreProduct,
             isSubscriptionAvailable: product.isSubscriptionAvailable,
+            isPreOrder: product.isPreOrder,
+            preOrderReleaseDate: product.preOrderReleaseDate,
+            preOrderMessage: product.preOrderMessage,
+            preOrderLimit: product.preOrderLimit,
             badges: product.badges
         });
         await duplicatedProduct.save();
@@ -1707,6 +1744,98 @@ const archiveProduct = async (req, res) => {
     }
 };
 exports.archiveProduct = archiveProduct;
+const toggleProductStatus = async (req, res) => {
+    try {
+        if (!mongoose_1.default.Types.ObjectId.isValid(req.params.id)) {
+            res.status(400).json({ success: false, message: 'Invalid product ID' });
+            return;
+        }
+        const product = await Product_1.default.findById(req.params.id);
+        if (!product) {
+            res.status(404).json({ success: false, message: 'Product not found' });
+            return;
+        }
+        const authUser = req.user;
+        const vendor = await Vendor_1.Vendor.findOne({ $or: [{ userId: authUser.id }, { _id: authUser.id }] });
+        const vendorIds = [
+            authUser.id?.toString(),
+            authUser._id?.toString(),
+            vendor?._id?.toString(),
+            vendor?.userId?.toString()
+        ].filter(Boolean);
+        const isOwner = vendorIds.includes(product.sellerId?.toString()) ||
+            vendorIds.includes(product.createdBy?.toString());
+        const isAdmin = authUser.roles?.includes('admin');
+        if (!isOwner && !isAdmin) {
+            res.status(403).json({ success: false, message: 'Not authorized to change this product status' });
+            return;
+        }
+        // Determine target active state
+        let targetActive;
+        if (typeof req.body.isActive === 'boolean') {
+            targetActive = req.body.isActive;
+        }
+        else if (typeof req.body.status === 'string') {
+            targetActive = ['live', 'active', 'on', 'approved'].includes(req.body.status.toLowerCase());
+        }
+        else {
+            targetActive = !product.isActive;
+        }
+        if (!targetActive) {
+            // Vendor switched OFF product
+            product.isActive = false;
+            product.status = 'Inactive';
+        }
+        else {
+            // Vendor switched ON product - verify admin and seller approvals
+            if (product.moderationStatus === 'rejected' || product.status === 'Rejected') {
+                res.status(400).json({
+                    success: false,
+                    message: 'Cannot activate a rejected product. Please edit and submit for review.'
+                });
+                return;
+            }
+            if (!isAdmin) {
+                if (product.status === 'Awaiting Seller Approval') {
+                    res.status(400).json({
+                        success: false,
+                        message: 'Please review and accept Admin pricing first before turning Store Status ON.'
+                    });
+                    return;
+                }
+                const isApprovedByBoth = product.status === 'Live' || product.status === 'Inactive' || product.sellerPricingAccepted || (product.adminPricingApproved && product.status === 'Approved');
+                if (!isApprovedByBoth) {
+                    res.status(400).json({
+                        success: false,
+                        message: 'Product must be approved by Admin and accepted by Vendor before enabling Store Status (ON/OFF).'
+                    });
+                    return;
+                }
+            }
+            product.isActive = true;
+            product.status = 'Live';
+        }
+        await product.save();
+        const populatedProduct = await populateProduct(Product_1.default.findById(product._id));
+        res.json({
+            success: true,
+            message: targetActive
+                ? 'Product is now Online & visible in ApexBee store'
+                : 'Product is now Turned OFF & hidden from users',
+            product: populatedProduct || product,
+            isActive: product.isActive,
+            status: product.status
+        });
+    }
+    catch (error) {
+        res.status(500).json({
+            success: false,
+            message: 'Failed to update product status',
+            error: error.message
+        });
+    }
+};
+exports.toggleProductStatus = toggleProductStatus;
 const getAiProductSuggestions = async (req, res) => {
     try {
         const { name, categoryId, categoryName: inputCategoryName, subCategoryName } = req.body;
@@ -1831,15 +1960,34 @@ const getProductBySku = async (req, res) => {
 exports.getProductBySku = getProductBySku;
 const getBuyAgainProducts = async (req, res) => {
     try {
-        const authUser = req.user;
+        let authUser = req.user;
+        if (!authUser && req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+            try {
+                const token = req.headers.authorization.split(' ')[1];
+                const decoded = jsonwebtoken_1.default.verify(token, process.env.JWT_SECRET || 'supersecretjwtkeyforapexbeebusinessoperatingnetwork');
+                if (decoded && (decoded.id || decoded._id)) {
+                    authUser = decoded;
+                }
+            }
+            catch (e) {
+                // Invalid or expired token
+            }
+        }
+        // If user is not authenticated, strictly return empty array (do NOT return fallback products)
         if (!authUser) {
-            const fallbackProds = await Product_1.default.find({ isActive: true }).limit(6).lean();
-            res.status(200).json({ success: true, products: fallbackProds });
+            res.status(200).json({ success: true, products: [] });
             return;
         }
         const userId = authUser.id || authUser._id;
+        const userObjectId = mongoose_1.default.Types.ObjectId.isValid(userId) ? new mongoose_1.default.Types.ObjectId(userId) : null;
+        const userQueryIds = [userId, ...(userObjectId ? [userObjectId] : [])];
+        // Find past completed orders for this customer
         const pastOrders = await Order_1.default.find({
-            customerId: userId,
+            $or: [
+                { customerId: { $in: userQueryIds } },
+                { user: { $in: userQueryIds } },
+                { userId: { $in: userQueryIds } }
+            ],
             orderStatus: { $nin: ['cancelled', 'Cancelled', 'pending_payment', 'Failed', 'Payment Rejected'] }
         }).sort({ createdAt: -1 });
         // Collect product IDs in order of recent purchases
@@ -1847,24 +1995,31 @@ const getBuyAgainProducts = async (req, res) => {
         pastOrders.forEach((order) => {
             (order.items || []).forEach((item) => {
                 if (item.productId) {
-                    productIds.add(item.productId.toString());
+                    const pid = (item.productId._id || item.productId).toString();
+                    productIds.add(pid);
                 }
             });
         });
         const idsArray = Array.from(productIds);
+        // If user has not purchased any products, strictly return empty array (never fallback to random products)
         if (idsArray.length === 0) {
-            const fallbackProds = await Product_1.default.find({ isActive: true }).limit(6).lean();
-            res.status(200).json({ success: true, products: fallbackProds });
+            res.status(200).json({ success: true, products: [] });
             return;
         }
         const lat = req.query.lat ? parseFloat(req.query.lat) : null;
         const lng = req.query.lng ? parseFloat(req.query.lng) : null;
         const pincode = req.query.pincode ? String(req.query.pincode).trim() : '';
-        // Fetch the product documents
+        // Fetch the product documents that the user actually purchased
         const rawProducts = await Product_1.default.find({
             _id: { $in: idsArray },
-            isActive: true
+            isActive: true,
+            status: { $in: ['Live', 'Active', 'Approved', 'approved', 'active', 'published'] },
+            isArchived: { $ne: true }
         });
+        if (rawProducts.length === 0) {
+            res.status(200).json({ success: true, products: [] });
+            return;
+        }
         const sellerIds = rawProducts.map((p) => p.sellerId?._id || p.sellerId).filter(Boolean);
         const vendors = await Vendor_1.Vendor.find({ $or: [{ userId: { $in: sellerIds } }, { _id: { $in: sellerIds } }] });
         const vendorMap = new Map();
@@ -1874,14 +2029,48 @@ const getBuyAgainProducts = async (req, res) => {
             if (v._id)
                 vendorMap.set(v._id.toString(), v);
         });
-        const mappedProducts = rawProducts.map((p) => {
+        // Filter out local products from other pincodes where vendor cannot service customer location
+        const filteredProducts = rawProducts.filter((p) => {
+            const isPan = p.isPanIndia === true || p.deliveryScope === 'pan_india' || p.deliveryScope === 'both' || p.isGlobalDelivery === true;
+            // Pan-India products deliver everywhere
+            if (isPan)
+                return true;
+            // If customer has not provided location/pincode, allow
+            if (!pincode && (!lat || !lng))
+                return true;
+            const sellerIdStr = (p.sellerId?._id || p.sellerId || '').toString();
+            const vendor = vendorMap.get(sellerIdStr);
+            const vendorPin = String(vendor?.pincode || vendor?.pinCode || p.vendorPincode || p.sellerId?.pincode || '').trim();
+            // Check distance if coordinate data is present
+            if (lat && lng && vendor?.location?.coordinates) {
+                const vLng = vendor.location.coordinates[0];
+                const vLat = vendor.location.coordinates[1];
+                if (typeof vLng === 'number' && typeof vLat === 'number' && vLat !== 0 && vLng !== 0) {
+                    const dist = calculateDistance(lat, lng, vLat, vLng);
+                    const maxRadius = vendor.deliveryRadiusKm || 20;
+                    if (dist <= maxRadius)
+                        return true;
+                }
+            }
+            // Check matching pincode or serviceable pincodes list
+            if (pincode) {
+                if (vendorPin && vendorPin === pincode)
+                    return true;
+                if (vendor?.serviceablePincodes && Array.isArray(vendor.serviceablePincodes) && vendor.serviceablePincodes.includes(pincode)) {
+                    return true;
+                }
+            }
+            // Local product from another pincode/out-of-range vendor -> exclude from Buy Again in this pincode
+            return false;
+        });
+        const mappedProducts = filteredProducts.map((p) => {
             const productObj = p.toObject ? p.toObject() : p;
             const sellerIdStr = (p.sellerId?._id || p.sellerId || '').toString();
             const vendor = vendorMap.get(sellerIdStr);
-            let distance = 1.2; // default
-            let duration = 10; // default mins
-            let shippingCharge = 0; // default shipping charge
-            if (lat && lng && vendor && vendor.location && vendor.location.coordinates) {
+            let distance = 1.2;
+            let duration = 10;
+            let shippingCharge = 0;
+            if (lat && lng && vendor?.location?.coordinates) {
                 const vLng = vendor.location.coordinates[0];
                 const vLat = vendor.location.coordinates[1];
                 if (typeof vLng === 'number' && typeof vLat === 'number') {
@@ -1890,10 +2079,11 @@ const getBuyAgainProducts = async (req, res) => {
                     shippingCharge = distance > 3 ? Math.round(distance * 8) : 0;
                 }
             }
-            else if (pincode && vendor && vendor.pincode) {
+            else if (pincode && vendor?.pincode) {
                 if (vendor.pincode === pincode) {
                     distance = 1.5;
                     duration = 12;
+                    shippingCharge = 0;
                 }
                 else {
                     distance = 4.8;
@@ -1912,7 +2102,7 @@ const getBuyAgainProducts = async (req, res) => {
             productObj.vendorRating = 4.8;
             return productObj;
         });
-        // Sort products based on their appearance in the recent purchases list
+        // Preserve the order of recent purchases
         const productsMap = new Map(mappedProducts.map(p => [p._id.toString(), p]));
         const orderedProducts = idsArray
             .map(id => productsMap.get(id))
@@ -2119,3 +2309,186 @@ const removeSeededProducts = async (req, res) => {
     }
 };
 exports.removeSeededProducts = removeSeededProducts;
+/**
+ * Task USER - 12: Dynamic Open Graph (OG) & Social Sharing Preview Endpoint
+ * Generates crawler-accessible HTML with og:title, og:description, og:image, og:url, og:type
+ * Preserves referral parameters (?ref=) and supports WhatsApp/Facebook/Twitterbot/Telegram crawlers.
+ */
+const getProductSocialSharePreview = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const ref = req.query.ref || req.query.referral || '';
+        const userAgent = req.headers['user-agent'] || '';
+        // Detect social crawlers
+        const isCrawler = /facebookexternalhit|WhatsApp|Twitterbot|TelegramBot|Slackbot|LinkedInBot|Pinterest|Discordbot|SkypeUriPreview|Googlebot|bingbot|crawler|spider|bot/i.test(userAgent);
+        // Configurable base URLs
+        const FRONTEND_URL = process.env.FRONTEND_URL || 'https://apexbee.in';
+        const SERVER_URL = process.env.SERVER_URL || 'https://server.apexbee.in';
+        const DEFAULT_LOGO = `${SERVER_URL}/uploads/logo.png`;
+        // Query product
+        let product = null;
+        if (mongoose_1.default.Types.ObjectId.isValid(id)) {
+            product = await Product_1.default.findById(id).populate('categoryId', 'name').lean();
+        }
+        else {
+            product = await Product_1.default.findOne({ $or: [{ slug: id }, { sku: id }] }).populate('categoryId', 'name').lean();
+        }
+        // Default fallback values
+        let ogTitle = 'ApexBee — Hyperlocal Shopping, Services & App Portal';
+        let ogDescription = 'Shop fashion, groceries, electronics, book doorstep services, discover local stores, and earn with ApexBee.';
+        let ogImage = DEFAULT_LOGO;
+        let price = 0;
+        let mrp = 0;
+        let canonicalUrl = `${FRONTEND_URL}/product/${id}${ref ? `?ref=${encodeURIComponent(ref)}` : ''}`;
+        if (product) {
+            const name = product.name || product.itemName || 'Quality Product';
+            price = Number(product.adminPricing?.customerSellingAmount ??
+                product.adminPricing?.sellingPrice ??
+                product.baseSellingPrice ??
+                product.salesPrice ??
+                product.sellingPrice ??
+                product.price ??
+                0);
+            mrp = Number(product.baseMrp ?? product.userPrice ?? product.mrp ?? price);
+            ogTitle = `${name} | ApexBee`;
+            // Clean description
+            let rawDesc = (product.description || '').replace(/<[^>]*>?/gm, '').trim();
+            if (!rawDesc) {
+                rawDesc = `Explore ${name} on ApexBee. High quality, verified seller, guaranteed genuine product.`;
+            }
+            if (rawDesc.length > 180) {
+                rawDesc = `${rawDesc.substring(0, 177)}...`;
+            }
+            const formattedPrice = price > 0 ? `₹${price.toLocaleString('en-IN')}` : '';
+            const priceText = formattedPrice ? ` — Buy now for ${formattedPrice}!` : '';
+            ogDescription = `${rawDesc}${priceText}`;
+            // Resolve absolute public image URL
+            let candidateImg = '';
+            if (Array.isArray(product.images) && product.images.length > 0 && product.images[0]) {
+                candidateImg = typeof product.images[0] === 'string' ? product.images[0] : (product.images[0].url || product.images[0].secure_url || '');
+            }
+            else if (product.thumbnail) {
+                candidateImg = product.thumbnail;
+            }
+            else if (product.image) {
+                candidateImg = product.image;
+            }
+            if (candidateImg) {
+                if (candidateImg.startsWith('http://') || candidateImg.startsWith('https://')) {
+                    ogImage = candidateImg;
+                }
+                else {
+                    ogImage = `${SERVER_URL}${candidateImg.startsWith('/') ? '' : '/'}${candidateImg}`;
+                }
+            }
+            canonicalUrl = `${FRONTEND_URL}/product/${product._id || id}${ref ? `?ref=${encodeURIComponent(ref)}` : ''}`;
+        }
+        // HTML escape helper
+        const escapeHtml = (str) => str
+            .replace(/&/g, '&amp;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+        const safeTitle = escapeHtml(ogTitle);
+        const safeDesc = escapeHtml(ogDescription);
+        const safeImg = escapeHtml(ogImage);
+        const safeUrl = escapeHtml(canonicalUrl);
+        // If human browser (not crawler) and not forcing preview format, redirect to frontend preserving ?ref=
+        const forcePreview = req.query.format === 'html' || req.query.preview === 'true';
+        if (!isCrawler && !forcePreview) {
+            return res.redirect(302, canonicalUrl);
+        }
+        // Social Crawler Optimized Full HTML Response
+        const html = `<!DOCTYPE html>
+<html lang="en" prefix="og: https://ogp.me/ns# product: https://ogp.me/ns/product#">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${safeTitle}</title>
+  <meta name="description" content="${safeDesc}">
+  <link rel="canonical" href="${safeUrl}">
+
+  <!-- Open Graph Meta Tags for WhatsApp, Facebook, LinkedIn -->
+  <meta property="og:type" content="product">
+  <meta property="og:site_name" content="ApexBee">
+  <meta property="og:title" content="${safeTitle}">
+  <meta property="og:description" content="${safeDesc}">
+  <meta property="og:image" content="${safeImg}">
+  <meta property="og:image:secure_url" content="${safeImg}">
+  <meta property="og:image:type" content="image/jpeg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="${safeTitle}">
+  <meta property="og:url" content="${safeUrl}">
+  ${price > 0 ? `<meta property="product:price:amount" content="${price}">` : ''}
+  <meta property="product:price:currency" content="INR">
+
+  <!-- Twitter Card Tags -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:site" content="@ApexBeeOfficial">
+  <meta name="twitter:title" content="${safeTitle}">
+  <meta name="twitter:description" content="${safeDesc}">
+  <meta name="twitter:image" content="${safeImg}">
+  <meta name="twitter:url" content="${safeUrl}">
+
+  <!-- Structured Data JSON-LD for Search Crawlers -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org/",
+    "@type": "Product",
+    "name": ${JSON.stringify(ogTitle)},
+    "image": [${JSON.stringify(ogImage)}],
+    "description": ${JSON.stringify(ogDescription)},
+    "offers": {
+      "@type": "Offer",
+      "url": ${JSON.stringify(canonicalUrl)},
+      "priceCurrency": "INR",
+      "price": "${price}",
+      "availability": "https://schema.org/InStock",
+      "seller": {
+        "@type": "Organization",
+        "name": "ApexBee"
+      }
+    }
+  }
+  </script>
+
+  <!-- Instant Browser Redirect Fallback for Non-Crawler Users -->
+  <noscript>
+    <meta http-equiv="refresh" content="0;url=${safeUrl}">
+  </noscript>
+  <script>
+    if (!navigator.userAgent.match(/facebookexternalhit|WhatsApp|Twitterbot|TelegramBot|Slackbot|LinkedInBot|Pinterest|Discordbot|Googlebot/i)) {
+      window.location.replace("${safeUrl}");
+    }
+  </script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0A1128; color: #fff; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; text-align: center; }
+    .card { background: #111a3d; padding: 2rem; border-radius: 1rem; max-width: 480px; border: 1px solid #233166; }
+    img { max-width: 100%; border-radius: 0.75rem; max-height: 250px; object-fit: cover; }
+    h1 { font-size: 1.25rem; margin-top: 1rem; color: #f8fafc; }
+    p { font-size: 0.875rem; color: #94a3b8; }
+    .price { font-size: 1.5rem; font-weight: bold; color: #fbbf24; margin: 0.5rem 0; }
+    a.btn { display: inline-block; background: #fbbf24; color: #0a1128; font-weight: bold; padding: 0.75rem 1.5rem; border-radius: 0.5rem; text-decoration: none; margin-top: 1rem; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <img src="${safeImg}" alt="${safeTitle}">
+    <h1>${safeTitle}</h1>
+    ${price > 0 ? `<div class="price">₹${price.toLocaleString('en-IN')}</div>` : ''}
+    <p>${safeDesc}</p>
+    <a href="${safeUrl}" class="btn">View on ApexBee &rarr;</a>
+  </div>
+</body>
+</html>`;
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        return res.status(200).send(html);
+    }
+    catch (error) {
+        console.error('[getProductSocialSharePreview Error]:', error);
+        return res.redirect(302, 'https://apexbee.in');
+    }
+};
+exports.getProductSocialSharePreview = getProductSocialSharePreview;

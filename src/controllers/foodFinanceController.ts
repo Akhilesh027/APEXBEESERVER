@@ -121,31 +121,48 @@ export const getEarningsSummary = async (req: FoodPartnerAuthRequest, res: Respo
 
     const totalPlatformCommission = menuItems.reduce((sum, item) => {
       const sp = (item.offerPrice && item.offerPrice > 0) ? item.offerPrice : item.basePrice;
-      const fee = item.platformShareAmount !== undefined && item.platformShareAmount !== null
-        ? item.platformShareAmount
-        : Math.round(((sp * (item.platformCommissionPercent || 12)) / 100) * 100) / 100;
-      return sum + fee;
+      const isApexBeeComm = item.distributedFrom === 'apexbee_commission' && Boolean(item.vendorCommissionPercent && item.vendorCommissionPercent > 0);
+      const vCommAmount = isApexBeeComm
+        ? (item.vendorCommissionAmount !== undefined && item.vendorCommissionAmount !== null
+          ? Number(item.vendorCommissionAmount)
+          : Math.round(((sp * Number(item.vendorCommissionPercent)) / 100) * 100) / 100)
+        : 0;
+      return sum + vCommAmount;
     }, 0);
 
     const totalVendorPayout = menuItems.reduce((sum, item) => {
       const sp = (item.offerPrice && item.offerPrice > 0) ? item.offerPrice : item.basePrice;
-      const fee = item.platformShareAmount !== undefined && item.platformShareAmount !== null
-        ? item.platformShareAmount
-        : Math.round(((sp * (item.platformCommissionPercent || 12)) / 100) * 100) / 100;
-      const payout = item.vendorPayoutAmount !== undefined && item.vendorPayoutAmount !== null
-        ? item.vendorPayoutAmount
-        : Math.max(0, sp - fee);
+      const isApexBeeComm = item.distributedFrom === 'apexbee_commission' && Boolean(item.vendorCommissionPercent && item.vendorCommissionPercent > 0);
+      const vCommAmount = isApexBeeComm
+        ? (item.vendorCommissionAmount !== undefined && item.vendorCommissionAmount !== null
+          ? Number(item.vendorCommissionAmount)
+          : Math.round(((sp * Number(item.vendorCommissionPercent)) / 100) * 100) / 100)
+        : 0;
+      const payout = isApexBeeComm
+        ? (item.vendorPayoutAmount !== undefined && item.vendorPayoutAmount !== null
+          ? Number(item.vendorPayoutAmount)
+          : Math.max(0, sp - vCommAmount))
+        : (item.vendorPayoutAmount && Number(item.vendorPayoutAmount) > 0 ? Number(item.vendorPayoutAmount) : sp);
       return sum + payout;
     }, 0);
 
     const itemCommissionBreakdown = menuItems.map((item) => {
       const sp = (item.offerPrice && item.offerPrice > 0) ? item.offerPrice : item.basePrice;
+      const isApexBeeComm = item.distributedFrom === 'apexbee_commission' && Boolean(item.vendorCommissionPercent && item.vendorCommissionPercent > 0);
+      const vCommPct = isApexBeeComm ? Number(item.vendorCommissionPercent || 0) : 0;
+      const vCommAmount = isApexBeeComm
+        ? (item.vendorCommissionAmount !== undefined && item.vendorCommissionAmount !== null
+          ? Number(item.vendorCommissionAmount)
+          : Math.round(((sp * vCommPct) / 100) * 100) / 100)
+        : 0;
       const fee = item.platformShareAmount !== undefined && item.platformShareAmount !== null
         ? item.platformShareAmount
-        : Math.round(((sp * (item.platformCommissionPercent || 12)) / 100) * 100) / 100;
-      const payout = item.vendorPayoutAmount !== undefined && item.vendorPayoutAmount !== null
-        ? item.vendorPayoutAmount
-        : Math.max(0, sp - fee);
+        : Math.round(((sp * (item.platformCommissionPercent || 5)) / 100) * 100) / 100;
+      const payout = isApexBeeComm
+        ? (item.vendorPayoutAmount !== undefined && item.vendorPayoutAmount !== null
+          ? Number(item.vendorPayoutAmount)
+          : Math.max(0, sp - vCommAmount))
+        : (item.vendorPayoutAmount && Number(item.vendorPayoutAmount) > 0 ? Number(item.vendorPayoutAmount) : sp);
 
       return {
         _id: item._id,
@@ -154,8 +171,11 @@ export const getEarningsSummary = async (req: FoodPartnerAuthRequest, res: Respo
         basePrice: item.basePrice,
         offerPrice: item.offerPrice || 0,
         sellingPrice: sp,
-        platformCommissionPercent: item.platformCommissionPercent || 0,
+        platformCommissionPercent: item.platformCommissionPercent || 5,
         platformShareAmount: fee,
+        vendorCommissionPercent: vCommPct,
+        vendorCommissionAmount: vCommAmount,
+        distributedFrom: item.distributedFrom || 'platform_fee',
         vendorPayoutAmount: payout,
         approvalStatus: item.approvalStatus || 'PENDING_ADMIN_REVIEW',
         status: item.status,

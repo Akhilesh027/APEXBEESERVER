@@ -5,6 +5,10 @@ import { User, RoleType } from '../models/User';
 import { Wallet } from '../models/Wallet';
 import { Referral } from '../models/Referral';
 import { LoginAudit } from '../models/LoginAudit';
+import { Vendor } from '../models/Vendor';
+import { Wholesaler } from '../models/Wholesaler';
+import { Manufacturer } from '../models/Manufacturer';
+import { BusinessApplication } from '../models/BusinessApplication';
 import { AuthRequest } from '../middleware/auth';
 import { getRedisClient } from '../config/redis';
 import { generateMasterCustomerId, generateUniversalReferralCode, generateRoleReferenceId } from '../services/identityService';
@@ -645,9 +649,40 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    const user = await User.findOne({
-      email: email.trim().toLowerCase(),
-    }).select('+passwordHash');
+    const cleanInput = (email || '').toString().trim();
+    const orConditions: any[] = [];
+    if (cleanInput.includes('@')) {
+      const lower = cleanInput.toLowerCase();
+      orConditions.push({ email: lower });
+      orConditions.push({ email: { $regex: new RegExp(`^${cleanInput.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } });
+    } else {
+      const digits = cleanInput.replace(/\D/g, '').slice(-10);
+      orConditions.push({ phone: cleanInput }, { mobile: cleanInput });
+      if (digits && digits.length === 10) {
+        orConditions.push(
+          { phone: digits },
+          { mobile: digits },
+          { phone: `+91${digits}` },
+          { mobile: `+91${digits}` }
+        );
+      }
+    }
+
+    let user: any = await User.findOne({ $or: orConditions }).select('+passwordHash');
+
+    // If not found in User, check Vendor / Wholesaler / Manufacturer to get linked userId
+    if (!user) {
+      const vDoc: any = await Vendor.findOne({ $or: orConditions });
+      if (vDoc?.userId) user = await User.findById(vDoc.userId).select('+passwordHash');
+    }
+    if (!user) {
+      const wsDoc: any = await Wholesaler.findOne({ $or: orConditions });
+      if (wsDoc?.userId) user = await User.findById(wsDoc.userId).select('+passwordHash');
+    }
+    if (!user) {
+      const mfDoc: any = await Manufacturer.findOne({ $or: orConditions });
+      if (mfDoc?.userId) user = await User.findById(mfDoc.userId).select('+passwordHash');
+    }
 
     if (!user) {
       res.status(400).json({
@@ -1044,27 +1079,114 @@ export const googleAuth = async (req: Request, res: Response): Promise<void> => 
 
 export const sendVendorLoginOtp = async (req: Request, res: Response): Promise<void> => {
   try {
-    const email = (req.body.email || '').trim().toLowerCase();
-    if (!email) {
-      res.status(400).json({ success: false, message: 'Please enter your email address.' });
+    const rawInput = (req.body.email || req.body.phone || req.body.username || '').toString().trim();
+    if (!rawInput) {
+      res.status(400).json({ success: false, message: 'Please enter your registered email address or phone number.' });
       return;
     }
 
-    // 1. Check if user exists with this email
-    const user = await User.findOne({ email });
+    const cleanInput = rawInput.toLowerCase();
+    const isEmail = cleanInput.includes('@');
+
+    // Build flexible query conditions for User & Vendor lookup
+    const orConditions: any[] = [];
+    if (isEmail) {
+      orConditions.push({ email: cleanInput });
+      orConditions.push({ email: { $regex: new RegExp(`^${cleanInput.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } });
+    } else {
+      const digits = rawInput.replace(/\D/g, '').slice(-10);
+      orConditions.push({ phone: rawInput }, { mobile: rawInput });
+      if (digits && digits.length === 10) {
+        orConditions.push(
+          { phone: digits },
+          { mobile: digits },
+          { phone: `+91${digits}` },
+          { mobile: `+91${digits}` }
+        );
+      }
+    }
+
+    // 1. Check if user exists in User collection
+    let user = await User.findOne({ $or: orConditions });
+
+    // 2. If user not found directly, check Vendor, Wholesaler, Manufacturer, or BusinessApplication collections
+    if (!user) {
+      const linkedVendorDoc = await Vendor.findOne({ $or: orConditions });
+      if (linkedVendorDoc && linkedVendorDoc.userId) {
+        user = await User.findById(linkedVendorDoc.userId);
+      }
+    }
+    if (!user) {
+      const wsDoc = await Wholesaler.findOne({ $or: orConditions });
+      if (wsDoc && wsDoc.userId) {
+        user = await User.findById(wsDoc.userId);
+      }
+    }
+    if (!user) {
+      const mfDoc = await Manufacturer.findOne({ $or: orConditions });
+      if (mfDoc && mfDoc.userId) {
+        user = await User.findById(mfDoc.userId);
+      }
+    }
+    if (!user) {
+      const appDoc = await BusinessApplication.findOne({ $or: orConditions });
+      if (appDoc && appDoc.userId) {
+        user = await User.findById(appDoc.userId);
+      }
+    }
+
     if (!user) {
       res.status(404).json({
         success: false,
         isRegistered: false,
-        message: 'You are not registered. Please register or apply for a seller account first.'
+        message: 'Account not found. Please verify the email or phone number entered, or register as a vendor first.'
       });
       return;
     }
 
-    // 2. Check if user has vendor/seller profile or role
-    const userRoles = Array.isArray(user.roles) ? user.roles.map(r => String(r).toLowerCase()) : [];
-    const permittedRoles = ['vendor', 'wholesaler', 'manufacturer', 'admin', 'food_partner', 'service_provider'];
-    const hasVendorRole = userRoles.some(r => permittedRoles.includes(r));
+    // 3. Check if user is a vendor or has seller capability
+    const userRoles = Array.isArray(user.roles)
+      ? user.roles.map(r => String(r).toLowerCase().trim())
+      : ((user as any).role ? [String((user as any).role).toLowerCase().trim()] : []);
+
+    const permittedRoles = [
+      'vendor',
+      'wholesaler',
+      'manufacturer',
+      'admin',
+      'food_partner',
+      'food_staff',
+      'service_provider',
+      'seller',
+      'merchant',
+      'business_partner',
+      'store_owner',
+      'retailer',
+      'franchise',
+      'state_franchise',
+      'district_franchise',
+      'mandal_franchise',
+      'entrepreneur'
+    ];
+
+    let hasVendorRole = userRoles.some(r => permittedRoles.includes(r));
+
+    // If not explicitly in user.roles, check if they have a Vendor document or approved application
+    if (!hasVendorRole) {
+      const existingVendor = await Vendor.findOne({ $or: [{ userId: user._id }, { email: user.email }] });
+      const existingWs = await Wholesaler.findOne({ $or: [{ userId: user._id }, { email: user.email }] });
+      const existingMf = await Manufacturer.findOne({ $or: [{ userId: user._id }, { email: user.email }] });
+      const existingApp = await BusinessApplication.findOne({ $or: [{ userId: user._id }, { email: user.email }] });
+
+      if (existingVendor || existingWs || existingMf || (existingApp && (existingApp.kycStatus === 'verified' || (existingApp as any).status === 'approved')) || user.sellerProfile) {
+        hasVendorRole = true;
+        // Auto-heal: add 'vendor' role to user
+        if (!user.roles.includes('vendor')) {
+          user.roles.push('vendor');
+          await user.save().catch(() => null);
+        }
+      }
+    }
 
     if (!hasVendorRole) {
       res.status(403).json({
@@ -1076,63 +1198,170 @@ export const sendVendorLoginOtp = async (req: Request, res: Response): Promise<v
       return;
     }
 
-    // 3. Generate 6-digit OTP
+    // 4. Generate 6-digit OTP
     const generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
 
     const redis = getRedisClient();
-    const redisKey = `vendor_otp:${email}`;
-    await redis.set(redisKey, generatedOtp, 'EX', 600); // 10 minutes
+    const targetEmail = (user.email || (isEmail ? cleanInput : '')).trim().toLowerCase();
+    const targetPhone = user.phone || user.mobile || (!isEmail ? rawInput : '');
 
-    // 4. Send Email via Hostinger SMTP
-    console.log(`[VENDOR LOGIN OTP] Generated OTP for ${email}: ${generatedOtp}`);
-    const emailSent = await EmailService.sendVendorLoginOtp(email, generatedOtp, user.name);
-
-    if (!emailSent) {
-      console.warn(`[VENDOR LOGIN OTP] Direct SMTP delivery encountered an issue; OTP is active in system: ${generatedOtp}`);
+    // Save OTP under all relevant keys for seamless verification
+    const keysToSave = [
+      `vendor_otp:${cleanInput}`,
+      `vendor_otp:${user._id.toString()}`
+    ];
+    if (targetEmail) {
+      keysToSave.push(`vendor_otp:${targetEmail}`);
+      keysToSave.push(`otp:${targetEmail}`);
     }
+    if (targetPhone) {
+      keysToSave.push(`vendor_otp:${targetPhone}`);
+      keysToSave.push(`otp:${targetPhone}`);
+      const d10 = targetPhone.replace(/\D/g, '').slice(-10);
+      if (d10) {
+        keysToSave.push(`vendor_otp:${d10}`);
+        keysToSave.push(`otp:${d10}`);
+      }
+    }
+
+    for (const key of keysToSave) {
+      await redis.set(key, generatedOtp, 'EX', 600); // 10 minutes
+    }
+
+    console.log(`[VENDOR LOGIN OTP] Generated OTP for ${targetEmail || targetPhone}: ${generatedOtp}`);
+
+    // 5. Send OTP via Email (and SMS if phone available)
+    if (targetEmail && targetEmail.includes('@')) {
+      EmailService.sendVendorLoginOtp(targetEmail, generatedOtp, user.name).catch((err) => {
+        console.error('[VENDOR LOGIN OTP] Email dispatch error:', err);
+      });
+    }
+
+    if (targetPhone) {
+      SmsService.sendLoginOtp(targetPhone, generatedOtp).catch((err) => {
+        console.error('[VENDOR LOGIN OTP] SMS dispatch error:', err);
+      });
+    }
+
+    const recipientText = targetEmail ? targetEmail : `+91 ${targetPhone.slice(-10)}`;
 
     res.status(200).json({
       success: true,
-      message: `A 6-digit verification code has been sent to ${email}.`,
+      message: `A 6-digit verification code has been sent to ${recipientText}.`,
+      recipient: recipientText,
       devOtp: process.env.NODE_ENV !== 'production' ? generatedOtp : undefined
     });
   } catch (error: any) {
     console.error('Send Vendor Login OTP error:', error);
-    res.status(500).json({ success: false, message: 'Failed to send OTP email', error: error.message });
+    res.status(500).json({ success: false, message: 'Failed to send OTP verification code', error: error.message });
   }
 };
 
 export const verifyVendorLoginOtp = async (req: Request, res: Response): Promise<void> => {
   try {
-    const email = (req.body.email || '').trim().toLowerCase();
-    const otp = (req.body.otp || '').trim();
+    const rawInput = (req.body.email || req.body.phone || req.body.username || '').toString().trim();
+    const otp = (req.body.otp || '').toString().trim();
 
-    if (!email || !otp) {
-      res.status(400).json({ success: false, message: 'Email and OTP code are required.' });
+    if (!rawInput || !otp) {
+      res.status(400).json({ success: false, message: 'Email/phone and 6-digit OTP code are required.' });
+      return;
+    }
+
+    const cleanInput = rawInput.toLowerCase();
+    const isEmail = cleanInput.includes('@');
+
+    // Build lookup condition for User
+    const orConditions: any[] = [];
+    if (isEmail) {
+      orConditions.push({ email: cleanInput });
+      orConditions.push({ email: { $regex: new RegExp(`^${cleanInput.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } });
+    } else {
+      const digits = rawInput.replace(/\D/g, '').slice(-10);
+      orConditions.push({ phone: rawInput }, { mobile: rawInput });
+      if (digits && digits.length === 10) {
+        orConditions.push(
+          { phone: digits },
+          { mobile: digits },
+          { phone: `+91${digits}` },
+          { mobile: `+91${digits}` }
+        );
+      }
+    }
+
+    let user = await User.findOne({ $or: orConditions });
+
+    if (!user) {
+      const vendorDoc = await Vendor.findOne({ $or: orConditions });
+      if (vendorDoc?.userId) user = await User.findById(vendorDoc.userId);
+    }
+    if (!user) {
+      const wsDoc = await Wholesaler.findOne({ $or: orConditions });
+      if (wsDoc?.userId) user = await User.findById(wsDoc.userId);
+    }
+    if (!user) {
+      const mfDoc = await Manufacturer.findOne({ $or: orConditions });
+      if (mfDoc?.userId) user = await User.findById(mfDoc.userId);
+    }
+
+    if (!user) {
+      res.status(404).json({ success: false, message: 'User account not found.' });
       return;
     }
 
     const redis = getRedisClient();
-    const redisKey = `vendor_otp:${email}`;
-    const savedOtp = await redis.get(redisKey);
 
-    if (!savedOtp) {
-      res.status(400).json({ success: false, message: 'OTP has expired or was not requested. Please request a new OTP.' });
+    // Check multiple potential keys for stored OTP
+    const possibleKeys = [
+      `vendor_otp:${cleanInput}`,
+      `vendor_otp:${user._id.toString()}`,
+      `otp:${cleanInput}`
+    ];
+    if (user.email) {
+      possibleKeys.push(`vendor_otp:${user.email.toLowerCase()}`);
+      possibleKeys.push(`otp:${user.email.toLowerCase()}`);
+    }
+    if (user.phone) {
+      possibleKeys.push(`vendor_otp:${user.phone}`);
+      possibleKeys.push(`otp:${user.phone}`);
+      const d10 = user.phone.replace(/\D/g, '').slice(-10);
+      if (d10) {
+        possibleKeys.push(`vendor_otp:${d10}`);
+        possibleKeys.push(`otp:${d10}`);
+      }
+    }
+
+    let isOtpValid = false;
+
+    for (const key of possibleKeys) {
+      const saved = await redis.get(key);
+      if (saved && saved.toString().trim() === otp) {
+        isOtpValid = true;
+        break;
+      }
+    }
+
+    // Master bypass in non-production mode
+    if (!isOtpValid && process.env.NODE_ENV !== 'production' && otp === '123456') {
+      isOtpValid = true;
+    }
+
+    if (!isOtpValid) {
+      res.status(400).json({ success: false, message: 'Invalid or expired OTP code. Please check and try again.' });
       return;
     }
 
-    if (savedOtp !== otp) {
-      res.status(400).json({ success: false, message: 'Invalid OTP code. Please check your email and try again.' });
-      return;
+    // Clear matched OTP keys
+    for (const key of possibleKeys) {
+      await redis.del(key).catch(() => null);
     }
 
-    // Clear used OTP
-    await redis.del(redisKey);
-
-    const user = await User.findOne({ email });
-    if (!user) {
-      res.status(404).json({ success: false, message: 'User not found.' });
-      return;
+    // Auto-heal vendor role if missing
+    if (!Array.isArray(user.roles)) {
+      user.roles = ['vendor'];
+      await user.save().catch(() => null);
+    } else if (!user.roles.includes('vendor') && !user.roles.includes('wholesaler') && !user.roles.includes('manufacturer') && !user.roles.includes('admin')) {
+      user.roles.push('vendor');
+      await user.save().catch(() => null);
     }
 
     const token = generateToken((user._id as any).toString(), user.email, user.roles);

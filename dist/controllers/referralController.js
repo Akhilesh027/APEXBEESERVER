@@ -1,638 +1,663 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getReferralLeaderboard = exports.getReferralEarningsSummary = exports.getReferralStats = exports.processReferralReleases = exports.updateReferralSettings = exports.getReferralSettings = exports.getReferralNetwork = exports.getReferralHistory = exports.getReferralDashboard = exports.getMyReferralInfo = void 0;
+exports.upgradeToBusinessPartner = exports.processReferralReleases = exports.updateReferralSettings = exports.getReferralSettings = exports.getReferralLeaderboard = exports.getReferralEarningsSummary = exports.getReferralStats = exports.getReferralNetwork = exports.getReferralHistory = exports.getReferralDashboard = exports.getMyReferralInfo = exports.maskContactInfo = exports.isPartnerUser = void 0;
+const mongoose_1 = __importDefault(require("mongoose"));
+const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const User_1 = require("../models/User");
-const ReferralTransaction_1 = require("../models/ReferralTransaction");
-const ReferralSettings_1 = require("../models/ReferralSettings");
-const Wallet_1 = require("../models/Wallet");
-const CommissionSettlement_1 = require("../models/CommissionSettlement");
-const SettlementEngine_1 = require("../services/SettlementEngine");
 const Referral_1 = require("../models/Referral");
-const Order_1 = require("../models/Order");
-// GET /api/referrals/me
+const ReferralSettings_1 = require("../models/ReferralSettings");
+const ReferralTransaction_1 = require("../models/ReferralTransaction");
+const CommissionSettlement_1 = require("../models/CommissionSettlement");
+const Wallet_1 = require("../models/Wallet");
+const SettlementEngine_1 = require("../services/SettlementEngine");
+// Helper to determine if user has Business Partner or elevated referral roles
+const isPartnerUser = (roles = []) => {
+    const norm = (roles || []).map((r) => String(r).toLowerCase().trim());
+    return norm.some((r) => r === "business_partner" ||
+        r === "admin" ||
+        r.includes("franchise") ||
+        r === "entrepreneur" ||
+        r === "vendor" ||
+        r === "wholesaler" ||
+        r === "manufacturer");
+};
+exports.isPartnerUser = isPartnerUser;
+// Helper to mask sensitive downline contact details for customer privacy
+const maskContactInfo = (phone, email) => {
+    let maskedPhone = "";
+    if (phone) {
+        const clean = phone.replace(/[^0-9]/g, "");
+        maskedPhone = clean.length > 4 ? clean.slice(0, 4) + "••••••" : "••••••";
+    }
+    let maskedEmail = "";
+    if (email && email.includes("@")) {
+        const [name, domain] = email.split("@");
+        maskedEmail = (name.length > 2 ? name.slice(0, 2) : name.slice(0, 1)) + "•••@" + domain;
+    }
+    return { phone: maskedPhone, email: maskedEmail };
+};
+exports.maskContactInfo = maskContactInfo;
+// GET /api/referrals/me or /my
 const getMyReferralInfo = async (req, res) => {
     try {
-        const userId = req.user?.id || req.user?._id;
+        const userId = req.user?.id;
         if (!userId) {
-            return res.status(401).json({ success: false, message: "Unauthorized" });
+            res.status(401).json({ success: false, message: "Unauthorized" });
+            return;
         }
-        const user = await User_1.User.findById(userId).populate("referredBy", "referralCode");
+        const user = await User_1.User.findById(userId);
         if (!user) {
-            return res.status(404).json({ success: false, message: "User not found" });
+            res.status(404).json({ success: false, message: "User not found" });
+            return;
         }
-        let referralCode = user.referralCode || "";
-        if (!referralCode) {
-            const cleanName = user.name.replace(/[^a-zA-Z]/g, "").toUpperCase();
-            const prefix = (cleanName.substring(0, 3) + "XXX").substring(0, 3);
-            let isUnique = false;
-            while (!isUnique) {
-                const randomChars = Math.random().toString(36).substring(2, 5).toUpperCase();
-                referralCode = `APX-${prefix}${randomChars}`;
-                const existing = await User_1.User.findOne({ referralCode });
-                if (!existing) {
-                    isUnique = true;
-                }
-            }
-            user.referralCode = referralCode;
-            await user.save();
-        }
-        const referredBy = user.referredBy?.referralCode || "APEXBEE";
-        const level1Count = await User_1.User.countDocuments({ "referralHierarchy.level1UserId": user._id, _id: { $ne: user._id } });
-        const level2Count = await User_1.User.countDocuments({ "referralHierarchy.level2UserId": user._id, _id: { $ne: user._id } });
-        const level3Count = await User_1.User.countDocuments({ "referralHierarchy.level3UserId": user._id, _id: { $ne: user._id } });
-        return res.status(200).json({
+        const referralCode = user.referralCode || user.myReferralCode || user.phone || user._id.toString().slice(-6).toUpperCase();
+        const referralLink = `https://apexbee.in/register?ref=${referralCode}`;
+        const directCount = await Referral_1.Referral.countDocuments({ referrerUserId: userId });
+        res.status(200).json({
             success: true,
             referralCode,
-            referredBy,
-            level1Count,
-            level2Count,
-            level3Count
+            referralLink,
+            directReferralsCount: directCount,
+            upline: user.referralHierarchy || null
         });
     }
     catch (error) {
-        return res.status(500).json({ success: false, message: error.message });
+        res.status(500).json({ success: false, message: error.message });
     }
 };
 exports.getMyReferralInfo = getMyReferralInfo;
 // GET /api/referrals/dashboard
 const getReferralDashboard = async (req, res) => {
     try {
-        const userId = req.user?.id || req.user?._id;
+        const userId = req.user?.id;
         if (!userId) {
-            return res.status(401).json({ success: false, message: "Unauthorized" });
+            res.status(401).json({ success: false, message: "Unauthorized" });
+            return;
         }
         const user = await User_1.User.findById(userId);
-        if (!user) {
-            return res.status(404).json({ success: false, message: "User not found" });
+        const isPartner = (0, exports.isPartnerUser)(user?.roles || req.user?.roles || []);
+        const directReferralsRaw = await Referral_1.Referral.find({ referrerUserId: userId }).populate("referredUserId", "name email phone createdAt");
+        // Privacy protection: for customers, mask contact details
+        const directReferrals = directReferralsRaw.map((dr) => {
+            const raw = dr.toObject ? dr.toObject() : { ...dr };
+            if (!isPartner && raw.referredUserId && typeof raw.referredUserId === "object") {
+                const masked = (0, exports.maskContactInfo)(raw.referredUserId.phone, raw.referredUserId.email);
+                raw.referredUserId = {
+                    ...raw.referredUserId,
+                    phone: masked.phone,
+                    email: masked.email
+                };
+            }
+            return raw;
+        });
+        const txQuery = { recipientUserId: userId };
+        if (!isPartner) {
+            txQuery.$or = [{ level: 1 }, { level: { $exists: false } }, { level: null }];
         }
-        const directReferrals = await User_1.User.countDocuments({ "referralHierarchy.level1UserId": user._id, _id: { $ne: user._id } });
-        const level2Count = await User_1.User.countDocuments({ "referralHierarchy.level2UserId": user._id, _id: { $ne: user._id } });
-        const level3Count = await User_1.User.countDocuments({ "referralHierarchy.level3UserId": user._id, _id: { $ne: user._id } });
-        const indirectReferrals = level2Count + level3Count;
-        let wallet = await Wallet_1.Wallet.findOne({ userId: user._id });
-        if (!wallet) {
-            wallet = new Wallet_1.Wallet({
-                userId: user._id,
-                availableBalance: 0,
-                pendingBalance: 0,
-                withdrawnBalance: 0,
-                totalCredits: 0,
-                totalDebits: 0,
-                ledgerEntries: []
-            });
-            await wallet.save();
-        }
-        const pendingRewards = wallet.pendingBalance;
-        const releasedRewards = wallet.availableBalance;
-        return res.status(200).json({
+        const transactions = await ReferralTransaction_1.ReferralTransaction.find(txQuery).sort({ createdAt: -1 });
+        const totalEarned = transactions
+            .filter(t => t.status === "released")
+            .reduce((sum, t) => sum + (t.amount || 0), 0);
+        const totalPending = transactions
+            .filter(t => t.status === "pending" || t.status === "placed")
+            .reduce((sum, t) => sum + (t.amount || 0), 0);
+        res.status(200).json({
             success: true,
-            referralCode: user.referralCode || "",
+            isBusinessPartner: isPartner,
+            isCustomer: !isPartner,
+            directReferralsCount: directReferrals.length,
             directReferrals,
-            indirectReferrals,
-            pendingRewards,
-            releasedRewards,
-            walletTotal: wallet.availableBalance + wallet.pendingBalance,
-            walletHold: wallet.pendingBalance,
-            walletAvailable: wallet.availableBalance
+            totalEarned,
+            totalPending,
+            recentTransactions: transactions.slice(0, 15)
         });
     }
     catch (error) {
-        return res.status(500).json({ success: false, message: error.message });
+        res.status(500).json({ success: false, message: error.message });
     }
 };
 exports.getReferralDashboard = getReferralDashboard;
 // GET /api/referrals/history
 const getReferralHistory = async (req, res) => {
     try {
-        const userId = req.user?.id || req.user?._id;
+        const userId = req.user?.id;
         if (!userId) {
-            return res.status(401).json({ success: false, message: "Unauthorized" });
+            res.status(401).json({ success: false, message: "Unauthorized" });
+            return;
         }
-        const txs = await ReferralTransaction_1.ReferralTransaction.find({ recipientUserId: userId })
-            .populate("referredUserId", "name")
+        const user = await User_1.User.findById(userId);
+        const isPartner = (0, exports.isPartnerUser)(user?.roles || req.user?.roles || []);
+        const txQuery = { recipientUserId: userId };
+        // Customers can only access their own direct eligible rewards (Level 1)
+        if (!isPartner) {
+            txQuery.$or = [{ level: 1 }, { level: { $exists: false } }, { level: null }];
+        }
+        const history = await ReferralTransaction_1.ReferralTransaction.find(txQuery)
+            .populate("referredUserId", "name phone email")
+            .populate("orderId", "orderNumber totalAmount createdAt")
             .sort({ createdAt: -1 });
-        const history = txs.map(tx => ({
-            user: tx.referredUserId?.name || "Unknown",
-            level: tx.level,
-            reward: tx.amount,
-            status: tx.status
-        }));
-        return res.status(200).json({
-            success: true,
-            history
-        });
+        // Privacy protection: sanitize downline private details for regular customers
+        const sanitizedHistory = !isPartner
+            ? history.map(item => {
+                const raw = item.toObject ? item.toObject() : { ...item };
+                if (raw.referredUserId && typeof raw.referredUserId === "object") {
+                    const masked = (0, exports.maskContactInfo)(raw.referredUserId.phone, raw.referredUserId.email);
+                    raw.referredUserId = {
+                        ...raw.referredUserId,
+                        phone: masked.phone,
+                        email: masked.email
+                    };
+                }
+                return raw;
+            })
+            : history;
+        res.status(200).json({ success: true, isBusinessPartner: isPartner, history: sanitizedHistory });
     }
     catch (error) {
-        return res.status(500).json({ success: false, message: error.message });
+        res.status(500).json({ success: false, message: error.message });
     }
 };
 exports.getReferralHistory = getReferralHistory;
-const enrichReferredUsers = async (users, referrerUserId) => {
-    const enriched = [];
-    for (const user of users) {
-        const userId = user._id;
-        // Count purchases (orders)
-        const orders = await Order_1.Order.find({ customerId: userId }).sort({ createdAt: -1 });
-        const totalPurchases = orders.length;
-        // Sum commission generated for the referrer
-        const txs = await ReferralTransaction_1.ReferralTransaction.find({ referredUserId: userId, recipientUserId: referrerUserId });
-        // Get Referral record for signup bonus contribution if any
-        const referral = await Referral_1.Referral.findOne({ referredUserId: userId, referrerUserId });
-        const referralId = referral ? referral._id : null;
-        const initialSignupBonus = (referral && referral.status === "rewarded") ? (referral.rewardAmount || 0) : 0;
-        const firstOrderBonusAmt = txs
-            .filter(tx => tx.transactionType === "first_order_bonus")
-            .reduce((sum, tx) => sum + tx.amount, 0);
-        const signupBonus = initialSignupBonus + firstOrderBonusAmt;
-        const firstPurchaseCommission = txs
-            .filter(tx => tx.transactionType === "first_purchase_product_commission")
-            .reduce((sum, tx) => sum + tx.amount, 0);
-        const productCommission = txs
-            .filter(tx => tx.transactionType === "product_commission")
-            .reduce((sum, tx) => sum + tx.amount, 0);
-        const totalEarned = signupBonus + firstPurchaseCommission + productCommission;
-        // Get wallet contributions (ledger entries in referrer's wallet associated with this referral's orderIds or referralId)
-        const wallet = await Wallet_1.Wallet.findOne({ userId: referrerUserId });
-        const orderIds = orders.map(o => o._id.toString());
-        const walletContributions = wallet
-            ? wallet.ledgerEntries.filter(entry => (entry.referenceId && orderIds.includes(entry.referenceId.toString())) ||
-                (referralId && entry.referenceId && entry.referenceId.toString() === referralId.toString())).map(entry => ({
-                transactionId: entry.transactionId,
-                referenceId: entry.referenceId,
-                amount: entry.amount,
-                date: entry.date || entry.createdAt
-            }))
-            : [];
-        enriched.push({
-            _id: user._id,
-            name: user.name,
-            email: user.email,
-            referredBy: user.referredBy,
-            phone: user.phone || user.mobile || "",
-            referralCode: user.referralCode || "",
-            createdAt: user.createdAt,
-            status: user.status,
-            firstOrderQualified: user.firstOrderQualified || false,
-            totalPurchases,
-            totalCommissionGenerated: totalEarned,
-            signupBonus,
-            firstPurchaseCommission,
-            productCommission,
-            totalEarned,
-            orders: orders.map(o => ({
-                orderNumber: o.orderNumber,
-                totalAmount: o.totalAmount,
-                createdAt: o.createdAt,
-                status: o.orderStatus
-            })),
-            commissions: txs.map(tx => ({
-                commissionType: tx.transactionType === "first_order_bonus"
-                    ? "Signup Bonus"
-                    : tx.transactionType === "first_purchase_product_commission"
-                        ? "First Purchase"
-                        : "Product Commission",
-                amount: tx.amount,
-                level: tx.level,
-                date: tx.createdAt
-            })),
-            walletContributions
-        });
-    }
-    return enriched;
-};
 // GET /api/referrals/network
 const getReferralNetwork = async (req, res) => {
     try {
-        const userId = req.user?.id || req.user?._id;
+        const userId = req.user?.id;
         if (!userId) {
-            return res.status(401).json({ success: false, message: "Unauthorized" });
+            res.status(401).json({ success: false, message: "Unauthorized" });
+            return;
         }
-        const level1Raw = await User_1.User.find({ "referralHierarchy.level1UserId": userId, _id: { $ne: userId } }, "name email phone mobile referralCode referredBy createdAt status referralHierarchy firstOrderQualified");
-        const level2Raw = await User_1.User.find({ "referralHierarchy.level2UserId": userId, _id: { $ne: userId } }, "name email phone mobile referralCode referredBy createdAt status referralHierarchy firstOrderQualified");
-        const level3Raw = await User_1.User.find({ "referralHierarchy.level3UserId": userId, _id: { $ne: userId } }, "name email phone mobile referralCode referredBy createdAt status referralHierarchy firstOrderQualified");
-        const level1 = await enrichReferredUsers(level1Raw, userId);
-        const level2 = await enrichReferredUsers(level2Raw, userId);
-        const level3 = await enrichReferredUsers(level3Raw, userId);
-        return res.status(200).json({
+        const user = await User_1.User.findById(userId);
+        if (!user) {
+            res.status(404).json({ success: false, message: "User not found" });
+            return;
+        }
+        const isPartner = (0, exports.isPartnerUser)(user.roles || req.user?.roles || []);
+        const rootUser = await User_1.User.findById(userId).select("name email phone referralCode totalReferrals roles");
+        // Level 1: direct
+        const selectFields = "name email phone createdAt roles referredBy referralHierarchy referralCode totalReferrals";
+        const level1Users = await User_1.User.find({
+            _id: { $ne: userId },
+            $or: [
+                { "referralHierarchy.level1UserId": userId },
+                { referredBy: userId }
+            ]
+        }).select(selectFields);
+        const l1Ids = level1Users.map(u => u._id);
+        // Business Partner only: Level 2 and Level 3 users
+        let level2Users = [];
+        let level3Users = [];
+        let l2Ids = [];
+        if (isPartner) {
+            // Level 2: referred by Level 1 members or level2UserId = userId
+            level2Users = await User_1.User.find({
+                _id: { $nin: [userId, ...l1Ids] },
+                $or: [
+                    { "referralHierarchy.level2UserId": userId },
+                    { referredBy: { $in: l1Ids } },
+                    { "referralHierarchy.level1UserId": { $in: l1Ids } }
+                ]
+            }).select(selectFields);
+            l2Ids = level2Users.map(u => u._id);
+            // Level 3: referred by Level 2 members or level3UserId = userId
+            level3Users = await User_1.User.find({
+                _id: { $nin: [userId, ...l1Ids, ...l2Ids] },
+                $or: [
+                    { "referralHierarchy.level3UserId": userId },
+                    { referredBy: { $in: l2Ids } },
+                    { "referralHierarchy.level1UserId": { $in: l2Ids } }
+                ]
+            }).select(selectFields);
+        }
+        // Calculate commissions generated and orders placed by downline members
+        const allDownlineIds = isPartner ? [...l1Ids, ...l2Ids, ...level3Users.map(u => u._id)] : [...l1Ids];
+        const commMap = new Map();
+        const orderMap = new Map();
+        const userObjId = new mongoose_1.default.Types.ObjectId(String(userId));
+        const allDownlineObjIds = allDownlineIds.map(id => new mongoose_1.default.Types.ObjectId(String(id)));
+        const allDownlineMatch = [...allDownlineIds.map(id => String(id)), ...allDownlineObjIds];
+        try {
+            const commsAgg = await ReferralTransaction_1.ReferralTransaction.aggregate([
+                {
+                    $match: {
+                        recipientUserId: { $in: [userObjId, String(userId)] },
+                        referredUserId: { $in: allDownlineMatch }
+                    }
+                },
+                { $group: { _id: "$referredUserId", totalCommission: { $sum: "$amount" }, orderCount: { $sum: 1 } } }
+            ]);
+            commsAgg.forEach((c) => {
+                if (c._id) {
+                    const idStr = String(c._id);
+                    commMap.set(idStr, (commMap.get(idStr) || 0) + (c.totalCommission || 0));
+                    orderMap.set(idStr, (orderMap.get(idStr) || 0) + (c.orderCount || 0));
+                }
+            });
+        }
+        catch { }
+        try {
+            const settlementsAgg = await CommissionSettlement_1.CommissionSettlement.aggregate([
+                {
+                    $match: {
+                        recipientId: { $in: [userObjId, String(userId)] },
+                        $or: [
+                            { vendorId: { $in: allDownlineMatch } },
+                            { entrepreneurId: { $in: allDownlineMatch } }
+                        ]
+                    }
+                },
+                { $group: { _id: { $ifNull: ["$vendorId", "$entrepreneurId"] }, totalCommission: { $sum: "$amount" }, orderCount: { $sum: 1 } } }
+            ]);
+            settlementsAgg.forEach((s) => {
+                if (s._id) {
+                    const idStr = String(s._id);
+                    commMap.set(idStr, (commMap.get(idStr) || 0) + (s.totalCommission || 0));
+                    orderMap.set(idStr, (orderMap.get(idStr) || 0) + (s.orderCount || 0));
+                }
+            });
+        }
+        catch { }
+        try {
+            const directReferralsList = await Referral_1.Referral.find({
+                $or: [{ referrerUserId: userId }, { referrerId: userId }]
+            });
+            directReferralsList.forEach((dr) => {
+                const refId = String(dr.referredUserId || dr.referredId);
+                const rw = Number(dr.rewardAmount || dr.reward || 0);
+                if (rw > 0 && (!commMap.get(refId) || commMap.get(refId) === 0)) {
+                    commMap.set(refId, rw);
+                }
+            });
+        }
+        catch { }
+        try {
+            const OrderModel = mongoose_1.default.models.Order || User_1.User.db.model("Order");
+            if (OrderModel) {
+                const ordersAgg = await OrderModel.aggregate([
+                    {
+                        $match: {
+                            $or: [
+                                { customerId: { $in: allDownlineMatch } },
+                                { userId: { $in: allDownlineMatch } }
+                            ]
+                        }
+                    },
+                    { $group: { _id: { $ifNull: ["$customerId", "$userId"] }, orderCount: { $sum: 1 } } }
+                ]);
+                ordersAgg.forEach((o) => {
+                    if (o._id) {
+                        const idStr = String(o._id);
+                        orderMap.set(idStr, Math.max(orderMap.get(idStr) || 0, o.orderCount || 0));
+                    }
+                });
+            }
+        }
+        catch { }
+        // Calculate root user's total commissions generated and orders placed
+        let rootTotalCommission = 0;
+        let rootTotalOrders = 0;
+        try {
+            const txMatch = { recipientUserId: { $in: [userObjId, String(userId)] } };
+            if (!isPartner) {
+                txMatch.$or = [{ level: 1 }, { level: { $exists: false } }, { level: null }];
+            }
+            const rootComms = await ReferralTransaction_1.ReferralTransaction.aggregate([
+                { $match: txMatch },
+                { $group: { _id: null, total: { $sum: "$amount" }, count: { $sum: 1 } } }
+            ]);
+            if (rootComms.length > 0) {
+                rootTotalCommission += rootComms[0].total || 0;
+                rootTotalOrders += rootComms[0].count || 0;
+            }
+        }
+        catch { }
+        if (isPartner) {
+            try {
+                const rootSettlements = await CommissionSettlement_1.CommissionSettlement.aggregate([
+                    { $match: { recipientId: { $in: [userObjId, String(userId)] } } },
+                    { $group: { _id: null, total: { $sum: "$amount" }, count: { $sum: 1 } } }
+                ]);
+                if (rootSettlements.length > 0) {
+                    rootTotalCommission += rootSettlements[0].total || 0;
+                    rootTotalOrders += rootSettlements[0].count || 0;
+                }
+            }
+            catch { }
+        }
+        try {
+            const OrderModel = mongoose_1.default.models.Order || User_1.User.db.model("Order");
+            if (OrderModel) {
+                const rootUserOrdersCount = await OrderModel.countDocuments({
+                    $or: [
+                        { customerId: { $in: [userObjId, String(userId)] } },
+                        { userId: { $in: [userObjId, String(userId)] } }
+                    ]
+                });
+                if (rootUserOrdersCount > 0) {
+                    rootTotalOrders = Math.max(rootTotalOrders, rootUserOrdersCount);
+                }
+            }
+        }
+        catch { }
+        const enrichUser = (u) => {
+            const raw = u.toObject ? u.toObject() : { ...u };
+            const sId = String(raw._id);
+            // Privacy masking: mask downline phone and email for customer role
+            if (!isPartner) {
+                const masked = (0, exports.maskContactInfo)(raw.phone, raw.email);
+                raw.phone = masked.phone;
+                raw.email = masked.email;
+            }
+            return {
+                ...raw,
+                totalCommissionGenerated: commMap.get(sId) || 0,
+                totalPurchases: orderMap.get(sId) || 0
+            };
+        };
+        const enrichedL1 = level1Users.map(enrichUser);
+        const enrichedL2 = isPartner ? level2Users.map(enrichUser) : [];
+        const enrichedL3 = isPartner ? level3Users.map(enrichUser) : [];
+        const enrichedRootUser = {
+            ...(rootUser?.toObject ? rootUser.toObject() : rootUser),
+            totalCommissionGenerated: rootTotalCommission,
+            totalPurchases: rootTotalOrders
+        };
+        res.status(200).json({
             success: true,
-            level1,
-            level2,
-            level3
+            isBusinessPartner: isPartner,
+            isCustomer: !isPartner,
+            user: enrichedRootUser,
+            level1: enrichedL1,
+            level2: enrichedL2,
+            level3: enrichedL3,
+            network: {
+                level1: { count: enrichedL1.length, users: enrichedL1 },
+                level2: { count: enrichedL2.length, users: enrichedL2 },
+                level3: { count: enrichedL3.length, users: enrichedL3 },
+                totalTeam: enrichedL1.length + enrichedL2.length + enrichedL3.length
+            }
         });
     }
     catch (error) {
-        return res.status(500).json({ success: false, message: error.message });
+        res.status(500).json({ success: false, message: error.message });
     }
 };
 exports.getReferralNetwork = getReferralNetwork;
-// GET /api/referrals/admin/settings
-const getReferralSettings = async (req, res) => {
-    try {
-        let settings = await ReferralSettings_1.ReferralSettings.findOne({});
-        if (!settings) {
-            settings = new ReferralSettings_1.ReferralSettings({
-                firstOrderRewards: { level1: 0, level2: 0, level3: 0 },
-                onboardingRewards: {
-                    vendor: 0,
-                    service_provider: 0,
-                    wholesaler: 0,
-                    manufacturer: 0,
-                    entrepreneur: 0,
-                    mandal_franchise: 0,
-                    district_franchise: 0,
-                    state_franchise: 0
-                },
-                enabled: true,
-                defaultReferralCode: "APEXBEE"
-            });
-            await settings.save();
-        }
-        else if (!settings.onboardingRewards) {
-            settings.onboardingRewards = {
-                vendor: 0,
-                service_provider: 0,
-                wholesaler: 0,
-                manufacturer: 0,
-                entrepreneur: 0,
-                mandal_franchise: 0,
-                district_franchise: 0,
-                state_franchise: 0
-            };
-            await settings.save();
-        }
-        return res.status(200).json({ success: true, settings });
-    }
-    catch (error) {
-        return res.status(500).json({ success: false, message: error.message });
-    }
-};
-exports.getReferralSettings = getReferralSettings;
-// PUT /api/referrals/admin/settings
-const updateReferralSettings = async (req, res) => {
-    try {
-        let settings = await ReferralSettings_1.ReferralSettings.findOne({});
-        if (!settings) {
-            settings = new ReferralSettings_1.ReferralSettings(req.body);
-        }
-        else {
-            if (req.body.firstOrderRewards) {
-                settings.firstOrderRewards = { ...settings.firstOrderRewards, ...req.body.firstOrderRewards };
-            }
-            if (req.body.onboardingRewards) {
-                settings.onboardingRewards = { ...settings.onboardingRewards, ...req.body.onboardingRewards };
-            }
-            if (req.body.enabled !== undefined)
-                settings.enabled = req.body.enabled;
-            if (req.body.defaultReferralCode !== undefined)
-                settings.defaultReferralCode = req.body.defaultReferralCode;
-            settings.markModified('onboardingRewards');
-            settings.markModified('firstOrderRewards');
-        }
-        await settings.save();
-        return res.status(200).json({ success: true, message: "Referral & onboarding reward settings saved successfully!", settings });
-    }
-    catch (error) {
-        return res.status(500).json({ success: false, message: error.message });
-    }
-};
-exports.updateReferralSettings = updateReferralSettings;
-// POST /api/admin/referrals/process-releases
-const processReferralReleases = async (req, res) => {
-    try {
-        const { orderId } = req.body;
-        const adminId = req.user?.id || req.user?._id;
-        const stats = await SettlementEngine_1.SettlementEngine.releaseEligibleSettlements(undefined, orderId, adminId);
-        if (orderId) {
-            try {
-                await Order_1.Order.findByIdAndUpdate(orderId, {
-                    commissionReleaseStatus: 'Released',
-                    commissionReleasedAt: new Date()
-                });
-            }
-            catch (e) {
-                console.warn('[processReferralReleases] Order status update warning:', e);
-            }
-        }
-        if (stats.releasedTxs + stats.releasedSettlements === 0) {
-            return res.status(200).json({
-                success: true,
-                message: orderId ? "No pending or eligible commissions found for this order." : "No pending or eligible commissions found for release.",
-                processedCount: 0,
-                processedSettlementsCount: 0
-            });
-        }
-        return res.status(200).json({
-            success: true,
-            message: `Successfully processed ${stats.releasedTxs} referral rewards and ${stats.releasedSettlements} franchise settlements.`,
-            processedCount: stats.releasedTxs,
-            processedSettlementsCount: stats.releasedSettlements
-        });
-    }
-    catch (error) {
-        return res.status(500).json({ success: false, message: error.message });
-    }
-};
-exports.processReferralReleases = processReferralReleases;
 // GET /api/referrals/stats
 const getReferralStats = async (req, res) => {
     try {
-        const userId = req.user?.id || req.user?._id;
+        const userId = req.user?.id;
         if (!userId) {
-            return res.status(401).json({ success: false, message: "Unauthorized" });
+            res.status(401).json({ success: false, message: "Unauthorized" });
+            return;
         }
-        const user = await User_1.User.findById(userId).populate("referredBy", "name referralCode");
-        if (!user) {
-            return res.status(404).json({ success: false, message: "User not found" });
-        }
-        const level1Count = await User_1.User.countDocuments({ "referralHierarchy.level1UserId": user._id, _id: { $ne: user._id } });
-        const level2Count = await User_1.User.countDocuments({ "referralHierarchy.level2UserId": user._id, _id: { $ne: user._id } });
-        const level3Count = await User_1.User.countDocuments({ "referralHierarchy.level3UserId": user._id, _id: { $ne: user._id } });
-        const completedDirectReferrals = await User_1.User.countDocuments({ "referralHierarchy.level1UserId": user._id, _id: { $ne: user._id }, firstOrderQualified: true });
-        const completedIndirectReferrals = await User_1.User.countDocuments({ "referralHierarchy.level2UserId": user._id, _id: { $ne: user._id }, firstOrderQualified: true });
-        const completedLevel3Referrals = await User_1.User.countDocuments({ "referralHierarchy.level3UserId": user._id, _id: { $ne: user._id }, firstOrderQualified: true });
-        // A. Signup Bonus: KYC referral rewards (Referrals with status "rewarded")
-        const rewardedRefs = await Referral_1.Referral.find({ referrerUserId: user._id, status: "rewarded" });
-        const signupBonus = rewardedRefs.reduce((sum, r) => sum + (r.rewardAmount || 0), 0);
-        // B. First Purchase Commission & C. Product Commission from ReferralTransaction
-        const txs = await ReferralTransaction_1.ReferralTransaction.find({ recipientUserId: user._id });
-        let signupBonusSum = signupBonus; // Start with KYC rewarded referrals
+        const user = await User_1.User.findById(userId);
+        const isPartner = (0, exports.isPartnerUser)(user?.roles || req.user?.roles || []);
+        const [directCount, totalTransactions, wallet, directReferralsList] = await Promise.all([
+            Referral_1.Referral.countDocuments({ $or: [{ referrerUserId: userId }, { referrerId: userId }] }),
+            ReferralTransaction_1.ReferralTransaction.find({ recipientUserId: userId }),
+            Wallet_1.Wallet.findOne({ userId }),
+            Referral_1.Referral.find({ $or: [{ referrerUserId: userId }, { referrerId: userId }] })
+        ]);
+        const totalEarningsAll = totalTransactions
+            .filter(t => t.status === "released")
+            .reduce((sum, t) => sum + (t.amount || 0), 0);
+        const pendingEarnings = totalTransactions
+            .filter(t => t.status === "pending" || t.status === "placed")
+            .reduce((sum, t) => sum + (t.amount || 0), 0);
+        const level1 = { signupBonus: 0, firstPurchaseCommission: 0, productCommission: 0, totalEarned: 0 };
+        const level2 = { signupBonus: 0, firstPurchaseCommission: 0, productCommission: 0, totalEarned: 0 };
+        const level3 = { signupBonus: 0, firstPurchaseCommission: 0, productCommission: 0, totalEarned: 0 };
         let firstPurchaseCommission = 0;
         let productCommission = 0;
-        let l1_signupBonus = signupBonus; // All rewarded referrals are level 1 directs
-        let l1_firstPurchaseCommission = 0;
-        let l1_productCommission = 0;
-        let l2_signupBonus = 0;
-        let l2_firstPurchaseCommission = 0;
-        let l2_productCommission = 0;
-        let l3_signupBonus = 0;
-        let l3_firstPurchaseCommission = 0;
-        let l3_productCommission = 0;
-        txs.forEach(tx => {
-            const amt = tx.amount || 0;
-            if (tx.transactionType === "first_order_bonus") {
-                signupBonusSum += amt;
-                if (tx.level === 1)
-                    l1_signupBonus += amt;
-                else if (tx.level === 2)
-                    l2_signupBonus += amt;
-                else if (tx.level === 3)
-                    l3_signupBonus += amt;
-            }
-            else if (tx.transactionType === "first_purchase_product_commission") {
-                firstPurchaseCommission += amt;
-                if (tx.level === 1)
-                    l1_firstPurchaseCommission += amt;
-                else if (tx.level === 2)
-                    l2_firstPurchaseCommission += amt;
-                else if (tx.level === 3)
-                    l3_firstPurchaseCommission += amt;
-            }
-            else if (tx.transactionType === "product_commission") {
-                productCommission += amt;
-                if (tx.level === 1)
-                    l1_productCommission += amt;
-                else if (tx.level === 2)
-                    l2_productCommission += amt;
-                else if (tx.level === 3)
-                    l3_productCommission += amt;
-            }
-        });
-        const finalSignupBonus = signupBonusSum;
-        // D. Membership, E. Vendor, F. Franchise, G. Recurring from CommissionSettlement
-        const settlements = await CommissionSettlement_1.CommissionSettlement.find({ recipientId: user._id });
-        let membershipIncentives = 0;
-        let vendorIncentives = 0;
+        let signupBonus = 0;
         let franchiseIncentives = 0;
-        let recurringCommissions = 0;
-        settlements.forEach(s => {
-            const amt = s.amount || 0;
-            if (s.settlementType === "entrepreneur") {
-                membershipIncentives += amt;
+        totalTransactions.forEach(t => {
+            const amt = t.amount || 0;
+            const lvl = t.level || 1;
+            const typeStr = (t.transactionType || "").toLowerCase();
+            const reasonStr = (t.rewardReason || "").toLowerCase();
+            const isProductFirstPurchase = typeStr.includes("first_purchase") ||
+                (typeStr.includes("first") && (typeStr.includes("product") || reasonStr.includes("product")));
+            const isBonus = !isProductFirstPurchase && (typeStr.includes("signup") ||
+                typeStr.includes("onboarding") ||
+                typeStr.includes("welcome") ||
+                typeStr.includes("bonus") ||
+                typeStr.includes("first_order") ||
+                reasonStr.includes("signup") ||
+                reasonStr.includes("onboarding") ||
+                reasonStr.includes("welcome") ||
+                reasonStr.includes("first_order"));
+            if (lvl === 1) {
+                level1.totalEarned += amt;
+                if (isBonus)
+                    level1.signupBonus += amt;
+                else if (isProductFirstPurchase)
+                    level1.firstPurchaseCommission += amt;
+                else
+                    level1.productCommission += amt;
             }
-            else if (s.settlementType === "vendor") {
-                vendorIncentives += amt;
+            else if (lvl === 2) {
+                level2.totalEarned += amt;
+                if (isBonus)
+                    level2.signupBonus += amt;
+                else if (isProductFirstPurchase)
+                    level2.firstPurchaseCommission += amt;
+                else
+                    level2.productCommission += amt;
             }
-            else if (s.settlementType === "franchise") {
-                franchiseIncentives += amt;
+            else if (lvl === 3) {
+                level3.totalEarned += amt;
+                if (isBonus)
+                    level3.signupBonus += amt;
+                else if (isProductFirstPurchase)
+                    level3.firstPurchaseCommission += amt;
+                else
+                    level3.productCommission += amt;
             }
-            else if (s.settlementType === "wishlink" || s.settlementType === "referralPool") {
-                recurringCommissions += amt;
-            }
+            if (isBonus)
+                signupBonus += amt;
+            else if (isProductFirstPurchase)
+                firstPurchaseCommission += amt;
+            else
+                productCommission += amt;
         });
-        // Wallet Summary
-        const wallet = await Wallet_1.Wallet.findOne({ userId: user._id });
-        const availableBalance = wallet ? wallet.availableBalance : 0;
-        const pendingBalance = wallet ? wallet.pendingBalance : 0;
-        const withdrawnBalance = wallet ? wallet.withdrawnBalance : 0;
-        const walletTotal = availableBalance + pendingBalance + withdrawnBalance;
-        const totalEarned = finalSignupBonus +
-            firstPurchaseCommission +
-            productCommission +
-            membershipIncentives +
-            vendorIncentives +
-            franchiseIncentives +
-            recurringCommissions;
-        return res.status(200).json({
+        // Customer scoping: only Level 1 rewards are presented
+        const totalEarnings = isPartner ? totalEarningsAll : level1.totalEarned;
+        res.status(200).json({
             success: true,
+            isBusinessPartner: isPartner,
+            isCustomer: !isPartner,
             stats: {
-                totalReferrals: level1Count + level2Count + level3Count,
-                completedReferrals: completedDirectReferrals + completedIndirectReferrals + completedLevel3Referrals,
-                pendingReferrals: (level1Count + level2Count + level3Count) - (completedDirectReferrals + completedIndirectReferrals + completedLevel3Referrals),
-                totalDirectReferrals: level1Count,
-                totalIndirectReferrals: level2Count,
-                totalLevel3Referrals: level3Count,
-                completedDirectReferrals,
-                completedIndirectReferrals,
-                completedLevel3Referrals,
-                pendingDirectReferrals: level1Count - completedDirectReferrals,
-                pendingIndirectReferrals: level2Count - completedIndirectReferrals,
-                pendingLevel3Referrals: level3Count - completedLevel3Referrals,
-                // User profile and parent info
-                userLevel: 1,
-                hasParent: !!user.referredBy,
-                parentInfo: user.referredBy ? {
-                    name: user.referredBy.name || "ApexBee System",
-                    referralCode: user.referredBy.referralCode || "APEXBEE"
-                } : undefined,
-                // Seven Categories
-                signupBonus: finalSignupBonus,
+                totalReferrals: directCount,
+                totalEarnings,
+                totalEarned: totalEarnings,
+                pendingEarnings,
+                transactionCount: totalTransactions.length,
+                availableBalance: wallet?.availableBalance || 0,
+                pendingBalance: wallet?.pendingBalance || pendingEarnings,
+                holdBalance: wallet?.holdBalance || 0,
+                withdrawnBalance: wallet?.withdrawnBalance || 0,
                 firstPurchaseCommission,
                 productCommission,
-                membershipIncentives,
-                vendorIncentives,
+                signupBonus,
                 franchiseIncentives,
-                recurringCommissions,
-                totalEarned,
-                // Wallet Balance splits
-                availableBalance,
-                pendingBalance,
-                withdrawnBalance,
-                walletTotal,
-                walletHold: pendingBalance,
-                walletAvailable: availableBalance,
-                // Level-based earnings breakdowns
-                level1: {
-                    signupBonus: l1_signupBonus,
-                    firstPurchaseCommission: l1_firstPurchaseCommission,
-                    productCommission: l1_productCommission,
-                    totalEarned: l1_signupBonus + l1_firstPurchaseCommission + l1_productCommission
-                },
-                level2: {
-                    signupBonus: l2_signupBonus,
-                    firstPurchaseCommission: l2_firstPurchaseCommission,
-                    productCommission: l2_productCommission,
-                    totalEarned: l2_signupBonus + l2_firstPurchaseCommission + l2_productCommission
-                },
-                level3: {
-                    signupBonus: l3_signupBonus,
-                    firstPurchaseCommission: l3_firstPurchaseCommission,
-                    productCommission: l3_productCommission,
-                    totalEarned: l3_signupBonus + l3_firstPurchaseCommission + l3_productCommission
-                }
+                level1,
+                level2: isPartner ? level2 : { signupBonus: 0, firstPurchaseCommission: 0, productCommission: 0, totalEarned: 0 },
+                level3: isPartner ? level3 : { signupBonus: 0, firstPurchaseCommission: 0, productCommission: 0, totalEarned: 0 }
             }
         });
     }
     catch (error) {
-        return res.status(500).json({ success: false, message: error.message });
+        res.status(500).json({ success: false, message: error.message });
     }
 };
 exports.getReferralStats = getReferralStats;
 // GET /api/referrals/earnings-summary
 const getReferralEarningsSummary = async (req, res) => {
     try {
-        const userId = req.user?.id || req.user?._id;
+        const userId = req.user?.id;
         if (!userId) {
-            return res.status(401).json({ success: false, message: "Unauthorized" });
+            res.status(401).json({ success: false, message: "Unauthorized" });
+            return;
         }
+        const user = await User_1.User.findById(userId);
+        const isPartner = (0, exports.isPartnerUser)(user?.roles || req.user?.roles || []);
         const txs = await ReferralTransaction_1.ReferralTransaction.find({ recipientUserId: userId });
-        let direct = 0;
-        let indirect = 0;
-        let level3 = 0;
-        let signup = 0;
-        let purchase = 0;
-        txs.forEach(tx => {
-            if (tx.level === 1)
-                direct += tx.amount;
-            else if (tx.level === 2)
-                indirect += tx.amount;
-            else if (tx.level === 3)
-                level3 += tx.amount;
-            if (tx.transactionType === "first_order_bonus")
-                signup += tx.amount;
-            else if (tx.transactionType === "first_purchase_product_commission" || tx.transactionType === "product_commission")
-                purchase += tx.amount;
+        const byLevel = { 1: 0, 2: 0, 3: 0 };
+        let directBonus = 0;
+        let productCommission = 0;
+        txs.forEach(t => {
+            const lvl = t.level || 1;
+            byLevel[lvl] = (byLevel[lvl] || 0) + (t.amount || 0);
+            if (t.transactionType.includes("bonus")) {
+                directBonus += t.amount || 0;
+            }
+            else {
+                productCommission += t.amount || 0;
+            }
         });
-        const topReferrals = [];
-        const directDownlines = await User_1.User.find({ "referralHierarchy.level1UserId": userId }, "name email");
-        for (const dl of directDownlines) {
-            const subTxs = await ReferralTransaction_1.ReferralTransaction.find({ recipientUserId: userId, referredUserId: dl._id });
-            const totalEarned = subTxs.reduce((sum, tx) => sum + tx.amount, 0);
-            const referralCount = await User_1.User.countDocuments({ "referralHierarchy.level1UserId": dl._id });
-            topReferrals.push({
-                user: { name: dl.name, email: dl.email },
-                totalEarned,
-                referralCount
-            });
+        if (!isPartner) {
+            byLevel[2] = 0;
+            byLevel[3] = 0;
         }
-        topReferrals.sort((a, b) => b.totalEarned - a.totalEarned);
-        return res.status(200).json({
+        res.status(200).json({
             success: true,
+            isBusinessPartner: isPartner,
+            isCustomer: !isPartner,
             summary: {
-                timeframe: "alltime",
-                totals: {
-                    direct,
-                    indirect,
-                    level3,
-                    signup,
-                    purchase,
-                    total: direct + indirect + level3
-                },
-                breakdown: {
-                    byLevel: { level1: direct, level2: indirect, level3 },
-                    byType: { signup, purchase }
-                }
-            },
-            topReferrals: topReferrals.slice(0, 5)
+                byLevel,
+                directBonus,
+                productCommission,
+                total: isPartner ? (directBonus + productCommission) : (byLevel[1] || 0)
+            }
         });
     }
     catch (error) {
-        return res.status(500).json({ success: false, message: error.message });
+        res.status(500).json({ success: false, message: error.message });
     }
 };
 exports.getReferralEarningsSummary = getReferralEarningsSummary;
 // GET /api/referrals/leaderboard
 const getReferralLeaderboard = async (req, res) => {
     try {
-        const userId = req.user?.id || req.user?._id;
-        if (!userId) {
-            return res.status(401).json({ success: false, message: "Unauthorized" });
-        }
-        // Aggregate total earnings from ReferralTransaction
-        const transactions = await ReferralTransaction_1.ReferralTransaction.aggregate([
+        const topReferrers = await Referral_1.Referral.aggregate([
+            { $group: { _id: "$referrerUserId", count: { $sum: 1 } } },
+            { $sort: { count: -1 } },
+            { $limit: 10 },
             {
-                $group: {
-                    _id: "$recipientUserId",
-                    totalEarnings: { $sum: "$amount" },
-                    referralCount: { $addToSet: "$referredUserId" }
+                $lookup: {
+                    from: "users",
+                    localField: "_id",
+                    foreignField: "_id",
+                    as: "user"
                 }
             },
+            { $unwind: "$user" },
             {
                 $project: {
-                    recipientUserId: "$_id",
-                    totalEarnings: 1,
-                    referralCount: { $size: "$referralCount" }
-                }
-            },
-            { $sort: { totalEarnings: -1 } }
-        ]);
-        // Populate user info for top 20
-        const populated = [];
-        let userRank = -1;
-        let userEarnings = 0;
-        let userCount = 0;
-        for (let i = 0; i < transactions.length; i++) {
-            const tx = transactions[i];
-            const isCurrentUser = tx.recipientUserId.toString() === userId.toString();
-            const userInfo = await User_1.User.findById(tx.recipientUserId, "name email referralCode");
-            if (userInfo) {
-                if (isCurrentUser) {
-                    userRank = i + 1;
-                    userEarnings = tx.totalEarnings;
-                    userCount = tx.referralCount;
-                }
-                // Add to leaderboard if within top 20
-                if (i < 20) {
-                    populated.push({
-                        rank: i + 1,
-                        name: userInfo.name,
-                        email: userInfo.email,
-                        referralCode: userInfo.referralCode,
-                        earnings: tx.totalEarnings,
-                        count: tx.referralCount,
-                        isCurrentUser
-                    });
+                    _id: 1,
+                    name: "$user.name",
+                    count: 1
                 }
             }
+        ]);
+        res.status(200).json({ success: true, leaderboard: topReferrers });
+    }
+    catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+exports.getReferralLeaderboard = getReferralLeaderboard;
+// GET /api/referrals/admin/settings
+const getReferralSettings = async (req, res) => {
+    try {
+        let settings = await ReferralSettings_1.ReferralSettings.findOne();
+        if (!settings) {
+            settings = await ReferralSettings_1.ReferralSettings.create({
+                firstOrderRewards: { level1: 50, level2: 25, level3: 10 },
+                enabled: true,
+                defaultReferralCode: "APEXBEE"
+            });
         }
-        // Fallback if current user is not in transactions (i.e. has 0 released earnings)
-        if (userRank === -1) {
-            const currentUser = await User_1.User.findById(userId, "name email referralCode");
-            userRank = transactions.length + 1;
-            userEarnings = 0;
-            userCount = await User_1.User.countDocuments({ "referralHierarchy.level1UserId": userId });
+        res.status(200).json({ success: true, settings });
+    }
+    catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+exports.getReferralSettings = getReferralSettings;
+// PUT /api/referrals/admin/settings
+const updateReferralSettings = async (req, res) => {
+    try {
+        let settings = await ReferralSettings_1.ReferralSettings.findOne();
+        if (!settings) {
+            settings = new ReferralSettings_1.ReferralSettings(req.body);
         }
-        return res.status(200).json({
+        else {
+            Object.assign(settings, req.body);
+        }
+        await settings.save();
+        res.status(200).json({ success: true, message: "Referral settings updated", settings });
+    }
+    catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+exports.updateReferralSettings = updateReferralSettings;
+// POST /api/referrals/admin/process-releases or /api/admin/settlements/release
+const processReferralReleases = async (req, res) => {
+    try {
+        const stats = await SettlementEngine_1.SettlementEngine.releaseEligibleSettlements();
+        res.status(200).json({
             success: true,
-            leaderboard: populated,
-            currentUserRank: {
-                rank: userRank,
-                earnings: userEarnings,
-                count: userCount
+            message: "Referral settlements processed successfully",
+            stats
+        });
+    }
+    catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+exports.processReferralReleases = processReferralReleases;
+// POST /api/referrals/upgrade-partner
+const upgradeToBusinessPartner = async (req, res) => {
+    try {
+        const userId = req.user?.id;
+        if (!userId) {
+            res.status(401).json({ success: false, message: "Unauthorized" });
+            return;
+        }
+        const user = await User_1.User.findById(userId);
+        if (!user) {
+            res.status(404).json({ success: false, message: "User not found" });
+            return;
+        }
+        if (!user.roles.includes("business_partner")) {
+            user.roles.push("business_partner");
+            await user.save();
+        }
+        const token = jsonwebtoken_1.default.sign({ id: user._id.toString(), email: user.email, roles: user.roles }, process.env.JWT_SECRET || 'supersecretjwtkeyforapexbeebusinessoperatingnetwork', { expiresIn: '30d' });
+        res.status(200).json({
+            success: true,
+            message: "Congratulations! You have been upgraded to Business Partner for free. Full Level 1–3 network access and Audit Splits unlocked.",
+            token,
+            user: {
+                id: user._id,
+                _id: user._id,
+                name: user.name,
+                email: user.email,
+                phone: user.phone || user.mobile || "",
+                roles: user.roles,
+                referralCode: user.referralCode,
+                sellerProfile: user.sellerProfile
             }
         });
     }
     catch (error) {
-        return res.status(500).json({ success: false, message: error.message });
+        res.status(500).json({ success: false, message: error.message });
     }
 };
-exports.getReferralLeaderboard = getReferralLeaderboard;
+exports.upgradeToBusinessPartner = upgradeToBusinessPartner;

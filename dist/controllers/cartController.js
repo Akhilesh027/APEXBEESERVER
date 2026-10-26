@@ -33,12 +33,32 @@ const getCart = async (req, res) => {
                     const restaurant = foodItem.restaurantId || {};
                     const price = foodItem.offerPrice && foodItem.offerPrice > 0 ? foodItem.offerPrice : foodItem.basePrice;
                     const rPin = restaurant.pincode || restaurant.pinCode || restaurant.location?.pincode;
+                    // Check linked Product for admin pricing overrides
+                    const linkedProduct = await Product_1.default.findOne({ foodMenuItemId: foodItem._id });
+                    const platformFeePercent = linkedProduct?.adminPricing?.platformFeePercent ??
+                        foodItem.platformCommissionPercent ??
+                        5;
+                    const platformFeeAmount = linkedProduct?.adminPricing?.platformFeeAmount ??
+                        foodItem.platformShareAmount ??
+                        0;
+                    const distributedFrom = linkedProduct?.adminPricing?.distributedFrom ??
+                        foodItem.distributedFrom ??
+                        'platform_fee';
+                    const vendorCommissionPercent = linkedProduct?.adminPricing?.vendorCommissionPercent ??
+                        foodItem.vendorCommissionPercent ??
+                        0;
+                    const packingCharge = linkedProduct?.adminPricing?.packingCharge ??
+                        foodItem.packagingCharge ??
+                        0;
                     return {
                         _id: item._id,
                         productId: foodItem._id,
                         quantity: item.quantity,
                         color: item.color || 'default',
                         size: item.size || 'default',
+                        selectedColor: item.color || 'default',
+                        selectedSize: item.size || 'default',
+                        selectedAttributes: item.selectedAttributes || {},
                         name: foodItem.name,
                         itemName: foodItem.name,
                         image: foodItem.image || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?q=80&w=400&auto=format&fit=crop',
@@ -48,8 +68,36 @@ const getCart = async (req, res) => {
                         salesPrice: price,
                         originalPrice: foodItem.basePrice,
                         deliveryFee: 0,
-                        packingCharge: foodItem.packagingCharge || 0,
+                        shippingCharge: 0,
+                        packingCharge: packingCharge,
                         sellingPrice: price,
+                        platformFeePercent: platformFeePercent,
+                        platformCommissionPercent: platformFeePercent,
+                        platformFeeAmount: platformFeeAmount,
+                        distributedFrom: distributedFrom,
+                        commissionType: distributedFrom,
+                        vendorCommissionPercent: vendorCommissionPercent,
+                        adminPricing: linkedProduct?.adminPricing || {
+                            platformFeePercent,
+                            platformFeeAmount,
+                            distributedFrom,
+                            vendorCommissionPercent,
+                            packingCharge,
+                        },
+                        product: linkedProduct || {
+                            _id: foodItem._id,
+                            name: foodItem.name,
+                            adminPricing: {
+                                platformFeePercent,
+                                platformFeeAmount,
+                                distributedFrom,
+                                vendorCommissionPercent,
+                                packingCharge,
+                            },
+                            attributes: {
+                                distributedFrom,
+                            },
+                        },
                         stock: foodItem.soldOut ? 0 : 99,
                         vendorId: restaurant._id || restaurant.id,
                         vendorName: restaurant.restaurantName || restaurant.name || 'Food Partner',
@@ -125,7 +173,8 @@ const getCart = async (req, res) => {
                 shippingCharge: deliveryFee,
                 packingCharge: packingCharge,
                 platformFeeAmount: product.adminPricing?.platformFeeAmount ?? 0,
-                platformFeePercent: product.adminPricing?.platformFeePercent ?? 0,
+                platformFeePercent: product.adminPricing?.platformFeePercent ?? (product.foodMenuItemId || product.itemType === 'FOOD' || categoryName === 'Food & Dining' ? 5 : 0),
+                platformCommissionPercent: product.adminPricing?.platformFeePercent ?? (product.foodMenuItemId || product.itemType === 'FOOD' || categoryName === 'Food & Dining' ? 5 : 0),
                 distributedFrom: product.adminPricing?.distributedFrom ?? 'platform_fee',
                 commissionType: product.adminPricing?.commissionType ?? product.attributes?.commissionType ?? 'vendor',
                 adminPricing: product.adminPricing,

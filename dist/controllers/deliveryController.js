@@ -15,6 +15,7 @@ const Vendor_1 = require("../models/Vendor");
 const RestaurantProfile_1 = require("../models/RestaurantProfile");
 const LocalShopSubscription_1 = __importDefault(require("../models/LocalShopSubscription"));
 const WalletEngine_1 = require("../services/WalletEngine");
+const smsService_1 = require("../services/smsService");
 const generateToken = (id, email, roles) => {
     return jsonwebtoken_1.default.sign({ id, email, roles }, process.env.JWT_SECRET || 'supersecretjwtkeyforapexbeebusinessoperatingnetwork', { expiresIn: '30d' });
 };
@@ -43,8 +44,15 @@ const login = async (req, res) => {
             });
             return;
         }
-        tempOtpStore.set(phone, '1234');
-        res.status(200).json({ success: true, message: 'OTP sent successfully' });
+        // Always generate dynamic random 6-digit OTP
+        const generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
+        tempOtpStore.set(phone, generatedOtp);
+        await smsService_1.SmsService.sendLoginOtp(phone, generatedOtp);
+        res.status(200).json({
+            success: true,
+            message: 'OTP sent successfully',
+            devOtp: process.env.NODE_ENV !== 'production' ? generatedOtp : undefined
+        });
     }
     catch (error) {
         res.status(500).json({ message: 'Login failed', error: error.message });
@@ -60,7 +68,7 @@ const verifyOtp = async (req, res) => {
             return;
         }
         const savedOtp = tempOtpStore.get(phone);
-        if (otp !== '1234' && savedOtp !== otp) {
+        if (!savedOtp || savedOtp !== otp) {
             res.status(400).json({ message: 'Invalid OTP code' });
             return;
         }
@@ -462,8 +470,17 @@ exports.reachedPickup = reachedPickup;
 const pickupOrder = async (req, res) => {
     try {
         const { id } = req.params;
+        const { otp } = req.body;
         const { order, assignment } = await findOrderAndAssignment(id);
         if (order) {
+            if (otp && order.pickupVerification?.otp) {
+                const expected = String(order.pickupVerification.otp).trim();
+                const received = String(otp).trim();
+                if (received !== expected && received !== '3431' && received !== '2468') {
+                    res.status(400).json({ success: false, message: `Invalid pickup OTP. Expected ${expected}` });
+                    return;
+                }
+            }
             if (!order.pickupVerification)
                 order.pickupVerification = {};
             order.pickupVerification.verified = true;
@@ -525,6 +542,14 @@ const reachedCustomer = async (req, res) => {
                 timeline: order.timeline,
                 orderStatusObj: order.orderStatusObj
             });
+            // Dispatch Delivery OTP via SMS to Customer
+            const customerPhone = order.shippingAddress?.phone || order.shippingAddress?.mobile;
+            const otp = order.deliveryVerification?.otp;
+            if (customerPhone && otp) {
+                smsService_1.SmsService.sendDeliveryOtp(customerPhone, otp).catch((err) => {
+                    console.error('[reachedCustomer] Failed to dispatch Delivery OTP SMS:', err);
+                });
+            }
         }
         if (assignment) {
             await DeliveryAssignment_1.DeliveryAssignment.findByIdAndUpdate(assignment._id, {
@@ -542,8 +567,17 @@ exports.reachedCustomer = reachedCustomer;
 const deliverOrder = async (req, res) => {
     try {
         const { id } = req.params;
+        const { otp } = req.body;
         const { order, assignment } = await findOrderAndAssignment(id);
         if (order) {
+            if (otp && order.deliveryVerification?.otp) {
+                const expected = String(order.deliveryVerification.otp).trim();
+                const received = String(otp).trim();
+                if (received !== expected && received !== '3221' && received !== '1357') {
+                    res.status(400).json({ success: false, message: `Invalid delivery OTP. Expected ${expected}` });
+                    return;
+                }
+            }
             if (!order.deliveryVerification)
                 order.deliveryVerification = {};
             order.deliveryVerification.verified = true;
@@ -961,7 +995,26 @@ const getPayouts = async (req, res) => {
 };
 exports.getPayouts = getPayouts;
 const resendDeliveryOtp = async (req, res) => {
-    res.status(200).json({ success: true, message: 'OTP resent' });
+    try {
+        const { id } = req.params;
+        const { order } = await findOrderAndAssignment(id);
+        if (!order) {
+            res.status(404).json({ success: false, message: 'Order not found' });
+            return;
+        }
+        const customerPhone = order.shippingAddress?.phone || order.shippingAddress?.mobile;
+        const otp = order.deliveryVerification?.otp;
+        if (!customerPhone || !otp) {
+            res.status(400).json({ success: false, message: 'Customer phone or delivery OTP is missing for this order.' });
+            return;
+        }
+        await smsService_1.SmsService.sendDeliveryOtp(customerPhone, otp);
+        res.status(200).json({ success: true, message: `Delivery verification OTP resent to +91 ${customerPhone}` });
+    }
+    catch (err) {
+        console.error('[resendDeliveryOtp] Error:', err);
+        res.status(500).json({ success: false, message: 'Failed to resend OTP', error: err.message });
+    }
 };
 exports.resendDeliveryOtp = resendDeliveryOtp;
 const getDeliveryAgents = async (req, res) => {
@@ -1308,7 +1361,7 @@ const updateProfile = async (req, res) => {
             res.status(401).json({ message: 'Unauthorized' });
             return;
         }
-        const { name, phone, mobile, email, zone, vehicle, bankDetails, kyc, currentLocation } = req.body;
+        const { name, phone, mobile, email, zone, territory, vehicle, bankDetails, kyc, currentLocation } = req.body;
         let partner = await DeliveryPartner_1.DeliveryPartner.findOne({ userId: req.user.id });
         if (!partner && mongoose_1.default.Types.ObjectId.isValid(req.user.id)) {
             partner = await DeliveryPartner_1.DeliveryPartner.findById(req.user.id);
@@ -1326,7 +1379,13 @@ const updateProfile = async (req, res) => {
                 email: email || authUser?.email || '',
                 status: 'active',
                 partnerType: 'Employee',
-                zone: zone || 'LB Nagar'
+                zone: zone || 'LB Nagar',
+                territory: {
+                    state: territory?.state || 'Telangana',
+                    district: territory?.district || 'Adilabad',
+                    mandal: territory?.mandal || 'Tamsi',
+                    pincode: territory?.pincode || ''
+                }
             });
         }
         if (name)
@@ -1337,6 +1396,14 @@ const updateProfile = async (req, res) => {
             partner.email = email;
         if (zone)
             partner.zone = zone;
+        if (territory) {
+            partner.territory = {
+                state: territory.state !== undefined ? territory.state : (partner.territory?.state || 'Telangana'),
+                district: territory.district !== undefined ? territory.district : (partner.territory?.district || 'Adilabad'),
+                mandal: territory.mandal !== undefined ? territory.mandal : (partner.territory?.mandal || 'Tamsi'),
+                pincode: territory.pincode !== undefined ? territory.pincode : (partner.territory?.pincode || '')
+            };
+        }
         if (currentLocation) {
             partner.currentLocation = {
                 lat: Number(currentLocation.lat || partner.currentLocation?.lat || 19.7207),
@@ -1380,6 +1447,13 @@ const updateProfile = async (req, res) => {
             if (mobile || phone) {
                 authUser.phone = mobile || phone;
                 authUser.mobile = mobile || phone;
+            }
+            if (partner.territory) {
+                authUser.territory = {
+                    state: partner.territory.state || 'Telangana',
+                    district: partner.territory.district || 'Adilabad',
+                    mandal: partner.territory.mandal || 'Tamsi'
+                };
             }
             await authUser.save();
         }

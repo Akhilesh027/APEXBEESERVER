@@ -99,6 +99,56 @@ class SettlementEngine {
         }
     }
     /**
+     * Calculate commission distribution for Mandal Franchiser assignment.
+     * @param amount Total amount paid by the mandal franchiser.
+     * @returns Object with commission amounts for each level and related franchisers.
+     */
+    static calculateMandalFranchiserCommission(amount) {
+        const level1 = (amount * 10) / 100; // 10%
+        const level2 = (amount * 3) / 100; // 3%
+        const level3 = (amount * 2) / 100; // 2%
+        const district = (amount * 10) / 100; // Dist. Franchiser 10%
+        const state = (amount * 5) / 100; // State Franchiser 5%
+        return { level1, level2, level3, district, state };
+    }
+    /**
+     * Calculate commission distribution for District Franchiser assignment.
+     * @param amount Total amount paid by the district franchiser.
+     * @returns Object with commission amounts for each level and state franchiser.
+     */
+    static calculateDistrictFranchiserCommission(amount) {
+        const level1 = (amount * 15) / 100; // 15%
+        const level2 = (amount * 3) / 100; // 3%
+        const level3 = (amount * 2) / 100; // 2%
+        const state = (amount * 10) / 100; // State Franchiser 10%
+        return { level1, level2, level3, state };
+    }
+    /**
+     * Calculate commission distribution for State Franchiser assignment.
+     * @param amount Total amount paid by the state franchiser.
+     * @returns Object with commission amounts for each level.
+     */
+    static calculateStateFranchiserCommission(amount) {
+        const level1 = (amount * 15) / 100; // 15%
+        const level2 = (amount * 3) / 100; // 3%
+        const level3 = (amount * 2) / 100; // 2%
+        return { level1, level2, level3 };
+    }
+    /**
+     * Calculate commission distribution for Vendor Enrollment.
+     * @param amount Total amount paid for vendor enrollment.
+     * @returns Object with commission amounts for each level and territory franchisers.
+     */
+    static calculateVendorEnrollmentCommission(amount) {
+        const level1 = (amount * 10) / 100; // Level 1 - 10%
+        const level2 = (amount * 3) / 100; // Level 2 - 3%
+        const level3 = (amount * 2) / 100; // Level 3 - 2%
+        const mandal = (amount * 10) / 100; // Mandal Franchiser - 10%
+        const district = (amount * 5) / 100; // Dist. Franchiser - 5%
+        const state = (amount * 3) / 100; // State Franchiser - 3%
+        return { level1, level2, level3, mandal, district, state };
+    }
+    /**
      * Creates ReferralTransactions and CommissionSettlements in "placed" status.
      */
     static async createSettlements(order, session) {
@@ -321,12 +371,74 @@ class SettlementEngine {
                     }
                     return sh.amount ? (sh.amount * qty) : ((distributionPool * sh.percent) / 100);
                 };
+                // Task USER - 13: Product Referral Tracking & 3-Level Duplicate Incentive Prevention
+                let productSharer = null;
+                if (order.productSharerId) {
+                    let querySharer = User_1.User.findById(order.productSharerId);
+                    if (session)
+                        querySharer = querySharer.session(session);
+                    productSharer = await querySharer;
+                }
+                else if (order.referralCode && order.referralCode !== 'APEXBEE') {
+                    let querySharer = User_1.User.findOne({ referralCode: order.referralCode });
+                    if (session)
+                        querySharer = querySharer.session(session);
+                    productSharer = await querySharer;
+                }
                 const hierarchy = customer.referralHierarchy;
-                const uplines = [
-                    { id: hierarchy?.level1UserId || this.COMPANY_ID, amount: getShareAmount("level1"), level: 1, isFallback: !hierarchy?.level1UserId },
-                    { id: hierarchy?.level2UserId || this.COMPANY_ID, amount: getShareAmount("level2"), level: 2, isFallback: !hierarchy?.level2UserId },
-                    { id: hierarchy?.level3UserId || this.COMPANY_ID, amount: getShareAmount("level3"), level: 3, isFallback: !hierarchy?.level3UserId }
-                ];
+                let isExistingDownline = false;
+                let isSharerSelf = false;
+                if (productSharer) {
+                    isSharerSelf = productSharer._id.toString() === customer._id.toString();
+                    const l1Id = hierarchy?.level1UserId ? hierarchy.level1UserId.toString() : '';
+                    const l2Id = hierarchy?.level2UserId ? hierarchy.level2UserId.toString() : '';
+                    const l3Id = hierarchy?.level3UserId ? hierarchy.level3UserId.toString() : '';
+                    const sharerIdStr = productSharer._id.toString();
+                    isExistingDownline = l1Id === sharerIdStr || l2Id === sharerIdStr || l3Id === sharerIdStr;
+                }
+                let uplines = [];
+                if (productSharer && !isSharerSelf && !isExistingDownline) {
+                    // Rule 3: Non-downline buyer purchased via shared product link.
+                    // Direct product sharer earns the Level 1 Product Commission for driving the sale.
+                    // Buyer's permanent hierarchy remains completely intact without corruption.
+                    const sharerHierarchy = productSharer.referralHierarchy;
+                    uplines = [
+                        {
+                            id: productSharer._id,
+                            amount: getShareAmount("level1"),
+                            level: 1,
+                            isFallback: false,
+                            txType: "product_link_referral_commission",
+                            reason: "Product Referral Link Commission (Direct Sharer Attribution)"
+                        },
+                        {
+                            id: sharerHierarchy?.level1UserId || this.COMPANY_ID,
+                            amount: getShareAmount("level2"),
+                            level: 2,
+                            isFallback: !sharerHierarchy?.level1UserId,
+                            txType: "product_commission",
+                            reason: "Product Referral Commission (Sharer Upline Level 2)"
+                        },
+                        {
+                            id: sharerHierarchy?.level2UserId || this.COMPANY_ID,
+                            amount: getShareAmount("level3"),
+                            level: 3,
+                            isFallback: !sharerHierarchy?.level2UserId,
+                            txType: "product_commission",
+                            reason: "Product Referral Commission (Sharer Upline Level 3)"
+                        }
+                    ];
+                }
+                else {
+                    // Rule 1: Buyer is in existing 3-level downline (or organic order).
+                    // Standard 3-tier commission distribution logic strictly applies.
+                    // No duplicate product-link incentive is generated.
+                    uplines = [
+                        { id: hierarchy?.level1UserId || this.COMPANY_ID, amount: getShareAmount("level1"), level: 1, isFallback: !hierarchy?.level1UserId, txType: "product_commission", reason: "product_commission" },
+                        { id: hierarchy?.level2UserId || this.COMPANY_ID, amount: getShareAmount("level2"), level: 2, isFallback: !hierarchy?.level2UserId, txType: "product_commission", reason: "product_commission" },
+                        { id: hierarchy?.level3UserId || this.COMPANY_ID, amount: getShareAmount("level3"), level: 3, isFallback: !hierarchy?.level3UserId, txType: "product_commission", reason: "product_commission" }
+                    ];
+                }
                 for (const upline of uplines) {
                     if (upline.id && upline.amount > 0) {
                         try {
@@ -336,8 +448,8 @@ class SettlementEngine {
                                 orderId: order._id,
                                 level: upline.level,
                                 amount: upline.amount,
-                                transactionType: "product_commission",
-                                rewardReason: upline.isFallback ? `product_commission (Level ${upline.level} unreferred fallback)` : "product_commission",
+                                transactionType: upline.txType || "product_commission",
+                                rewardReason: upline.isFallback ? `${upline.txType || 'product_commission'} (Level ${upline.level} unreferred fallback)` : (upline.reason || "product_commission"),
                                 releaseDate,
                                 status: "placed"
                             }, session);
@@ -378,7 +490,6 @@ class SettlementEngine {
                         console.warn("Duplicate vendor settlement caught:", err.message);
                     }
                 }
-                // 2. Franchise & Company splits
                 if (distributionPool > 0 || totalPlatformFee > 0) {
                     const statePercent = (shares.find((s) => s.type === "state" && s.isActive !== false)?.percent || 0);
                     const districtPercent = (shares.find((s) => s.type === "district" && s.isActive !== false)?.percent || 0);
@@ -722,7 +833,7 @@ class SettlementEngine {
             }
         }
         // Reset customer firstOrderQualified if a first order bonus is cancelled
-        const hasFirstOrderBonus = txs.some(tx => tx.transactionType === "first_order_bonus");
+        const hasFirstOrderBonus = txs.some((tx) => tx.transactionType === "first_order_bonus");
         if (hasFirstOrderBonus) {
             let queryOrder = Order_1.Order.findById(orderId);
             if (session)

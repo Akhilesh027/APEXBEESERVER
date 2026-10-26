@@ -5,6 +5,7 @@ const BusinessApplication_1 = require("../models/BusinessApplication");
 const RestaurantProfile_1 = require("../models/RestaurantProfile");
 const RestaurantSettings_1 = require("../models/RestaurantSettings");
 const RestaurantOperatingHours_1 = require("../models/RestaurantOperatingHours");
+const Vendor_1 = require("../models/Vendor");
 const getProfile = async (req, res) => {
     try {
         const restaurantId = req.foodPartnerContext?.restaurantId;
@@ -84,7 +85,7 @@ exports.getProfile = getProfile;
 const updateProfile = async (req, res) => {
     try {
         const restaurantId = req.foodPartnerContext?.restaurantId;
-        const updateData = req.body;
+        const updateData = { ...req.body };
         // Prevent changing locked compliance fields if approved
         const profile = await RestaurantProfile_1.RestaurantProfile.findById(restaurantId);
         if (!profile) {
@@ -96,10 +97,83 @@ const updateProfile = async (req, res) => {
             delete updateData.fssaiNumber;
             delete updateData.gstNumber;
         }
+        // Clean up non-schema frontend fields
+        delete updateData.cuisinesText;
+        delete updateData._id;
+        delete updateData.createdAt;
+        delete updateData.updatedAt;
+        delete updateData.vendorId;
+        delete updateData.storeId;
+        delete updateData.userId;
+        // Normalize businessType to ensure strict schema enum compliance
+        if (updateData.businessType) {
+            const bt = String(updateData.businessType).trim().toUpperCase();
+            if (bt === 'CAFE' || bt === 'BAKERY' || bt === 'CAFE_BAKERY' || bt === 'CAFE_BAKERY_BEVERAGES') {
+                updateData.businessType = 'CAFE_BAKERY';
+            }
+            else if (bt === 'SWEETS' || bt === 'DESSERTS' || bt === 'SWEETS_DESSERTS') {
+                updateData.businessType = 'SWEETS_DESSERTS';
+            }
+            else if (bt === 'STREET' || bt === 'STREET_FOOD') {
+                updateData.businessType = 'STREET_FOOD';
+            }
+            else {
+                updateData.businessType = 'RESTAURANT';
+            }
+        }
+        // Synchronize bannerImage and coverImage
+        if (updateData.bannerImage && !updateData.coverImage) {
+            updateData.coverImage = updateData.bannerImage;
+        }
+        else if (updateData.coverImage && !updateData.bannerImage) {
+            updateData.bannerImage = updateData.coverImage;
+        }
         const updatedProfile = await RestaurantProfile_1.RestaurantProfile.findByIdAndUpdate(restaurantId, updateData, {
             new: true,
             runValidators: true,
         });
+        // Synchronize category and details to associated Vendor record
+        if (profile.vendorId) {
+            try {
+                const vendorUpdate = {};
+                if (updateData.restaurantName)
+                    vendorUpdate.businessName = updateData.restaurantName;
+                if (updateData.businessType) {
+                    if (updateData.businessType === 'CAFE_BAKERY') {
+                        vendorUpdate.subCategory = 'Cafe & Bakery';
+                        vendorUpdate.category = 'Food';
+                    }
+                    else if (updateData.businessType === 'SWEETS_DESSERTS') {
+                        vendorUpdate.subCategory = 'Sweets & Bakery';
+                        vendorUpdate.category = 'Food';
+                    }
+                    else if (updateData.businessType === 'STREET_FOOD') {
+                        vendorUpdate.subCategory = 'Fast Food';
+                        vendorUpdate.category = 'Food';
+                    }
+                    else {
+                        vendorUpdate.subCategory = 'Restaurant';
+                        vendorUpdate.category = 'Food';
+                    }
+                }
+                if (updateData.bannerImage || updateData.coverImage) {
+                    vendorUpdate['storeDesign.bannerUrl'] = updateData.bannerImage || updateData.coverImage;
+                }
+                if (updateData.logo) {
+                    vendorUpdate['storeDesign.logoUrl'] = updateData.logo;
+                }
+                if (updateData.address)
+                    vendorUpdate.address = updateData.address;
+                if (updateData.pincode)
+                    vendorUpdate.pincode = updateData.pincode;
+                if (Object.keys(vendorUpdate).length > 0) {
+                    await Vendor_1.Vendor.findByIdAndUpdate(profile.vendorId, { $set: vendorUpdate });
+                }
+            }
+            catch (syncErr) {
+                console.warn('Could not sync to vendor record:', syncErr);
+            }
+        }
         res.status(200).json({ success: true, profile: updatedProfile });
     }
     catch (error) {

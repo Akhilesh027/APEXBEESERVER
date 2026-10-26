@@ -4,6 +4,8 @@ const express_1 = require("express");
 const auth_1 = require("../middleware/auth");
 const userController_1 = require("../controllers/userController");
 const router = (0, express_1.Router)();
+// Public Compliance Endpoint: Request Account Deletion (Google Play & App Store requirement)
+router.post('/delete-account-request', userController_1.requestAccountDeletion);
 // Profile endpoints
 router.get('/profile/:id', auth_1.protect, userController_1.getUserProfile);
 router.put('/profile/:id', auth_1.protect, userController_1.updateUserProfile);

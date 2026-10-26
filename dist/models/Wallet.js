@@ -60,6 +60,13 @@ const WalletSchema = new mongoose_1.Schema({
     totalCredits: { type: Number, default: 0 },
     totalDebits: { type: Number, default: 0 },
     version: { type: Number, default: 0, required: true },
-}, { timestamps: true });
+}, {
+    timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true },
+});
+WalletSchema.virtual('balance').get(function () {
+    return this.availableBalance;
+});
 exports.Wallet = mongoose_1.default.model('Wallet', WalletSchema);
 exports.default = exports.Wallet;

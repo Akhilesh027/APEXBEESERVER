@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.updatePanIndiaProducts = exports.triggerLocationSeed = exports.getTrainingVideos = exports.createTrainingVideo = exports.replySupportTicket = exports.getSupportTickets = exports.createSupportTicket = exports.updateCoupon = exports.deleteCoupon = exports.validateCoupon = exports.getCoupons = exports.createCoupon = exports.deleteCampaign = exports.updateCampaign = exports.getCampaigns = exports.createCampaign = exports.updateServiceRequest = exports.getServiceRequests = exports.createServiceRequest = exports.updateCourse = exports.getCourses = exports.createCourse = void 0;
+exports.testSendSms = exports.updatePanIndiaProducts = exports.triggerLocationSeed = exports.getTrainingVideos = exports.createTrainingVideo = exports.replySupportTicket = exports.getSupportTickets = exports.createSupportTicket = exports.updateCoupon = exports.deleteCoupon = exports.validateCoupon = exports.getCoupons = exports.createCoupon = exports.deleteCampaign = exports.updateCampaign = exports.getCampaigns = exports.createCampaign = exports.updateServiceRequest = exports.getServiceRequests = exports.createServiceRequest = exports.updateCourse = exports.getCourses = exports.createCourse = void 0;
 const Course_1 = require("../models/Course");
 const ServiceRequest_1 = require("../models/ServiceRequest");
 const Campaign_1 = require("../models/Campaign");
@@ -489,3 +489,64 @@ const updatePanIndiaProducts = async (req, res) => {
     }
 };
 exports.updatePanIndiaProducts = updatePanIndiaProducts;
+const testSendSms = async (req, res) => {
+    try {
+        const { phone, type, otp, name, orderNumber, amount, balance } = req.body;
+        if (!phone) {
+            return res.status(400).json({ success: false, message: 'Phone number is required' });
+        }
+        const { SmsService } = await Promise.resolve().then(() => __importStar(require('../services/smsService')));
+        let result;
+        switch (type) {
+            case 'login_otp':
+                result = await SmsService.sendLoginOtp(phone, otp || '654321');
+                break;
+            case 'registration_otp':
+                result = await SmsService.sendRegistrationOtp(phone, otp || '654321');
+                break;
+            case 'password_reset_otp':
+                result = await SmsService.sendPasswordResetOtp(phone, otp || '654321');
+                break;
+            case 'delivery_otp':
+                result = await SmsService.sendDeliveryOtp(phone, otp || '4321');
+                break;
+            case 'welcome':
+                result = await SmsService.sendWelcomeSms(phone);
+                break;
+            case 'customer_registration':
+                result = await SmsService.sendCustomerRegistrationSuccess(phone, name || 'Customer');
+                break;
+            case 'vendor_registration':
+                result = await SmsService.sendVendorRegistrationSuccess(phone);
+                break;
+            case 'franchise_registration':
+                result = await SmsService.sendFranchiseRegistrationSuccess(phone, name || 'Franchise Partner');
+                break;
+            case 'order_placed':
+                result = await SmsService.sendOrderPlacedSms(phone, name || 'Customer', orderNumber || 'APX-1001', amount || '499');
+                break;
+            case 'payment_success':
+                result = await SmsService.sendPaymentSuccessSms(phone, amount || '499', orderNumber || 'APX-1001');
+                break;
+            case 'wallet_credit':
+                result = await SmsService.sendWalletCreditSms(phone, amount || '100', balance || '500');
+                break;
+            case 'wallet_withdrawal':
+                result = await SmsService.sendWalletWithdrawalSms(phone, amount || '500');
+                break;
+            default:
+                result = await SmsService.sendRegistrationOtp(phone, otp || '123456');
+                break;
+        }
+        return res.status(200).json({
+            success: true,
+            message: 'Test SMS executed',
+            result
+        });
+    }
+    catch (error) {
+        console.error('testSendSms error:', error);
+        return res.status(500).json({ success: false, message: error.message });
+    }
+};
+exports.testSendSms = testSendSms;

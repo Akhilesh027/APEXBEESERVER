@@ -14,6 +14,7 @@ const couponService_1 = require("./couponService");
 const TransactionalOutbox_1 = require("./TransactionalOutbox");
 const notificationEmitter_1 = require("../modules/notifications/events/notificationEmitter");
 const notificationHelper_1 = require("./notificationHelper");
+const smsService_1 = require("./smsService");
 const crypto_1 = __importDefault(require("crypto"));
 class CheckoutService {
     /**
@@ -42,6 +43,8 @@ class CheckoutService {
             price: item.price,
             categoryId: item.categoryId || primaryCategoryId,
             categoryName: item.categoryName || primaryCategoryName,
+            isPreOrder: Boolean(item.isPreOrder),
+            preOrderReleaseDate: item.preOrderReleaseDate || item.availableOn || null,
         }));
         const isPaidOnline = input.paymentDetails?.status === 'completed' || input.paymentDetails?.method === 'razorpay' || input.paymentDetails?.method === 'wallet';
         const resolvedPaymentMethod = input.paymentDetails?.method || 'cod';
@@ -103,10 +106,12 @@ class CheckoutService {
                 ? { expectedDelivery: 'Self Pickup at Store', shippingMethod: 'In-Store Self Pickup' }
                 : { expectedDelivery: 'Standard Delivery', shippingMethod: 'Home Delivery' },
             pickupVerification: input.fulfillment?.type === 'pickup'
-                ? { otp: Math.floor(1000 + Math.random() * 9000).toString(), verified: false }
+                ? { otp: Math.floor(100000 + Math.random() * 900000).toString(), verified: false }
                 : undefined,
             orderSummary: mergedOrderSummary,
             preOrder: input.preOrder,
+            isPreOrder: Boolean(input.isPreOrder || input.preOrder?.enabled || items.some((it) => it.isPreOrder)),
+            preOrderReleaseDate: input.preOrderReleaseDate || input.preOrder?.availableFrom || null,
             isScheduledSubscription: input.isScheduledSubscription || false,
             scheduleDetails: input.scheduleDetails,
             orderStatusObj,
@@ -115,6 +120,8 @@ class CheckoutService {
             categoryId: primaryCategoryId,
             categoryName: primaryCategoryName,
             orderType,
+            referralCode: input.referralCode ? input.referralCode.trim() : undefined,
+            productSharerId: input.productSharerId ? new mongoose_1.default.Types.ObjectId(input.productSharerId) : undefined,
         });
         // 3. Atomically redeem coupon under the session if present
         if (input.couponCode && input.couponCode.trim()) {
@@ -267,6 +274,14 @@ class CheckoutService {
             notificationHelper_1.NotificationHelper.notifyOrderPlaced(order).catch((err) => {
                 console.error('[CheckoutService] Failed to dispatch multi-channel order notifications:', err);
             });
+            // Dispatch DLT Order Placed SMS
+            const customerPhone = order.shippingAddress?.phone || order.shippingAddress?.mobile;
+            const customerName = order.shippingAddress?.fullName || order.shippingAddress?.name || 'Customer';
+            if (customerPhone && order.orderNumber && order.totalAmount) {
+                smsService_1.SmsService.sendOrderPlacedSms(customerPhone, customerName, order.orderNumber, order.totalAmount).catch((err) => {
+                    console.error('[CheckoutService] Failed to dispatch Order Placed SMS:', err);
+                });
+            }
         }
         catch (notifErr) {
             console.warn('[CheckoutService] Failed to emit order.placed notification:', notifErr);

@@ -98,13 +98,34 @@ export const getMenuItems = async (req: FoodPartnerAuthRequest, res: Response): 
       const doc = item.toObject();
       (doc as any).imageUrl = doc.image || (item as any).imageUrl || '';
       const sellingPrice = (doc.offerPrice && doc.offerPrice > 0) ? doc.offerPrice : doc.basePrice;
-      const commPct = doc.platformCommissionPercent || 12;
+      const isApexBeeComm = doc.distributedFrom === 'apexbee_commission' && Boolean(doc.vendorCommissionPercent && doc.vendorCommissionPercent > 0);
+      const vCommPct = isApexBeeComm ? Number(doc.vendorCommissionPercent || 0) : 0;
+      const vCommAmount = isApexBeeComm
+        ? (doc.vendorCommissionAmount !== undefined && doc.vendorCommissionAmount !== null
+          ? Number(doc.vendorCommissionAmount)
+          : Math.round(((sellingPrice * vCommPct) / 100) * 100) / 100)
+        : 0;
+      doc.vendorCommissionPercent = vCommPct;
+      doc.vendorCommissionAmount = vCommAmount;
+
+      const commPct = doc.platformCommissionPercent !== undefined && doc.platformCommissionPercent !== null
+        ? Number(doc.platformCommissionPercent)
+        : 5;
       const pShare = doc.platformShareAmount !== undefined && doc.platformShareAmount !== null
-        ? doc.platformShareAmount
+        ? Number(doc.platformShareAmount)
         : Math.round(((sellingPrice * commPct) / 100) * 100) / 100;
+      doc.platformCommissionPercent = commPct;
       doc.platformShareAmount = pShare;
-      if (!doc.vendorPayoutAmount) {
-        doc.vendorPayoutAmount = Math.max(0, sellingPrice - pShare);
+
+      // Platform fee is never deducted from vendor payout - vendor gets 100% of selling price unless ApexBee commission is set
+      if (isApexBeeComm) {
+        doc.vendorPayoutAmount = doc.vendorPayoutAmount !== undefined && doc.vendorPayoutAmount !== null
+          ? Number(doc.vendorPayoutAmount)
+          : Math.max(0, Math.round((sellingPrice - vCommAmount) * 100) / 100);
+      } else {
+        doc.vendorPayoutAmount = (doc.vendorPayoutAmount && Number(doc.vendorPayoutAmount) > 0)
+          ? Number(doc.vendorPayoutAmount)
+          : sellingPrice;
       }
       return doc;
     });
@@ -188,9 +209,9 @@ export const createMenuItem = async (req: FoodPartnerAuthRequest, res: Response)
     const price = Number(basePrice) || 0;
     const offPrice = Number(offerPrice) || 0;
     const sellingPrice = (offPrice > 0) ? offPrice : price;
-    const initialCommissionPercent = 12;
-    const platformShare = Math.round(((sellingPrice * initialCommissionPercent) / 100) * 100) / 100;
-    const vendorPayout = Math.max(0, sellingPrice - platformShare);
+    const initialPlatformFeePercent = 5;
+    const platformShare = Math.round(((sellingPrice * initialPlatformFeePercent) / 100) * 100) / 100;
+    const vendorPayout = sellingPrice; // By default under platform fee pool, vendor gets 100% of selling price!
 
     const itemImage = image || req.body.imageUrl || '';
     const slug = name.toLowerCase().replace(/[^a-z0-9]/g, '-') + '-' + Math.floor(100 + Math.random() * 900);
@@ -213,7 +234,7 @@ export const createMenuItem = async (req: FoodPartnerAuthRequest, res: Response)
       isCustomisable: Boolean(isCustomisable),
       status: 'INACTIVE',
       approvalStatus: 'PENDING_ADMIN_REVIEW',
-      platformCommissionPercent: initialCommissionPercent,
+      platformCommissionPercent: initialPlatformFeePercent,
       platformShareAmount: platformShare,
       vendorPayoutAmount: vendorPayout,
       soldOut: false,
@@ -331,7 +352,7 @@ export const adminReviewMenuItem = async (req: any, res: Response): Promise<void
       item.status = 'INACTIVE';
       item.adminPricingNotes = adminPricingNotes || 'Rejected by Admin';
     } else {
-      const commPercent = Number(platformCommissionPercent) || item.platformCommissionPercent || 12;
+      const commPercent = Number(platformCommissionPercent) || item.platformCommissionPercent || 5;
       const sellingPrice = (item.offerPrice && item.offerPrice > 0) ? item.offerPrice : item.basePrice;
       const platformShare = Math.round(((sellingPrice * commPercent) / 100) * 100) / 100;
 
@@ -340,6 +361,7 @@ export const adminReviewMenuItem = async (req: any, res: Response): Promise<void
         : (item.vendorCommissionPercent || 0);
       const vCommAmount = Math.round(((sellingPrice * vCommPercent) / 100) * 100) / 100;
       const poolMode = distributedFrom || item.distributedFrom || 'platform_fee';
+      const hasApexBeeComm = poolMode === 'apexbee_commission' && vCommPercent > 0;
 
       const customPayout = vendorPayoutAmount !== undefined && vendorPayoutAmount !== null && !isNaN(Number(vendorPayoutAmount))
         ? Number(vendorPayoutAmount)
@@ -347,9 +369,9 @@ export const adminReviewMenuItem = async (req: any, res: Response): Promise<void
 
       const vendorPayout = customPayout !== undefined
         ? customPayout
-        : (poolMode === 'apexbee_commission' || vCommPercent > 0)
+        : hasApexBeeComm
           ? Math.max(0, Math.round((sellingPrice - vCommAmount) * 100) / 100)
-          : Math.max(0, Math.round((sellingPrice - platformShare) * 100) / 100);
+          : sellingPrice; // When distributed from platform fee pool, vendor gets 100% of selling price!
 
       item.platformCommissionPercent = commPercent;
       item.platformShareAmount = platformShare;

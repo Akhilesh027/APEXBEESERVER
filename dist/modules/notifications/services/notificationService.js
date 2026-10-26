@@ -10,6 +10,7 @@ const Notification_1 = require("../models/Notification");
 const NotificationPreference_1 = require("../models/NotificationPreference");
 const User_1 = require("../../../models/User");
 const socketServer_1 = require("../websocket/socketServer");
+const smsService_1 = require("../../../services/smsService");
 class NotificationService {
     /**
      * Helper utility to compile double-mustache placeholders in a template string.
@@ -206,12 +207,15 @@ ${html}
     static async dispatchSMS(recipient, template, payload, notification) {
         try {
             const smsBody = this.compileTemplate(template.channels.sms.textTemplate || template.bodyTemplate, payload);
-            const phone = recipient.phone || recipient.mobile || 'Unknown';
-            console.log(`\n------------------------------------------------------
-[SMS GATEWAY SEND]
-To: +91 ${phone}
-Message: ${smsBody}
-------------------------------------------------------`);
+            const phone = recipient.phone || recipient.mobile || '';
+            const templateId = template.channels?.sms?.templateId || '1777179067259405148';
+            if (phone) {
+                await smsService_1.SmsService.sendSms({
+                    phone,
+                    message: smsBody,
+                    templateId
+                });
+            }
             notification.deliveryTimeline.push({ status: 'sent', channel: 'sms', timestamp: new Date() });
             notification.deliveryTimeline.push({ status: 'delivered', channel: 'sms', timestamp: new Date() });
             await notification.save();

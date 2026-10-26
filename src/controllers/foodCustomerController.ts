@@ -364,10 +364,17 @@ export const getAllFoodItems = async (req: Request, res: Response): Promise<void
           rating: anyItem.rating || 4.8,
           prepTime: item.preparationTimeMinutes ? `${item.preparationTimeMinutes} mins` : '20 mins',
           category: anyItem.categoryName || 'Food Item',
+          categoryName: anyItem.categoryName || 'Food & Dining',
           restaurantId: item.restaurantId,
           restaurantName: rest?.restaurantName || 'Verified Food Outlet',
           locality: rest?.locality || rest?.city || 'Hyderabad',
           pincode: rest?.pincode || (rest as any)?.zipcode || (rest as any)?.address?.pincode || activePincode,
+          platformCommissionPercent: item.platformCommissionPercent !== undefined ? item.platformCommissionPercent : 5,
+          platformFeePercent: item.platformCommissionPercent !== undefined ? item.platformCommissionPercent : 5,
+          platformFeeAmount: item.platformShareAmount || 0,
+          distributedFrom: item.distributedFrom || 'platform_fee',
+          vendorCommissionPercent: item.vendorCommissionPercent || 0,
+          packagingCharge: item.packagingCharge || 0,
         };
       })
     );

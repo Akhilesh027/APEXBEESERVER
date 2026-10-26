@@ -12,6 +12,7 @@ const RestaurantProfile_1 = require("../models/RestaurantProfile");
 const RestaurantSettings_1 = require("../models/RestaurantSettings");
 const RestaurantOperatingHours_1 = require("../models/RestaurantOperatingHours");
 const redis_1 = require("../config/redis");
+const smsService_1 = require("../services/smsService");
 const generateFoodToken = (id, email, roles) => {
     return jsonwebtoken_1.default.sign({ id, email, roles, panelType: 'FOOD_PARTNER' }, process.env.JWT_SECRET || 'supersecretjwtkeyforapexbeebusinessoperatingnetwork', { expiresIn: '30d' });
 };
@@ -54,12 +55,21 @@ const sendFoodPartnerOtp = async (req, res) => {
             });
             return;
         }
-        const isProd = ['production', 'staging'].includes(process.env.NODE_ENV || '');
-        const generatedOtp = isProd ? Math.floor(100000 + Math.random() * 900000).toString() : '1234';
+        // Always generate dynamic random 6-digit OTP
+        const generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
         const redis = (0, redis_1.getRedisClient)();
         await redis.set(`otp:food:${key}`, generatedOtp, 'EX', 300);
-        console.log(`Food Partner OTP generated for: ${key}`);
-        res.status(200).json({ success: true, message: 'Food Partner OTP sent successfully' });
+        console.log(`Food Partner OTP generated for: ${key} (${generatedOtp})`);
+        // Dispatch SMS OTP if mobile phone is used
+        const cleanPhone = smsService_1.SmsService.sanitizePhone(phone || key);
+        if (cleanPhone && cleanPhone.length === 10) {
+            await smsService_1.SmsService.sendLoginOtp(cleanPhone, generatedOtp);
+        }
+        res.status(200).json({
+            success: true,
+            message: 'Food Partner OTP sent successfully',
+            devOtp: process.env.NODE_ENV !== 'production' ? generatedOtp : undefined
+        });
     }
     catch (error) {
         res.status(500).json({ success: false, message: 'Failed to send OTP', error: error.message });
@@ -76,8 +86,7 @@ const verifyFoodPartnerOtp = async (req, res) => {
         }
         const redis = (0, redis_1.getRedisClient)();
         const savedOtp = await redis.get(`otp:food:${key}`);
-        const isDevFallback = process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'staging' && otp === '1234';
-        if (savedOtp === otp || isDevFallback) {
+        if (savedOtp && savedOtp === otp) {
             await redis.set(`verified:food:${key}`, 'true', 'EX', 600);
             await redis.del(`otp:food:${key}`);
             res.status(200).json({ success: true, message: 'OTP verified successfully' });
@@ -140,7 +149,6 @@ const foodPartnerLogin = async (req, res) => {
         // Validate password or OTP first
         const redis = (0, redis_1.getRedisClient)();
         const isVerifiedOtp = (await redis.get(`verified:food:${identifier}`)) === 'true';
-        const isDevOtp = process.env.NODE_ENV !== 'production' && otp === '1234';
         if (password) {
             const isMatch = await bcryptjs_1.default.compare(password, user?.passwordHash || '');
             if (!isMatch) {
@@ -148,8 +156,8 @@ const foodPartnerLogin = async (req, res) => {
                 return;
             }
         }
-        else if (!isVerifiedOtp && !isDevOtp) {
-            res.status(400).json({ success: false, message: 'Password or valid OTP (1234) is required' });
+        else if (!isVerifiedOtp) {
+            res.status(400).json({ success: false, message: 'Password or valid verified OTP is required' });
             return;
         }
         if (user && !user.roles.includes('food_partner') && !user.roles.includes('food_staff')) {

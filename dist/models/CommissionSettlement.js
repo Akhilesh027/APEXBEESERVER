@@ -36,43 +36,37 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.CommissionSettlement = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
 const CommissionSettlementSchema = new mongoose_1.Schema({
-    orderId: { type: mongoose_1.Schema.Types.ObjectId, ref: "Order", required: true, index: true },
-    productId: { type: mongoose_1.Schema.Types.ObjectId, ref: "Product", required: false, index: true },
-    recipientId: { type: mongoose_1.Schema.Types.ObjectId, ref: "User", required: true, index: true },
-    amount: { type: Number, required: true, default: 0 },
+    orderId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Order', index: true },
+    productId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Product', index: true },
+    recipientId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    vendorId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', index: true },
+    amount: { type: Number, required: true, min: 0 },
     settlementType: {
         type: String,
-        enum: ['vendor', 'franchise', 'entrepreneur', 'company', 'wishlink', 'referralPool'],
         required: true,
-        index: true
+        index: true,
     },
-    releasedTransactionId: { type: String, default: "" },
-    vendorId: { type: mongoose_1.Schema.Types.ObjectId, ref: "User", default: null },
-    stateFranchiseId: { type: mongoose_1.Schema.Types.ObjectId, ref: "User", default: null },
-    districtFranchiseId: { type: mongoose_1.Schema.Types.ObjectId, ref: "User", default: null },
-    mandalFranchiseId: { type: mongoose_1.Schema.Types.ObjectId, ref: "User", default: null },
-    entrepreneurId: { type: mongoose_1.Schema.Types.ObjectId, ref: "User", default: null },
-    totalPlatformFee: { type: Number, default: 0 },
-    stateCommission: { type: Number, default: 0 },
-    districtCommission: { type: Number, default: 0 },
-    mandalCommission: { type: Number, default: 0 },
-    entrepreneurCommission: { type: Number, default: 0 },
-    wishLinkCommission: { type: Number, default: 0 },
-    companyCommission: { type: Number, default: 0 },
-    referralPoolCommission: { type: Number, default: 0 },
     status: {
         type: String,
-        enum: ["placed", "pending", "released", "cancelled"],
-        default: "placed",
-        index: true
+        enum: ['placed', 'pending', 'released', 'cancelled'],
+        default: 'placed',
+        index: true,
     },
+    releaseDate: { type: Date, index: true },
     released: { type: Boolean, default: false },
     walletCredited: { type: Boolean, default: false },
-    releasedBy: { type: mongoose_1.Schema.Types.ObjectId, ref: "User", default: null },
-    releaseDate: { type: Date, default: Date.now },
-    releasedAt: { type: Date, default: null }
-}, { timestamps: true });
-// Compound unique index to prevent duplicate payouts
-CommissionSettlementSchema.index({ orderId: 1, productId: 1, recipientId: 1, settlementType: 1 }, { unique: true });
-CommissionSettlementSchema.index({ recipientId: 1, settlementType: 1, createdAt: -1 });
-exports.CommissionSettlement = mongoose_1.default.model("CommissionSettlement", CommissionSettlementSchema);
+    releasedAt: { type: Date },
+    releasedTransactionId: { type: String },
+    releasedBy: { type: mongoose_1.Schema.Types.Mixed },
+    totalPlatformFee: { type: Number, default: 0 },
+    stateFranchiseId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User' },
+    districtFranchiseId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User' },
+    mandalFranchiseId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User' },
+    entrepreneurId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User' },
+    serviceRequestId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'ServiceRequest' },
+    serviceProviderId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User' },
+    notes: { type: String, default: '' },
+}, { timestamps: true, strict: false });
+CommissionSettlementSchema.index({ orderId: 1, recipientId: 1, settlementType: 1 });
+exports.CommissionSettlement = mongoose_1.default.model('CommissionSettlement', CommissionSettlementSchema);
+exports.default = exports.CommissionSettlement;

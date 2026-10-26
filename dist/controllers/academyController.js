@@ -129,12 +129,9 @@ const sendAcademyOtp = async (req, res) => {
         if (mobileLimit && Number(mobileLimit) >= 5) {
             return res.status(429).json({ success: false, message: 'Too many OTP requests for this mobile number. Please try again later.' });
         }
-        // 2. Generate random 4-digit code and token
+        // 2. Generate random 6-digit code and token
         const verificationToken = new mongoose_1.default.Types.ObjectId().toString();
-        let otpCode = '1234';
-        if (!(0, exports.allowStaticOtp)()) {
-            otpCode = String(1000 + Math.floor(Math.random() * 9000));
-        }
+        const otpCode = String(100000 + Math.floor(Math.random() * 900000));
         // 3. Save to Redis (5 minutes expiry)
         const redisKey = `academy:otp:${normalized}:${verificationToken}`;
         await redis.set(redisKey, JSON.stringify({ code: otpCode, attempts: 0 }), 'EX', 300);
@@ -167,12 +164,6 @@ const verifyAcademyOtp = async (req, res) => {
         }
         const normalized = (0, exports.normalizePhone)(mobile);
         const redis = (0, redis_1.default)();
-        // Static bypass for development / tests
-        if ((0, exports.allowStaticOtp)() && otp === '1234') {
-            const verifiedKey = `academy:verified:${normalized}`;
-            await redis.set(verifiedKey, 'true', 'EX', 600);
-            return res.status(200).json({ success: true, message: 'OTP verified successfully' });
-        }
         if (!verificationToken) {
             return res.status(400).json({ success: false, message: 'verificationToken is required' });
         }
@@ -236,10 +227,6 @@ const createAcademyLead = async (req, res) => {
         else {
             const isVerifiedToken = await redis.get(verifiedKey);
             isVerified = isVerifiedToken === 'true';
-        }
-        // Static bypass for development / tests
-        if (!isVerified && (0, exports.allowStaticOtp)() && req.body.otp === '1234') {
-            isVerified = true;
         }
         if (!isVerified) {
             await session.abortTransaction();

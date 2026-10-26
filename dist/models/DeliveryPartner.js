@@ -76,6 +76,12 @@ const DeliveryPartnerSchema = new mongoose_1.Schema({
     status: { type: String, enum: ['active', 'pending_approval', 'suspended', 'offline'], default: 'pending_approval' },
     partnerType: { type: String, enum: ['Employee', 'Freelancer'], default: 'Employee' },
     zone: { type: String, default: 'LB Nagar' },
+    territory: {
+        state: { type: String, default: 'Telangana' },
+        district: { type: String, default: 'Adilabad' },
+        mandal: { type: String, default: 'Tamsi' },
+        pincode: { type: String, default: '' },
+    },
     currentLocation: {
         lat: { type: Number, default: 19.7207 },
         lng: { type: Number, default: 78.4186 },

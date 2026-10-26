@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getTerritoryAvailability = exports.getMandals = exports.getDistricts = exports.getStates = exports.getTerritoryTree = exports.deleteTerritory = exports.removeTerritoryAssignment = exports.assignTerritory = exports.updateTerritory = exports.createTerritory = exports.getTerritories = void 0;
+exports.getTerritoryByPincode = exports.getTerritoryAvailability = exports.getMandals = exports.getDistricts = exports.getStates = exports.getTerritoryTree = exports.deleteTerritory = exports.removeTerritoryAssignment = exports.assignTerritory = exports.updateTerritory = exports.createTerritory = exports.getTerritories = void 0;
 const mongoose_1 = __importDefault(require("mongoose"));
 const Territory_1 = require("../models/Territory");
 const Franchise_1 = require("../models/Franchise");
@@ -748,3 +748,46 @@ const getTerritoryAvailability = async (req, res) => {
     }
 };
 exports.getTerritoryAvailability = getTerritoryAvailability;
+const getTerritoryByPincode = async (req, res) => {
+    try {
+        const rawPin = req.params.pincode;
+        const pincode = String(rawPin || "").trim();
+        if (!pincode) {
+            return res.status(400).json({ success: false, message: "Pincode is required" });
+        }
+        // 1. Direct search by level "Pincode" or pincode field
+        let territory = await Territory_1.Territory.findOne({
+            $or: [
+                { pincode },
+                { name: pincode, level: "Pincode" },
+                { codeNumber: pincode }
+            ]
+        }).lean();
+        // 2. Generic fallback search in Territory
+        if (!territory) {
+            territory = await Territory_1.Territory.findOne({ pincode }).lean();
+        }
+        if (territory && territory.state) {
+            return res.json({
+                success: true,
+                territory: {
+                    state: territory.state,
+                    district: territory.district || "",
+                    mandal: territory.mandal || "",
+                    village: territory.village || "",
+                    pincode: territory.pincode || pincode,
+                    name: territory.name,
+                    ftid: territory.ftid,
+                }
+            });
+        }
+        return res.status(404).json({
+            success: false,
+            message: `No territory mapped for PIN code ${pincode}`
+        });
+    }
+    catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+exports.getTerritoryByPincode = getTerritoryByPincode;

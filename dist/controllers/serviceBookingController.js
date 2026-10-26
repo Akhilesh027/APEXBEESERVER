@@ -196,7 +196,7 @@ const createBooking = async (req, res) => {
         if (!providerId || !serviceName || !bookingDate || !bookingTime || !bookingAddress) {
             return res.status(400).json({ success: false, message: "Required fields are missing" });
         }
-        const otpCode = Math.floor(1000 + Math.random() * 9000).toString();
+        const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
         const bookingCode = `BKG-${Math.floor(10000 + Math.random() * 90000)}`;
         const newBooking = new ServiceRequest_1.ServiceRequest({
             customerId,

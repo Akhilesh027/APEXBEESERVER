@@ -41,10 +41,10 @@ async function runR4Tests() {
         await sendOtp(mockReqSend, mockResSend);
         // Verify key in Redis
         const redisOtp = await redis.get(`otp:${testKey}`);
-        assert_1.default.strictEqual(redisOtp, '1234', 'OTP must be saved in Redis as 1234');
+        assert_1.default.ok(redisOtp && redisOtp.length === 6, 'OTP must be saved in Redis as a 6-digit code');
         // Verify correct OTP verification sets verified key and deletes OTP key
         const mockReqVerify = {
-            body: { email: testKey, otp: '1234' }
+            body: { email: testKey, otp: redisOtp }
         };
         const mockResVerify = {
             status(code) {

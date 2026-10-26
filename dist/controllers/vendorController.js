@@ -26,6 +26,10 @@ const VendorMarketplaceService_1 = require("../services/VendorMarketplaceService
 const Category_1 = require("../models/Category");
 const authz_1 = require("../utils/authz");
 const BusinessApplication_1 = require("../models/BusinessApplication");
+const VendorCategoryAccess_1 = require("../models/VendorCategoryAccess");
+function escapeRegex(text) {
+    return text.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+}
 const getProfileAndModel = async (userId) => {
     const isObjId = mongoose_1.default.Types.ObjectId.isValid(userId);
     let doc = await Vendor_1.Vendor.findOne({
@@ -84,15 +88,30 @@ const getVendorProfile = async (req, res) => {
                 return;
             }
         }
+        const appQuery = [{ userId }];
+        if (mongoose_1.default.Types.ObjectId.isValid(userId)) {
+            appQuery.push({ userId: new mongoose_1.default.Types.ObjectId(userId) });
+        }
+        if (userDoc?.email) {
+            appQuery.push({ email: userDoc.email.trim().toLowerCase() });
+        }
+        if (userDoc?.phone) {
+            appQuery.push({ mobile: userDoc.phone.trim() });
+        }
+        const app = await BusinessApplication_1.BusinessApplication.findOne({ $or: appQuery }).sort({ createdAt: -1 });
         if (!resObj) {
-            const app = await BusinessApplication_1.BusinessApplication.findOne({ userId });
             if (app) {
+                const cats = Array.isArray(app.categories) && app.categories.length > 0
+                    ? app.categories
+                    : (app.category ? String(app.category).split(',').map((s) => s.trim()).filter(Boolean) : []);
                 vendor = {
                     userId: app.userId,
                     businessName: app.businessName,
                     ownerName: app.ownerName,
-                    category: app.category || app.primaryCategory,
-                    primaryCategory: app.primaryCategory || app.category,
+                    category: cats.join(', ') || app.category || app.primaryCategory,
+                    primaryCategory: cats[0] || app.primaryCategory || app.category,
+                    categories: cats,
+                    allowedCategories: [],
                     subCategory: app.subCategory,
                     approvedSubcategories: app.approvedSubcategories || (app.subCategory ? [app.subCategory] : []),
                     state: app.state,
@@ -109,15 +128,84 @@ const getVendorProfile = async (req, res) => {
         }
         vendor = resObj.doc.toObject();
         vendor.businessType = resObj.type;
-        const app = await BusinessApplication_1.BusinessApplication.findOne({ userId });
-        if (app) {
-            vendor.primaryCategory = app.primaryCategory || app.category || vendor.primaryCategory || vendor.category;
-            vendor.category = vendor.primaryCategory;
-            vendor.subCategory = app.subCategory || vendor.subCategory;
-            vendor.approvedSubcategories = Array.isArray(app.approvedSubcategories) && app.approvedSubcategories.length > 0
-                ? app.approvedSubcategories
-                : (vendor.subCategory ? [vendor.subCategory] : (vendor.approvedSubcategories || []));
+        let resolvedCats = [];
+        if (Array.isArray(vendor.categories) && vendor.categories.length > 0) {
+            resolvedCats = vendor.categories.slice();
         }
+        else if (app && Array.isArray(app.categories) && app.categories.length > 0) {
+            resolvedCats = app.categories.slice();
+        }
+        else if (vendor.category) {
+            resolvedCats = String(vendor.category).split(',').map((s) => s.trim()).filter(Boolean);
+        }
+        else if (app?.category) {
+            resolvedCats = String(app.category).split(',').map((s) => s.trim()).filter(Boolean);
+        }
+        // Merge categories from approved VendorCategoryAccess records ONLY if resolvedCats is empty
+        if (resolvedCats.length === 0) {
+            try {
+                const vcaRecords = await VendorCategoryAccess_1.VendorCategoryAccess.find({
+                    $or: [
+                        ...(vendor._id ? [{ vendorId: vendor._id }, { storeId: vendor._id }] : []),
+                        ...(mongoose_1.default.Types.ObjectId.isValid(userId) ? [{ vendorId: new mongoose_1.default.Types.ObjectId(userId) }] : [])
+                    ],
+                    status: 'approved'
+                }).populate('parentCategoryId', 'name slug');
+                vcaRecords.forEach((vca) => {
+                    const catName = vca.parentCategoryId?.name;
+                    if (catName && !resolvedCats.includes(catName)) {
+                        resolvedCats.push(catName);
+                    }
+                });
+            }
+            catch (e) { }
+        }
+        // Resolve allowedCategories if present on vendor or derive from resolvedCats
+        let allowedCategoryIds = [];
+        if (Array.isArray(vendor.allowedCategories) && vendor.allowedCategories.length > 0) {
+            allowedCategoryIds = vendor.allowedCategories.map((id) => String(id?._id || id));
+        }
+        if (resolvedCats.length > 0) {
+            try {
+                const catDocs = await Category_1.Category.find({
+                    level: 1,
+                    $or: resolvedCats.map(cName => {
+                        const safe = escapeRegex(cName.toLowerCase().trim());
+                        return {
+                            $or: [
+                                { name: { $regex: new RegExp(`^${safe}$`, 'i') } },
+                                { slug: { $regex: new RegExp(`^${safe}$`, 'i') } },
+                                { name: { $regex: new RegExp(safe, 'i') } },
+                                { slug: { $regex: new RegExp(safe, 'i') } },
+                            ]
+                        };
+                    })
+                }).select('_id name slug');
+                catDocs.forEach((cd) => {
+                    const idStr = String(cd._id);
+                    if (!allowedCategoryIds.includes(idStr)) {
+                        allowedCategoryIds.push(idStr);
+                    }
+                });
+            }
+            catch (e) { }
+        }
+        // Filter out non-category generic words if we have real categories
+        const GENERIC_EXCLUDE = new Set([
+            'general', 'general retail', 'general store', 'vendor', 'retail', 'retail store', 'retail seller'
+        ]);
+        const filteredCats = resolvedCats.filter(c => !GENERIC_EXCLUDE.has(String(c).toLowerCase().trim()));
+        if (filteredCats.length > 0) {
+            resolvedCats = filteredCats;
+        }
+        vendor.categories = resolvedCats;
+        vendor.allowedCategories = allowedCategoryIds;
+        vendor.primaryCategory = resolvedCats[0] || app?.primaryCategory || vendor.primaryCategory || vendor.category;
+        vendor.category = resolvedCats.join(', ') || vendor.primaryCategory;
+        vendor.subCategory = app?.subCategory || vendor.subCategory;
+        vendor.approvedSubcategories = Array.isArray(app?.approvedSubcategories) && app.approvedSubcategories.length > 0
+            ? app.approvedSubcategories
+            : (vendor.subCategory ? [vendor.subCategory] : (vendor.approvedSubcategories || []));
         if (userDoc && (userDoc.email === 'vendor1@gmail.com' || vendor.email === 'vendor1@gmail.com')) {
             vendor.category = 'Devotional';
             vendor.primaryCategory = 'Devotional';
