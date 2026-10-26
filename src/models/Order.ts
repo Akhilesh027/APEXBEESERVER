@@ -8,6 +8,8 @@ export interface IOrderItem {
   price: number;
   categoryId?: mongoose.Types.ObjectId | string;
   categoryName?: string;
+  isPreOrder?: boolean;
+  preOrderReleaseDate?: Date | null;
 }
 
 export type OrderStatus =
@@ -91,6 +93,8 @@ export interface IOrder extends Document {
   paymentDetails?: any;
   referralCode?: string;
   productSharerId?: mongoose.Types.ObjectId;
+  isPreOrder?: boolean;
+  preOrderReleaseDate?: Date | null;
 }
 
 const OrderItemSchema = new Schema<IOrderItem>({
@@ -101,6 +105,8 @@ const OrderItemSchema = new Schema<IOrderItem>({
   price: { type: Number, required: true },
   categoryId: { type: Schema.Types.Mixed },
   categoryName: { type: String, default: '' },
+  isPreOrder: { type: Boolean, default: false },
+  preOrderReleaseDate: { type: Date, default: null },
 });
 
 const OrderSchema = new Schema<IOrder>(
@@ -214,6 +220,8 @@ const OrderSchema = new Schema<IOrder>(
     paymentDetails: { type: Schema.Types.Mixed },
     referralCode: { type: String, default: null, trim: true },
     productSharerId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    isPreOrder: { type: Boolean, default: false },
+    preOrderReleaseDate: { type: Date, default: null },
   },
   { timestamps: true }
 );

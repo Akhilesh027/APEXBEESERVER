@@ -65,6 +65,8 @@ export class CheckoutService {
       price: item.price,
       categoryId: item.categoryId || primaryCategoryId,
       categoryName: item.categoryName || primaryCategoryName,
+      isPreOrder: Boolean(item.isPreOrder),
+      preOrderReleaseDate: item.preOrderReleaseDate || item.availableOn || null,
     }));
 
     const isPaidOnline = input.paymentDetails?.status === 'completed' || input.paymentDetails?.method === 'razorpay' || input.paymentDetails?.method === 'wallet';
@@ -136,6 +138,8 @@ export class CheckoutService {
         : undefined,
       orderSummary: mergedOrderSummary,
       preOrder: input.preOrder,
+      isPreOrder: Boolean(input.isPreOrder || input.preOrder?.enabled || items.some((it: any) => it.isPreOrder)),
+      preOrderReleaseDate: input.preOrderReleaseDate || input.preOrder?.availableFrom || null,
       isScheduledSubscription: input.isScheduledSubscription || false,
       scheduleDetails: input.scheduleDetails,
       orderStatusObj,

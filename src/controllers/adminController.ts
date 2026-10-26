@@ -1238,25 +1238,25 @@ export const verifyKycApplication = async (
 
       const validLocation =
         (app as any).location &&
-        Array.isArray((app as any).location.coordinates) &&
-        (app as any).location.coordinates.length === 2 &&
-        typeof (app as any).location.coordinates[0] === 'number' &&
-        typeof (app as any).location.coordinates[1] === 'number' &&
-        !isNaN((app as any).location.coordinates[0]) &&
-        !isNaN((app as any).location.coordinates[1])
+          Array.isArray((app as any).location.coordinates) &&
+          (app as any).location.coordinates.length === 2 &&
+          typeof (app as any).location.coordinates[0] === 'number' &&
+          typeof (app as any).location.coordinates[1] === 'number' &&
+          !isNaN((app as any).location.coordinates[0]) &&
+          !isNaN((app as any).location.coordinates[1])
           ? (app as any).location
           : undefined;
 
       const vendorSubCategories =
         Array.isArray((app as any).approvedSubcategories) &&
-        (app as any).approvedSubcategories.length > 0
+          (app as any).approvedSubcategories.length > 0
           ? (app as any).approvedSubcategories
           : (app as any).subCategory
-          ? String((app as any).subCategory)
+            ? String((app as any).subCategory)
               .split(",")
               .map((s: string) => s.trim())
               .filter(Boolean)
-          : [];
+            : [];
 
       const vendorCategories = (app as any).categories && (app as any).categories.length > 0
         ? (app as any).categories
@@ -1331,8 +1331,8 @@ export const verifyKycApplication = async (
 
           const reqCaps =
             (app as any).requestedCapabilities &&
-            Array.isArray((app as any).requestedCapabilities) &&
-            (app as any).requestedCapabilities.length > 0
+              Array.isArray((app as any).requestedCapabilities) &&
+              (app as any).requestedCapabilities.length > 0
               ? (app as any).requestedCapabilities
               : ["pooja_store", "general_store", "retail_store", "shopping_store"];
 
@@ -2956,51 +2956,51 @@ export const getFranchises = async (req: Request, res: Response): Promise<void> 
           })),
           applicationDetails: app
             ? {
-                _id: app._id,
-                applicationType: app.applicationType,
-                roleId: app.roleId,
-                status: app.status,
-                businessName: app.businessName,
-                category: app.category,
-                primaryCategory: app.primaryCategory,
-                subCategory: app.subCategory,
-                approvedSubcategories: app.approvedSubcategories,
-                restaurantName: app.restaurantName,
-                foodBusinessType: app.foodBusinessType,
-                fssaiNumber: app.fssaiNumber,
-                cuisines: app.cuisines,
-                foodPreference: app.foodPreference,
-                serviceType: app.serviceType,
-                sampleVideoLink: app.sampleVideoLink,
-                vehicleType: app.vehicleType,
-                licenseNumber: app.licenseNumber,
-                experience: app.experience,
-                investmentCapacity: app.investmentCapacity,
-                expectedSales: app.expectedSales,
-                documents: app.documents,
-                panNumber: app.panNumber,
-                aadhaarNumber: app.aadhaarNumber,
-                gstNumber: app.gstNumber,
-                address: app.address,
-                remarks: app.remarks,
-                createdAt: app.createdAt,
-              }
+              _id: app._id,
+              applicationType: app.applicationType,
+              roleId: app.roleId,
+              status: app.status,
+              businessName: app.businessName,
+              category: app.category,
+              primaryCategory: app.primaryCategory,
+              subCategory: app.subCategory,
+              approvedSubcategories: app.approvedSubcategories,
+              restaurantName: app.restaurantName,
+              foodBusinessType: app.foodBusinessType,
+              fssaiNumber: app.fssaiNumber,
+              cuisines: app.cuisines,
+              foodPreference: app.foodPreference,
+              serviceType: app.serviceType,
+              sampleVideoLink: app.sampleVideoLink,
+              vehicleType: app.vehicleType,
+              licenseNumber: app.licenseNumber,
+              experience: app.experience,
+              investmentCapacity: app.investmentCapacity,
+              expectedSales: app.expectedSales,
+              documents: app.documents,
+              panNumber: app.panNumber,
+              aadhaarNumber: app.aadhaarNumber,
+              gstNumber: app.gstNumber,
+              address: app.address,
+              remarks: app.remarks,
+              createdAt: app.createdAt,
+            }
             : null,
           territoryDetails: territory
             ? {
-                _id: territory._id,
-                ftid: territory.ftid,
-                name: territory.name,
-                level: territory.level,
-                state: territory.state,
-                district: territory.district,
-                mandal: territory.mandal,
-                annualFranchiseFee: territory.annualFranchiseFee,
-                franchiseFeePerYear: territory.franchiseFeePerYear,
-                minBookingAdvance: territory.minBookingAdvance,
-                paymentStatus: territory.paymentStatus,
-                paymentDetails: territory.paymentDetails,
-              }
+              _id: territory._id,
+              ftid: territory.ftid,
+              name: territory.name,
+              level: territory.level,
+              state: territory.state,
+              district: territory.district,
+              mandal: territory.mandal,
+              annualFranchiseFee: territory.annualFranchiseFee,
+              franchiseFeePerYear: territory.franchiseFeePerYear,
+              minBookingAdvance: territory.minBookingAdvance,
+              paymentStatus: territory.paymentStatus,
+              paymentDetails: territory.paymentDetails,
+            }
             : null,
         };
       })
@@ -4580,7 +4580,7 @@ export const getAllTransactions = async (req: Request, res: Response): Promise<v
           });
         }
       }
-    } catch {}
+    } catch { }
 
     // Sort newest first
     transactions.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
@@ -4736,7 +4736,7 @@ export const deleteTransaction = async (req: Request, res: Response): Promise<vo
 
     try {
       await WalletTransaction.findOneAndDelete({ $or: [{ _id: id }, { transactionId: entry.transactionId }] });
-    } catch {}
+    } catch { }
 
     res.status(200).json({
       success: true,

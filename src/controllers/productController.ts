@@ -502,6 +502,10 @@ export const createProduct = async (req: Request, res: Response) => {
         submittedAt: new Date(),
         isStoreProduct: req.body.isStoreProduct === 'true' || req.body.isStoreProduct === true,
         isSubscriptionAvailable: req.body.isSubscriptionAvailable === 'true' || req.body.isSubscriptionAvailable === true,
+        isPreOrder: req.body.isPreOrder === 'true' || req.body.isPreOrder === true,
+        preOrderReleaseDate: req.body.preOrderReleaseDate ? new Date(req.body.preOrderReleaseDate) : null,
+        preOrderMessage: req.body.preOrderMessage || '',
+        preOrderLimit: Number(req.body.preOrderLimit) || 0,
         isSelfPickup: req.body.isSelfPickup === undefined ? true : (req.body.isSelfPickup === 'true' || req.body.isSelfPickup === true),
         deliveryScope: req.body.deliveryScope || (req.body.isPanIndia === 'true' || req.body.isPanIndia === true ? 'pan_india' : 'local'),
         isPanIndia: req.body.deliveryScope === 'pan_india' || req.body.isPanIndia === 'true' || req.body.isPanIndia === true,
@@ -1042,6 +1046,10 @@ export const updateProduct = async (req: Request, res: Response) => {
         minimumOrderQuantity: product.minimumOrderQuantity || 1,
         isStoreProduct: product.isStoreProduct,
         isSubscriptionAvailable: product.isSubscriptionAvailable,
+        isPreOrder: product.isPreOrder,
+        preOrderReleaseDate: product.preOrderReleaseDate,
+        preOrderMessage: product.preOrderMessage,
+        preOrderLimit: product.preOrderLimit,
         deliveryScope: product.deliveryScope,
         brand: product.brand,
         snapshotAt: new Date(),
@@ -1143,6 +1151,18 @@ export const updateProduct = async (req: Request, res: Response) => {
     }
     if (req.body.isSubscriptionAvailable !== undefined) {
       product.isSubscriptionAvailable = req.body.isSubscriptionAvailable === 'true' || req.body.isSubscriptionAvailable === true;
+    }
+    if (req.body.isPreOrder !== undefined) {
+      product.isPreOrder = req.body.isPreOrder === 'true' || req.body.isPreOrder === true;
+    }
+    if (req.body.preOrderReleaseDate !== undefined) {
+      product.preOrderReleaseDate = req.body.preOrderReleaseDate ? new Date(req.body.preOrderReleaseDate) : null;
+    }
+    if (req.body.preOrderMessage !== undefined) {
+      product.preOrderMessage = req.body.preOrderMessage || '';
+    }
+    if (req.body.preOrderLimit !== undefined) {
+      product.preOrderLimit = Number(req.body.preOrderLimit) || 0;
     }
     if (req.body.isSelfPickup !== undefined) {
       product.isSelfPickup = req.body.isSelfPickup === 'true' || req.body.isSelfPickup === true;
@@ -1812,6 +1832,9 @@ export const getProductsByVendor = async (req: Request, res: Response): Promise<
         subcategory: pObj.subCategoryId?.name || pObj.subcategory || '',
         status: pObj.status,
         isSubscriptionAvailable: !!pObj.isSubscriptionAvailable,
+        isPreOrder: !!pObj.isPreOrder,
+        preOrderReleaseDate: pObj.preOrderReleaseDate || null,
+        preOrderMessage: pObj.preOrderMessage || '',
         brand: pObj.brand || 'Fresh & Local',
         deliveryFee: 0
       };
@@ -1880,6 +1903,10 @@ export const duplicateProduct = async (req: Request, res: Response) => {
       isActive: false,
       isStoreProduct: product.isStoreProduct,
       isSubscriptionAvailable: product.isSubscriptionAvailable,
+      isPreOrder: product.isPreOrder,
+      preOrderReleaseDate: product.preOrderReleaseDate,
+      preOrderMessage: product.preOrderMessage,
+      preOrderLimit: product.preOrderLimit,
       badges: product.badges
     });
 
