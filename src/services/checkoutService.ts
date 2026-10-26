@@ -24,6 +24,9 @@ export interface CheckoutInput {
   preOrder?: any;
   isPreOrder?: boolean;
   preOrderReleaseDate?: any;
+  preOrderDeliveryDate?: any;
+  preOrderTimeSlot?: string;
+  preOrderCustomNote?: string;
   checkoutIdempotencyKey?: string;
   checkoutRequestHash?: string;
   referralCode?: string;
