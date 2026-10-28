@@ -1012,11 +1012,16 @@ export const googleAuth = async (req: Request, res: Response): Promise<void> => 
       const randomPassword = Math.random().toString(36).slice(-10) + Math.random().toString(36).slice(-10);
       const hashedPassword = await bcrypt.hash(randomPassword, 10);
 
+      const requestedRole = (req.body.role || '').toString().toLowerCase();
+      const initialRole: RoleType = (requestedRole.includes('business') || requestedRole === 'business_partner')
+        ? 'business_partner'
+        : 'customer';
+
       user = new User({
         name,
         email,
         passwordHash: hashedPassword,
-        roles: ['customer'],
+        roles: [initialRole],
         status: 'Active',
         isVerified: true,
         profileImage: picture,
@@ -1029,14 +1034,18 @@ export const googleAuth = async (req: Request, res: Response): Promise<void> => 
           (user as any).referredBy = referrer._id;
           (user as any).referredByCode = referrer.referralCode;
 
-          const refDoc = new Referral({
-            referrerId: referrer._id,
-            referredUserId: user._id,
-            referralCode: referrer.referralCode,
-            status: 'registered',
-            reward: 50
-          });
-          await refDoc.save();
+          try {
+            const refDoc = new Referral({
+              referrerUserId: referrer._id,
+              referredUserId: user._id,
+              referralCode: referrer.referralCode,
+              status: 'registered',
+              rewardAmount: 50
+            });
+            await refDoc.save();
+          } catch (refErr) {
+            console.warn('Failed to save Google signup referral record:', refErr);
+          }
         }
       }
 

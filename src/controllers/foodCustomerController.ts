@@ -340,7 +340,8 @@ export const getAllFoodItems = async (req: Request, res: Response): Promise<void
     if (search) filter.name = { $regex: String(search), $options: 'i' };
 
     const items = await FoodMenuItem.find(filter)
-      .limit(Number(limit))
+      .populate('categoryId', 'name')
+      .limit(Math.max(Number(limit) || 100, 100))
       .sort({ createdAt: -1 });
 
     const results = await Promise.all(
@@ -349,6 +350,7 @@ export const getAllFoodItems = async (req: Request, res: Response): Promise<void
         const rest = await RestaurantProfile.findById(item.restaurantId).select('restaurantName logo city locality pincode zipcode address');
         const sellingPrice = (item.offerPrice && item.offerPrice > 0) ? item.offerPrice : (item.basePrice || anyItem.price || anyItem.baseSellingPrice || 0);
         const mrpPrice = anyItem.mrp || anyItem.baseMrp || ((item.offerPrice && item.offerPrice > 0 && item.basePrice > item.offerPrice) ? item.basePrice : sellingPrice);
+        const resolvedCategory = (item.categoryId as any)?.name || anyItem.categoryName || anyItem.category || item.cuisine || 'Food Item';
         return {
           _id: item._id,
           name: item.name,
@@ -363,8 +365,8 @@ export const getAllFoodItems = async (req: Request, res: Response): Promise<void
           foodType: item.foodType,
           rating: anyItem.rating || 4.8,
           prepTime: item.preparationTimeMinutes ? `${item.preparationTimeMinutes} mins` : '20 mins',
-          category: anyItem.categoryName || 'Food Item',
-          categoryName: anyItem.categoryName || 'Food & Dining',
+          category: resolvedCategory,
+          categoryName: resolvedCategory,
           restaurantId: item.restaurantId,
           restaurantName: rest?.restaurantName || 'Verified Food Outlet',
           locality: rest?.locality || rest?.city || 'Hyderabad',

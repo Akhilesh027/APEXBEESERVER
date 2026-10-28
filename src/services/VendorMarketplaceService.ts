@@ -7,19 +7,35 @@ export class VendorMarketplaceService {
   /**
    * Calculates dynamic shop availability based on server local time and business hours.
    */
-  static calculateAvailability(businessHours: any, liveStatus: string): string {
-    if (liveStatus !== "open") {
-      return liveStatus; // closed, busy, vacation, temporarily_closed, accepting_preorders
+  static calculateAvailability(businessHours: any, liveStatus?: string): string {
+    const hasExplicitLiveStatus = liveStatus && typeof liveStatus === "string" && liveStatus.trim().length > 0;
+    const status = (liveStatus || "open").toLowerCase().trim();
+
+    // If explicitly set to closed, vacation, or temporarily closed
+    if (status === "closed" || status === "vacation" || status === "temporarily_closed") {
+      return status;
+    }
+    if (status === "busy" || status === "accepting_preorders") {
+      return status;
+    }
+    // If explicitly marked as open by vendor or admin
+    if (hasExplicitLiveStatus && status === "open") {
+      return "open";
     }
 
-    if (!businessHours) return "open";
+    if (!businessHours || typeof businessHours !== "object" || Object.keys(businessHours).length === 0) {
+      return "open";
+    }
 
     const days = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
-    const now = new Date();
+    // Always use India Standard Time (IST, UTC+5:30) for store hours
+    const istString = new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
+    const now = new Date(istString);
     const currentDay = days[now.getDay()];
     const todayHours = businessHours[currentDay];
 
-    if (!todayHours || !todayHours.enabled) {
+    // If today is explicitly marked as disabled/closed
+    if (todayHours && todayHours.enabled === false) {
       return "closed";
     }
 
@@ -27,24 +43,28 @@ export class VendorMarketplaceService {
     const currentMinute = now.getMinutes();
     const currentTimeInMins = currentHour * 60 + currentMinute;
 
-    const [openH, openM] = (todayHours.open || "09:00").split(":").map(Number);
-    const [closeH, closeM] = (todayHours.close || "21:00").split(":").map(Number);
+    const openStr = (todayHours && todayHours.open) || "07:00";
+    const closeStr = (todayHours && todayHours.close) || "23:00";
 
-    const openTimeInMins = openH * 60 + openM;
-    const closeTimeInMins = closeH * 60 + closeM;
+    const [openH, openM] = openStr.split(":").map(Number);
+    const [closeH, closeM] = closeStr.split(":").map(Number);
 
-    if (currentTimeInMins < openTimeInMins || currentTimeInMins >= closeTimeInMins) {
-      return "closed";
-    }
+    const openTimeInMins = (isNaN(openH) ? 7 : openH) * 60 + (isNaN(openM) ? 0 : openM);
+    const closeTimeInMins = (isNaN(closeH) ? 23 : closeH) * 60 + (isNaN(closeM) ? 0 : closeM);
 
-    // Opening soon (within 60 minutes before opening)
-    if (openTimeInMins - currentTimeInMins <= 60 && openTimeInMins - currentTimeInMins > 0) {
-      return "opening_soon";
-    }
-
-    // Closing soon (within 60 minutes before closing)
-    if (closeTimeInMins - currentTimeInMins <= 60 && closeTimeInMins - currentTimeInMins > 0) {
-      return "closing_soon";
+    // Standard day shift (e.g. 09:00 to 22:00)
+    if (closeTimeInMins >= openTimeInMins) {
+      if (currentTimeInMins < openTimeInMins || currentTimeInMins >= closeTimeInMins) {
+        return "closed";
+      }
+      if (closeTimeInMins - currentTimeInMins <= 45 && closeTimeInMins - currentTimeInMins > 0) {
+        return "closing_soon";
+      }
+    } else {
+      // Overnight shift (e.g. 18:00 to 02:00 next day)
+      if (currentTimeInMins < openTimeInMins && currentTimeInMins >= closeTimeInMins) {
+        return "closed";
+      }
     }
 
     return "open";

@@ -22,6 +22,7 @@ import { Category } from '../models/Category';
 import { requireSelfOrAdmin } from '../utils/authz';
 import { BusinessApplication } from '../models/BusinessApplication';
 import { VendorCategoryAccess } from '../models/VendorCategoryAccess';
+import { RestaurantProfile } from '../models/RestaurantProfile';
 
 function escapeRegex(text: string): string {
   return text.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
@@ -1067,24 +1068,103 @@ export const searchVendors = async (req: Request, res: Response): Promise<void> 
 export const getVendorDetails = async (req: Request, res: Response): Promise<void> => {
   try {
     const { vendorId } = req.params;
-    let vendor = null;
+    let vendor: any = null;
     if (mongoose.Types.ObjectId.isValid(vendorId)) {
       vendor = await Vendor.findOne({ $or: [{ _id: vendorId }, { userId: vendorId }] });
     } else {
       vendor = await Vendor.findOne({ userId: vendorId });
     }
+
     if (!vendor) {
+      let restaurant = null;
+      if (mongoose.Types.ObjectId.isValid(vendorId)) {
+        restaurant = await RestaurantProfile.findOne({
+          $or: [
+            { _id: vendorId },
+            { userId: vendorId },
+            { vendorId: vendorId },
+            { storeId: vendorId }
+          ]
+        });
+      } else {
+        restaurant = await RestaurantProfile.findOne({ slug: vendorId });
+      }
+
+      if (restaurant) {
+        const rObj = restaurant.toObject();
+        const isOpen =
+          rObj.acceptingOrders !== false &&
+          rObj.operationalStatus !== 'CLOSED' &&
+          rObj.operationalStatus !== 'TEMPORARILY_CLOSED';
+
+        const vendorData = {
+          _id: rObj._id,
+          vendorId: rObj._id,
+          userId: rObj.userId,
+          businessName: rObj.restaurantName,
+          category: 'Food & Dining',
+          categories: ['Food & Dining', ...(rObj.cuisines || [])],
+          logo: rObj.logo || rObj.coverImage || '',
+          banner: rObj.coverImage || rObj.bannerImage || '',
+          storeDesign: {
+            logoUrl: rObj.logo || rObj.coverImage || '',
+            bannerUrl: rObj.coverImage || rObj.bannerImage || '',
+            description: rObj.description || ''
+          },
+          address: rObj.address,
+          locality: rObj.locality,
+          city: rObj.city,
+          state: rObj.state,
+          pincode: rObj.pincode,
+          mobile: rObj.phone,
+          phone: rObj.phone,
+          email: rObj.email,
+          minOrder: rObj.minimumOrderValue || 0,
+          estimatedDeliveryMinutes: rObj.averagePreparationMinutes || 25,
+          deliveryCharge: 0,
+          rating: {
+            average: typeof rObj.rating === 'number' ? rObj.rating : (rObj.rating?.average || 4.7),
+            totalReviews: rObj.rating?.totalReviews || 12
+          },
+          verifiedBadge: rObj.verificationStatus === 'APPROVED',
+          liveStatus: isOpen ? 'open' : 'closed',
+          isOpen: isOpen,
+          computedAvailability: isOpen ? 'open' : 'closed'
+        };
+
+        res.status(200).json({
+          success: true,
+          vendor: vendorData
+        });
+        return;
+      }
+
       res.status(404).json({ success: false, message: "Vendor profile not found" });
       return;
     }
 
     const vObj = vendor.toObject();
-    const computedAvailability = VendorMarketplaceService.calculateAvailability(vObj.businessHours, vObj.liveStatus);
+
+    // Check if vendor has a linked RestaurantProfile
+    const linkedRestaurant = await RestaurantProfile.findOne({
+      $or: [
+        { vendorId: vendor._id },
+        { storeId: vendor._id },
+        { userId: vendor.userId }
+      ]
+    });
+
+    let computedAvailability = VendorMarketplaceService.calculateAvailability(vObj.businessHours, vObj.liveStatus);
+
+    if (vObj.liveStatus === 'open' || (linkedRestaurant && linkedRestaurant.acceptingOrders !== false && linkedRestaurant.operationalStatus !== 'CLOSED')) {
+      computedAvailability = 'open';
+    }
 
     res.status(200).json({
       success: true,
       vendor: {
         ...vObj,
+        isOpen: computedAvailability === 'open',
         computedAvailability
       }
     });

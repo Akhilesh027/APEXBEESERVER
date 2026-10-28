@@ -3,6 +3,8 @@ import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
 import Product from '../models/Product';
 import { FoodMenuItem } from '../models/FoodMenuItem';
+import { FoodMenuCategory } from '../models/FoodMenuCategory';
+import { RestaurantProfile } from '../models/RestaurantProfile';
 import Category from '../models/Category';
 import CategoryExperienceConfig from '../models/CategoryExperienceConfig';
 import { Vendor } from '../models/Vendor';
@@ -1826,7 +1828,11 @@ export const getProductsByVendor = async (req: Request, res: Response): Promise<
       vendorObjectIds.push(new mongoose.Types.ObjectId(vendorId));
     }
 
-    const vendor = await Vendor.findOne({ $or: [{ _id: vendorId }, { userId: vendorId }] });
+    const vendor = await Vendor.findOne(
+      mongoose.Types.ObjectId.isValid(vendorId)
+        ? { $or: [{ _id: vendorId }, { userId: vendorId }] }
+        : { userId: vendorId }
+    );
     if (vendor) {
       if (vendor._id && !vendorObjectIds.some(id => id.toString() === vendor._id.toString())) {
         vendorObjectIds.push(vendor._id);
@@ -1836,14 +1842,54 @@ export const getProductsByVendor = async (req: Request, res: Response): Promise<
       }
     }
 
-    // Query all active and live/approved products belonging to this vendor
+    // Collect all possible restaurant IDs for this vendor / business ID
+    const restaurantObjectIds: any[] = [];
+    const restaurantQuery: any[] = [];
+    if (mongoose.Types.ObjectId.isValid(vendorId)) {
+      restaurantQuery.push(
+        { _id: vendorId },
+        { userId: vendorId },
+        { vendorId: vendorId },
+        { storeId: vendorId }
+      );
+    }
+    for (const vId of vendorObjectIds) {
+      restaurantQuery.push(
+        { _id: vId },
+        { userId: vId },
+        { vendorId: vId },
+        { storeId: vId }
+      );
+    }
+
+    const restaurants = await RestaurantProfile.find({ $or: restaurantQuery });
+    for (const r of restaurants) {
+      if (r._id && !restaurantObjectIds.some(id => id.toString() === r._id.toString())) {
+        restaurantObjectIds.push(r._id);
+      }
+      if (r.userId && !vendorObjectIds.some(id => id.toString() === r.userId.toString())) {
+        vendorObjectIds.push(r.userId);
+      }
+      if (r.vendorId && !vendorObjectIds.some(id => id.toString() === r.vendorId.toString())) {
+        vendorObjectIds.push(r.vendorId);
+      }
+      if (r.storeId && !vendorObjectIds.some(id => id.toString() === r.storeId.toString())) {
+        vendorObjectIds.push(r.storeId);
+      }
+    }
+    if (mongoose.Types.ObjectId.isValid(vendorId) && !restaurantObjectIds.some(id => id.toString() === vendorId.toString())) {
+      restaurantObjectIds.push(new mongoose.Types.ObjectId(vendorId));
+    }
+
+    // Query standard products belonging to this vendor
     const products = await Product.find({
       $or: [
         { sellerId: { $in: vendorObjectIds } },
-        { createdBy: { $in: vendorObjectIds } }
+        { createdBy: { $in: vendorObjectIds } },
+        { vendorId: { $in: vendorObjectIds } }
       ],
-      status: { $in: ['Live', 'Active', 'Approved', 'approved'] },
-      isActive: true
+      status: { $nin: ['archived', 'Archived', 'draft', 'Draft', 'rejected', 'Rejected'] },
+      isActive: { $ne: false }
     })
       .populate('categoryId', 'name')
       .populate('subCategoryId', 'name');
@@ -1852,11 +1898,14 @@ export const getProductsByVendor = async (req: Request, res: Response): Promise<
       const pObj = p.toObject ? p.toObject() : p;
       return {
         _id: pObj._id,
-        vendorId: pObj.sellerId,
+        vendorId: pObj.sellerId || vendorId,
         itemName: pObj.name,
+        name: pObj.name,
         images: pObj.images && pObj.images.length > 0 ? pObj.images : [pObj.thumbnail].filter(Boolean),
         afterDiscount: pObj.baseSellingPrice || pObj.baseMrp || 0,
         userPrice: pObj.baseMrp || pObj.baseSellingPrice || 0,
+        baseSellingPrice: pObj.baseSellingPrice || pObj.baseMrp || 0,
+        baseMrp: pObj.baseMrp || pObj.baseSellingPrice || 0,
         category: pObj.categoryId ? {
           _id: pObj.categoryId._id || pObj.categoryId,
           name: pObj.categoryId.name || 'Category'
@@ -1872,9 +1921,57 @@ export const getProductsByVendor = async (req: Request, res: Response): Promise<
       };
     });
 
+    // Also query FoodMenuItem if restaurant or food business exists
+    let formattedFoodItems: any[] = [];
+    if (restaurantObjectIds.length > 0 || vendorObjectIds.length > 0) {
+      const foodItems = await FoodMenuItem.find({
+        $or: [
+          { restaurantId: { $in: restaurantObjectIds } },
+          { restaurantId: { $in: vendorObjectIds } }
+        ],
+        status: { $nin: ['ARCHIVED', 'DRAFT'] },
+        soldOut: { $ne: true }
+      }).populate('categoryId', 'name');
+
+      formattedFoodItems = foodItems.map((item: any) => {
+        const iObj = item.toObject ? item.toObject() : item;
+        const effectivePrice = iObj.offerPrice && iObj.offerPrice > 0 ? iObj.offerPrice : (iObj.basePrice || 0);
+        const itemImage = iObj.image || iObj.imageUrl || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=500&auto=format&fit=crop&q=60';
+        return {
+          _id: iObj._id,
+          vendorId: vendorId,
+          itemName: iObj.name,
+          name: iObj.name,
+          images: [itemImage],
+          thumbnail: itemImage,
+          afterDiscount: effectivePrice,
+          userPrice: iObj.basePrice || effectivePrice,
+          baseSellingPrice: effectivePrice,
+          baseMrp: iObj.basePrice || effectivePrice,
+          category: {
+            _id: iObj.categoryId?._id ? iObj.categoryId._id.toString() : (iObj.categoryId ? iObj.categoryId.toString() : 'food-cat'),
+            name: iObj.categoryId?.name || iObj.cuisine || 'Food & Dining'
+          },
+          subcategory: iObj.cuisine || iObj.categoryId?.name || (iObj.foodType === 'VEG' ? 'Pure Veg' : 'Non-Veg'),
+          status: iObj.status === 'ACTIVE' ? 'Live' : (iObj.status || 'Live'),
+          isSubscriptionAvailable: false,
+          isPreOrder: !!iObj.isPreOrder,
+          preOrderReleaseDate: iObj.preOrderReleaseDate || null,
+          preOrderMessage: iObj.preOrderMessage || '',
+          brand: iObj.cuisine || 'Fresh & Hot',
+          deliveryFee: iObj.packagingCharge || 0,
+          ratings: 4.8,
+          rating: 4.8,
+          foodType: iObj.foodType,
+          isVeg: iObj.foodType === 'VEG',
+          description: iObj.description || ''
+        };
+      });
+    }
+
     res.status(200).json({
       success: true,
-      data: formattedProducts
+      data: [...formattedProducts, ...formattedFoodItems]
     });
   } catch (error: any) {
     console.error('Error fetching products by vendor:', error);
