@@ -1245,47 +1245,108 @@ export const updateProduct = async (req: Request, res: Response) => {
 
 export const deleteProduct = async (req: Request, res: Response) => {
   try {
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    const rawId = req.params.id;
+    const cleanId = rawId ? String(rawId).replace(/^(prod_|food_)/, '') : '';
+    if (!mongoose.Types.ObjectId.isValid(cleanId)) {
       res.status(400).json({ success: false, message: 'Invalid ID format' });
       return;
     }
 
-    const product = await Product.findById(req.params.id);
+    const authUser = (req as any).user;
+    const isAdmin = authUser && (authUser.roles?.includes('admin') || authUser.role === 'admin');
+
+    const product = await Product.findById(cleanId);
+    let foodItem = null;
 
     if (!product) {
-      res.status(404).json({ message: 'Resource not found' });
-      return;
+      foodItem = await FoodMenuItem.findById(cleanId);
+      if (!foodItem) {
+        res.status(404).json({ success: false, message: 'Product or food item not found' });
+        return;
+      }
     }
 
-    const authUser = (req as any).user;
-    const isOwner = authUser && (String(product.sellerId) === String(authUser.id) || String(product.createdBy) === String(authUser.id));
-    const isAdmin = authUser && authUser.roles?.includes('admin');
+    const isOwner = authUser && product && (String(product.sellerId) === String(authUser.id) || String(product.createdBy) === String(authUser.id));
 
     if (!isOwner && !isAdmin) {
       res.status(403).json({ success: false, message: 'Not authorized to delete this product' });
       return;
     }
 
-    // Soft-delete / Archive live products to protect order history integrity and prevent broken references
+    // Permanent delete from database for admin or when permanent=true query parameter is present
+    if (isAdmin || req.query.permanent === 'true') {
+      if (product) {
+        const prodId = product._id;
+        const foodMenuId = product.foodMenuItemId;
+
+        // 1. Permanently remove from Product collection
+        await Product.findByIdAndDelete(prodId);
+
+        // 2. If it was linked to a FoodMenuItem, delete that too
+        if (foodMenuId) {
+          await FoodMenuItem.findByIdAndDelete(foodMenuId);
+          try {
+            if (mongoose.models.FoodVariant) {
+              await mongoose.models.FoodVariant.deleteMany({ menuItemId: foodMenuId });
+            }
+          } catch (_) {}
+          try {
+            if (mongoose.models.FoodMenuItemAddonGroup) {
+              await mongoose.models.FoodMenuItemAddonGroup.deleteMany({ menuItemId: foodMenuId });
+            }
+          } catch (_) {}
+        }
+
+        // 3. Remove associated StoreProduct & Inventory
+        try {
+          const StoreProductModel = mongoose.model('StoreProduct');
+          await StoreProductModel.deleteMany({ productId: prodId });
+        } catch (_) {}
+
+        try {
+          const InventoryModel = mongoose.model('Inventory');
+          await InventoryModel.deleteMany({ productId: prodId });
+        } catch (_) {}
+      }
+
+      if (foodItem) {
+        const fId = foodItem._id;
+        await FoodMenuItem.findByIdAndDelete(fId);
+        await Product.deleteMany({ foodMenuItemId: fId });
+        try {
+          if (mongoose.models.FoodVariant) {
+            await mongoose.models.FoodVariant.deleteMany({ menuItemId: fId });
+          }
+        } catch (_) {}
+        try {
+          if (mongoose.models.FoodMenuItemAddonGroup) {
+            await mongoose.models.FoodMenuItemAddonGroup.deleteMany({ menuItemId: fId });
+          }
+        } catch (_) {}
+      }
+
+      res.json({ success: true, message: 'Product permanently deleted from database successfully' });
+      return;
+    }
+
+    // Soft-delete / Archive live products for non-admin seller requests
     product.isArchived = true;
     product.isActive = false;
     product.status = 'Archived';
     await product.save();
 
-    // Soft-deactivate associated StoreProduct & Inventory
     try {
       const StoreProductModel = mongoose.model('StoreProduct');
       const InventoryModel = mongoose.model('Inventory');
 
       await StoreProductModel.updateMany({ productId: product._id }, { $set: { isAvailableForDelivery: false, isAvailableForPickup: false } });
       await InventoryModel.updateMany({ productId: product._id }, { $set: { availableQuantity: 0 } });
-    } catch (e) {
-      // Ignore model lookup errors if not loaded
-    }
+    } catch (_) {}
 
-    res.json({ message: 'Product archived and removed from storefront successfully' });
+    res.json({ success: true, message: 'Product archived and removed from storefront successfully' });
   } catch (error: any) {
     res.status(500).json({
+      success: false,
       message: 'Failed to delete product',
       error: error.message,
     });
@@ -1796,6 +1857,79 @@ export const bulkRejectProducts = async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       message: 'Failed to bulk reject products',
+      error: error.message
+    });
+  }
+};
+
+export const bulkDeleteProducts = async (req: Request, res: Response) => {
+  try {
+    const { productIds } = req.body;
+
+    if (!productIds || !Array.isArray(productIds) || productIds.length === 0) {
+      res.status(400).json({ success: false, message: 'productIds array is required' });
+      return;
+    }
+
+    const cleanIds = productIds
+      .map((id: string) => (id ? String(id).replace(/^(prod_|food_)/, '') : ''))
+      .filter((id: string) => mongoose.Types.ObjectId.isValid(id));
+
+    if (cleanIds.length === 0) {
+      res.status(400).json({ success: false, message: 'No valid IDs provided' });
+      return;
+    }
+
+    // Find all products to identify any linked foodMenuItemIds
+    const products = await Product.find({ _id: { $in: cleanIds } });
+    const linkedFoodIds = products
+      .map((p) => p.foodMenuItemId)
+      .filter(Boolean)
+      .map((id) => String(id));
+
+    const allFoodIdsToDelete = Array.from(new Set([...cleanIds, ...linkedFoodIds]));
+
+    // 1. Delete from Product collection
+    await Product.deleteMany({
+      $or: [
+        { _id: { $in: cleanIds } },
+        { foodMenuItemId: { $in: allFoodIdsToDelete } }
+      ]
+    });
+
+    // 2. Delete from FoodMenuItem collection
+    await FoodMenuItem.deleteMany({ _id: { $in: allFoodIdsToDelete } });
+    try {
+      if (mongoose.models.FoodVariant) {
+        await mongoose.models.FoodVariant.deleteMany({ menuItemId: { $in: allFoodIdsToDelete } });
+      }
+    } catch (_) {}
+    try {
+      if (mongoose.models.FoodMenuItemAddonGroup) {
+        await mongoose.models.FoodMenuItemAddonGroup.deleteMany({ menuItemId: { $in: allFoodIdsToDelete } });
+      }
+    } catch (_) {}
+
+    // 3. Remove associated StoreProduct & Inventory
+    try {
+      const StoreProductModel = mongoose.model('StoreProduct');
+      await StoreProductModel.deleteMany({ productId: { $in: cleanIds } });
+    } catch (_) {}
+
+    try {
+      const InventoryModel = mongoose.model('Inventory');
+      await InventoryModel.deleteMany({ productId: { $in: cleanIds } });
+    } catch (_) {}
+
+    res.json({
+      success: true,
+      message: `Successfully deleted ${cleanIds.length} products from the database permanently`,
+      count: cleanIds.length
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to bulk delete products',
       error: error.message
     });
   }

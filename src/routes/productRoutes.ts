@@ -13,6 +13,7 @@ import {
   quickApproveVendorEdit,
   bulkApproveProducts,
   bulkRejectProducts,
+  bulkDeleteProducts,
   bulkUpdateProducts,
   getProductsByVendor,
   duplicateProduct,
@@ -69,6 +70,7 @@ router.post('/inventory/movements', protect, createInventoryMovement);
 // Admin-only pricing & approval actions
 router.post('/admin/bulk-approve', protect, restrictTo('admin'), bulkApproveProducts);
 router.post('/admin/bulk-reject', protect, restrictTo('admin'), bulkRejectProducts);
+router.post('/admin/bulk-delete', protect, restrictTo('admin'), bulkDeleteProducts);
 router.patch('/:id/admin-pricing', protect, restrictTo('admin'), configureAdminPricing);
 router.patch('/:id/quick-approve-edit', protect, restrictTo('admin'), quickApproveVendorEdit);
 router.patch('/:id/reject', protect, restrictTo('admin'), rejectProduct);
