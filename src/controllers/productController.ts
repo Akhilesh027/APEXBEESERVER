@@ -1266,7 +1266,10 @@ export const deleteProduct = async (req: Request, res: Response) => {
       }
     }
 
-    const isOwner = authUser && product && (String(product.sellerId) === String(authUser.id) || String(product.createdBy) === String(authUser.id));
+    const isOwner = authUser && (
+      (product && (String(product.sellerId) === String(authUser.id) || String(product.createdBy) === String(authUser.id))) ||
+      (foodItem && (String(foodItem.restaurantId) === String(authUser.id) || String((foodItem as any).sellerId) === String(authUser.id)))
+    );
 
     if (!isOwner && !isAdmin) {
       res.status(403).json({ success: false, message: 'Not authorized to delete this product' });
@@ -1330,18 +1333,23 @@ export const deleteProduct = async (req: Request, res: Response) => {
     }
 
     // Soft-delete / Archive live products for non-admin seller requests
-    product.isArchived = true;
-    product.isActive = false;
-    product.status = 'Archived';
-    await product.save();
+    if (product) {
+      product.isArchived = true;
+      product.isActive = false;
+      product.status = 'Archived';
+      await product.save();
 
-    try {
-      const StoreProductModel = mongoose.model('StoreProduct');
-      const InventoryModel = mongoose.model('Inventory');
+      try {
+        const StoreProductModel = mongoose.model('StoreProduct');
+        const InventoryModel = mongoose.model('Inventory');
 
-      await StoreProductModel.updateMany({ productId: product._id }, { $set: { isAvailableForDelivery: false, isAvailableForPickup: false } });
-      await InventoryModel.updateMany({ productId: product._id }, { $set: { availableQuantity: 0 } });
-    } catch (_) {}
+        await StoreProductModel.updateMany({ productId: product._id }, { $set: { isAvailableForDelivery: false, isAvailableForPickup: false } });
+        await InventoryModel.updateMany({ productId: product._id }, { $set: { availableQuantity: 0 } });
+      } catch (_) {}
+    } else if (foodItem) {
+      foodItem.status = 'ARCHIVED';
+      await foodItem.save();
+    }
 
     res.json({ success: true, message: 'Product archived and removed from storefront successfully' });
   } catch (error: any) {
