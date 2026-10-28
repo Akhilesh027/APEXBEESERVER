@@ -37,6 +37,13 @@ export interface IFoodMenuItem extends Document {
   distributedFrom?: string;
   vendorPayoutAmount?: number;
   platformShareAmount?: number;
+  shippingCharge?: number;
+  packingCharge?: number;
+  deliveryFee?: number;
+  adminPricing?: any;
+  commissionShares?: any[];
+  referralCommission?: any;
+  referralEarnings?: any;
   adminPricingNotes?: string;
   adminApprovedAt?: Date;
   restaurantAcceptedAt?: Date;
@@ -109,6 +116,13 @@ const FoodMenuItemSchema = new Schema<IFoodMenuItem>(
     distributedFrom: { type: String, default: 'platform_fee' },
     vendorPayoutAmount: { type: Number, default: 0 },
     platformShareAmount: { type: Number, default: 0 },
+    shippingCharge: { type: Number, default: 0 },
+    packingCharge: { type: Number, default: 0 },
+    deliveryFee: { type: Number, default: 0 },
+    adminPricing: { type: Schema.Types.Mixed },
+    commissionShares: [Schema.Types.Mixed],
+    referralCommission: { type: Schema.Types.Mixed },
+    referralEarnings: { type: Schema.Types.Mixed },
     adminPricingNotes: { type: String, default: '' },
     adminApprovedAt: { type: Date },
     restaurantAcceptedAt: { type: Date },

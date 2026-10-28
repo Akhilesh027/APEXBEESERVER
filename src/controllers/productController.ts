@@ -1346,6 +1346,13 @@ export const configureAdminPricing = async (req: Request, res: Response) => {
       configuredAt: new Date(),
     } as any;
 
+    // Explicitly persist shipping and packaging charges on root product document for fast querying & frontend rendering
+    product.shippingCharge = adminPricing.shippingCharge || 0;
+    product.packingCharge = adminPricing.packingCharge || 0;
+    product.deliveryFee = adminPricing.shippingCharge || 0;
+    product.packagingCharge = adminPricing.packingCharge || 0;
+    product.packageCharge = adminPricing.packingCharge || 0;
+
     if (req.body.referralCommission) {
       product.referralCommission = {
         level1: normalizeNumber(req.body.referralCommission.level1),
@@ -1389,6 +1396,14 @@ export const configureAdminPricing = async (req: Request, res: Response) => {
           vendorCommissionAmount: product.adminPricing.vendorCommissionAmount,
           distributedFrom: product.adminPricing.distributedFrom,
           vendorPayoutAmount: product.adminPricing.finalSellerAmount,
+          packagingCharge: adminPricing.packingCharge || 0,
+          packingCharge: adminPricing.packingCharge || 0,
+          shippingCharge: adminPricing.shippingCharge || 0,
+          deliveryFee: adminPricing.shippingCharge || 0,
+          adminPricing: product.adminPricing,
+          commissionShares: product.adminPricing?.commissionShares,
+          referralCommission: product.referralCommission,
+          referralEarnings: product.adminPricing?.referralEarnings,
           approvalStatus: 'PENDING_RESTAURANT_ACCEPTANCE',
           adminApprovedAt: new Date(),
         });
@@ -1896,6 +1911,8 @@ export const getProductsByVendor = async (req: Request, res: Response): Promise<
 
     const formattedProducts = products.map((p: any) => {
       const pObj = p.toObject ? p.toObject() : p;
+      const shipCharge = pObj.adminPricing?.shippingCharge ?? pObj.shippingCharge ?? pObj.deliveryFee ?? 0;
+      const packCharge = pObj.adminPricing?.packingCharge ?? pObj.packingCharge ?? pObj.packagingCharge ?? 0;
       return {
         _id: pObj._id,
         vendorId: pObj.sellerId || vendorId,
@@ -1906,6 +1923,25 @@ export const getProductsByVendor = async (req: Request, res: Response): Promise<
         userPrice: pObj.baseMrp || pObj.baseSellingPrice || 0,
         baseSellingPrice: pObj.baseSellingPrice || pObj.baseMrp || 0,
         baseMrp: pObj.baseMrp || pObj.baseSellingPrice || 0,
+        adminPricing: pObj.adminPricing ? {
+          ...pObj.adminPricing,
+          shippingCharge: shipCharge,
+          packingCharge: packCharge,
+          mrp: pObj.baseMrp || pObj.adminPricing.mrp || 0,
+          sellingPrice: pObj.baseSellingPrice || pObj.adminPricing.sellingPrice || 0,
+          commissionShares: pObj.adminPricing.commissionShares || [],
+          referralCommission: pObj.referralCommission || pObj.adminPricing.referralCommission,
+        } : {
+          shippingCharge: shipCharge,
+          packingCharge: packCharge,
+          mrp: pObj.baseMrp || 0,
+          sellingPrice: pObj.baseSellingPrice || 0,
+        },
+        referralCommission: pObj.referralCommission,
+        shippingCharge: shipCharge,
+        packingCharge: packCharge,
+        deliveryFee: shipCharge,
+        packagingCharge: packCharge,
         category: pObj.categoryId ? {
           _id: pObj.categoryId._id || pObj.categoryId,
           name: pObj.categoryId.name || 'Category'
@@ -1917,7 +1953,6 @@ export const getProductsByVendor = async (req: Request, res: Response): Promise<
         preOrderReleaseDate: pObj.preOrderReleaseDate || null,
         preOrderMessage: pObj.preOrderMessage || '',
         brand: pObj.brand || 'Fresh & Local',
-        deliveryFee: 0
       };
     });
 
@@ -1937,6 +1972,8 @@ export const getProductsByVendor = async (req: Request, res: Response): Promise<
         const iObj = item.toObject ? item.toObject() : item;
         const effectivePrice = iObj.offerPrice && iObj.offerPrice > 0 ? iObj.offerPrice : (iObj.basePrice || 0);
         const itemImage = iObj.image || iObj.imageUrl || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=500&auto=format&fit=crop&q=60';
+        const packCharge = iObj.packagingCharge || iObj.packingCharge || 0;
+        const shipCharge = iObj.shippingCharge || iObj.deliveryFee || 0;
         return {
           _id: iObj._id,
           vendorId: vendorId,
@@ -1948,6 +1985,23 @@ export const getProductsByVendor = async (req: Request, res: Response): Promise<
           userPrice: iObj.basePrice || effectivePrice,
           baseSellingPrice: effectivePrice,
           baseMrp: iObj.basePrice || effectivePrice,
+          adminPricing: {
+            ...(iObj.adminPricing || {}),
+            shippingCharge: shipCharge,
+            packingCharge: packCharge,
+            mrp: iObj.basePrice || effectivePrice,
+            sellingPrice: effectivePrice,
+            commissionShares: iObj.adminPricing?.commissionShares || iObj.commissionShares || [],
+            referralCommission: iObj.adminPricing?.referralCommission || iObj.referralCommission,
+            referralEarnings: iObj.adminPricing?.referralEarnings || iObj.referralEarnings,
+            estimatedEarning: iObj.adminPricing?.estimatedEarning || iObj.estimatedEarning,
+          },
+          commissionShares: iObj.adminPricing?.commissionShares || iObj.commissionShares || [],
+          referralCommission: iObj.adminPricing?.referralCommission || iObj.referralCommission,
+          shippingCharge: shipCharge,
+          packingCharge: packCharge,
+          deliveryFee: shipCharge,
+          packagingCharge: packCharge,
           category: {
             _id: iObj.categoryId?._id ? iObj.categoryId._id.toString() : (iObj.categoryId ? iObj.categoryId.toString() : 'food-cat'),
             name: iObj.categoryId?.name || iObj.cuisine || 'Food & Dining'
@@ -1959,7 +2013,6 @@ export const getProductsByVendor = async (req: Request, res: Response): Promise<
           preOrderReleaseDate: iObj.preOrderReleaseDate || null,
           preOrderMessage: iObj.preOrderMessage || '',
           brand: iObj.cuisine || 'Fresh & Hot',
-          deliveryFee: iObj.packagingCharge || 0,
           ratings: 4.8,
           rating: 4.8,
           foodType: iObj.foodType,

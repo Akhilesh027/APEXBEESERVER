@@ -27,6 +27,11 @@ export interface IProduct extends Document {
   sku: string;
   baseMrp?: number;
   baseSellingPrice?: number;
+  shippingCharge?: number;
+  packingCharge?: number;
+  deliveryFee?: number;
+  packagingCharge?: number;
+  packageCharge?: number;
   status?: string;
   thumbnail?: string;
   images: string[];
@@ -122,6 +127,11 @@ const ProductSchema = new Schema<IProduct>(
     sku: { type: String, required: true },
     baseMrp: { type: Number, default: 0 },
     baseSellingPrice: { type: Number, default: 0 },
+    shippingCharge: { type: Number, default: 0 },
+    packingCharge: { type: Number, default: 0 },
+    deliveryFee: { type: Number, default: 0 },
+    packagingCharge: { type: Number, default: 0 },
+    packageCharge: { type: Number, default: 0 },
     status: { type: String, default: 'Draft' },
     thumbnail: { type: String },
     images: [{ type: String }],
