@@ -63,13 +63,23 @@ const SubscriptionDeliveryTaskSchema = new mongoose_1.Schema({
     notes: { type: String, default: "" },
     otp: { type: String, default: "" },
     otpVerified: { type: Boolean, default: false },
+    otpAttempts: { type: Number, default: 0 },
+    updatedBy: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User' },
+    confirmedAt: Date,
     gpsCoordinates: {
         latitude: { type: Number },
         longitude: { type: Number }
     },
     signature: { type: String, default: "" },
     isPaidToVendor: { type: Boolean, default: false },
-    isDebitedFromUser: { type: Boolean, default: false }
+    isDebitedFromUser: { type: Boolean, default: false },
+    chargeAmount: Number,
+    fundingStatus: { type: String, enum: ['reserved', 'captured', 'refunded'] },
+    fundingRevision: Number,
+    fundingReminderDate: String,
+    batchAllocations: [{ batchId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'StockBatch' }, quantity: Number }],
+    reportingVersion: Number,
+    reportedComponents: [{ productId: { type: mongoose_1.Schema.Types.ObjectId, required: true }, productName: String, packs: Number, packSize: String, litres: { type: Number, default: null }, warning: String }],
 }, { timestamps: true });
 // Compound index to guarantee uniqueness of tasks per subscription per day
 SubscriptionDeliveryTaskSchema.index({ subscriptionId: 1, date: 1 }, { unique: true });

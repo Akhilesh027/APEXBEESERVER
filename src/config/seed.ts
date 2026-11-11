@@ -4,6 +4,8 @@ import { ReferralSettings } from "../models/ReferralSettings";
 import { CommissionRule } from "../models/CommissionRule";
 import { SettlementEngine } from "../services/SettlementEngine";
 import { WalletEngine } from "../services/WalletEngine";
+import { seedFullMvpCategories } from "../seeds/seedFullMvpCategories";
+import { seedCoreTaxonomies } from "../seeds/seedCoreTaxonomies";
 
 export const seedDatabase = async () => {
   try {
@@ -77,6 +79,16 @@ export const seedDatabase = async () => {
         console.log(`[Seeder] Seeded default CommissionRule for ${rule.businessType}`);
       }
     }));
+
+    // 5. Seed Category Taxonomies across all Verticals (Devotional, Daily Needs, Food & Dining, Shopping, Services, Academy)
+    try {
+      console.log("[Seeder] Seeding category taxonomy (Full MVP + Core Verticals)...");
+      await seedFullMvpCategories();
+      await seedCoreTaxonomies();
+      console.log("[Seeder] All categories, subcategories, and child categories seeded successfully.");
+    } catch (catErr: any) {
+      console.warn("[Seeder] Category seeding warning:", catErr.message || catErr);
+    }
 
   } catch (error: any) {
     console.error("[Seeder] Database initialization warning:", error.message || error);

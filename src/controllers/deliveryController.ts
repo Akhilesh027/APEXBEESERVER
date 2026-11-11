@@ -15,6 +15,12 @@ import LocalShopSubscription from '../models/LocalShopSubscription';
 import { WalletEngine } from '../services/WalletEngine';
 import { SmsService } from '../services/smsService';
 import { AuthRequest } from '../middleware/auth';
+import { SubscriptionDeliveryTask } from '../models/SubscriptionDeliveryTask';
+import { DairyDeliveryError, updateDairyDelivery } from '../services/dairyDeliveryService';
+import { DairyRouteStop } from '../models/DairyOperations';
+import { indiaDate, isDeliveryDue } from '../services/vendorWorkspaceService';
+import { OrderStateMachine } from '../services/OrderStateMachine';
+import { InventoryService } from '../services/inventoryService';
 
 const generateToken = (id: string, email: string, roles: RoleType[]): string => {
   return jwt.sign(
@@ -203,6 +209,11 @@ export const getOrders = async (req: AuthRequest, res: Response): Promise<void> 
         ]
       }).sort({ createdAt: -1 });
 
+      try {
+        const { auditOrders } = require('../services/deliverySlotService');
+        await auditOrders(assignedOrders);
+      } catch (_) {}
+
       const existingOrderIds = new Set(assignments.map((a: any) => String(a.orderId?._id || a.orderId || a._id)));
 
       for (const ord of assignedOrders) {
@@ -251,6 +262,12 @@ export const getOrders = async (req: AuthRequest, res: Response): Promise<void> 
             _id: ord._id,
             status: assignedStatus,
             orderId: ord,
+            deliverySlot: ord.deliverySlot || ord.preOrderTimeSlot || 'Standard Delivery',
+            slotExtended: Boolean(ord.slotExtended),
+            slotExtendedUntil: ord.slotExtendedUntil || null,
+            slotExtensionReason: ord.slotExtensionReason || '',
+            slotMissed: Boolean(ord.slotMissed),
+            isFailedToDeliver: ['Failed to Deliver', 'Failed', 'failed'].includes(ord.orderStatus),
             vendorId: {
               _id: vendorObj?._id,
               name: vendorName,
@@ -271,6 +288,99 @@ export const getOrders = async (req: AuthRequest, res: Response): Promise<void> 
       }
     } catch (ordErr) {
       console.warn('[getOrders] Direct Order lookup warning:', ordErr);
+    }
+
+    // Query available broadcast orders ready for pickup in this rider's territory
+    try {
+      const pTerr = partner ? {
+        mandal: (partner.territory?.mandal || (partner.userId as any)?.territory?.mandal || partner.zone || '').trim().toLowerCase(),
+        pincode: (partner.territory?.pincode || (partner.userId as any)?.territory?.pincode || '').trim(),
+        district: (partner.territory?.district || (partner.userId as any)?.territory?.district || '').trim().toLowerCase(),
+      } : null;
+
+      const existingOrderIds = new Set(assignments.map((a: any) => String(a.orderId?._id || a.orderId || a._id)));
+
+      const unassignedOrders = await Order.find({
+        orderStatus: { $in: ['Packed', 'Ready', 'ready_for_pickup'] },
+        deliveryType: { $nin: ['self_delivery', 'store_delivery'] },
+        isVendorSelfDelivery: { $ne: true },
+        isSelfDelivery: { $ne: true },
+        $or: [
+          { deliveryAgentId: null },
+          { deliveryAgentId: { $exists: false } },
+          { deliveryAgentId: '' }
+        ]
+      })
+      .sort({ createdAt: -1 })
+      .limit(30);
+
+      for (const ord of unassignedOrders) {
+        if (!existingOrderIds.has(String(ord._id))) {
+          let isTerritoryMatch = true;
+          if (pTerr && (pTerr.mandal || pTerr.pincode || pTerr.district)) {
+            const sa = ord.shippingAddress || {};
+            const ordMandal = (sa.mandal || '').trim().toLowerCase();
+            const ordPin = String(sa.pincode || '').trim();
+            const ordDistrict = (sa.district || sa.city || '').trim().toLowerCase();
+
+            const mandalMatch = pTerr.mandal && (ordMandal.includes(pTerr.mandal) || pTerr.mandal.includes(ordMandal));
+            const pinMatch = pTerr.pincode && ordPin === pTerr.pincode;
+            const distMatch = pTerr.district && (ordDistrict.includes(pTerr.district) || pTerr.district.includes(ordDistrict));
+
+            isTerritoryMatch = Boolean(mandalMatch || pinMatch || distMatch);
+          }
+
+          if (isTerritoryMatch) {
+            let vendorObj: any = null;
+            if (ord.sellerId) {
+              vendorObj = await RestaurantProfile.findOne({
+                $or: [{ _id: ord.sellerId }, { userId: ord.sellerId }, { vendorId: ord.sellerId }]
+              }) || await Vendor.findOne({ userId: ord.sellerId }) || await Vendor.findById(ord.sellerId);
+            }
+            if (vendorObj?.isSelfDelivery || vendorObj?.deliveryMode === 'self_delivery') {
+              // Vendor has enabled store self-delivery - platform delivery riders cannot take this order
+              continue;
+            }
+
+            const vendorName = vendorObj?.restaurantName || vendorObj?.businessName || vendorObj?.ownerName || 'ApexBee Merchant Store';
+            const vendorAddr = vendorObj
+              ? (vendorObj.address ? `${vendorObj.address}, ${vendorObj.locality ? vendorObj.locality + ', ' : ''}${vendorObj.city || ''}` : `${vendorObj.mandal || ''}, ${vendorObj.district || ''}`)
+              : 'Merchant Store Address';
+            const vendorPhone = vendorObj?.phone || vendorObj?.mobile || '';
+
+            assignments.push({
+              _id: ord._id,
+              status: 'Broadcast',
+              isBroadcast: true,
+              canAccept: true,
+              orderId: ord,
+              deliverySlot: ord.deliverySlot || ord.preOrderTimeSlot || 'Standard Delivery',
+              slotExtended: Boolean(ord.slotExtended),
+              slotExtendedUntil: ord.slotExtendedUntil || null,
+              slotExtensionReason: ord.slotExtensionReason || '',
+              slotMissed: Boolean(ord.slotMissed),
+              isFailedToDeliver: ['Failed to Deliver', 'Failed', 'failed'].includes(ord.orderStatus),
+              vendorId: {
+                _id: vendorObj?._id,
+                name: vendorName,
+                businessName: vendorName,
+                address: vendorAddr,
+                phone: vendorPhone,
+                mobile: vendorPhone
+              },
+              customerId: {
+                name: ord.shippingAddress?.recipientName || ord.shippingAddress?.name || 'Customer',
+                phone: ord.shippingAddress?.phone || '',
+                address: ord.shippingAddress
+                  ? `${ord.shippingAddress.address || ''}, ${ord.shippingAddress.city || ''}, ${ord.shippingAddress.state || ''} - ${ord.shippingAddress.pincode || ''}`
+                  : 'Customer Delivery Address'
+              }
+            });
+          }
+        }
+      }
+    } catch (broadcastErr) {
+      console.warn('[getOrders] Available broadcast orders lookup warning:', broadcastErr);
     }
 
     res.status(200).json({ success: true, assignments });
@@ -365,8 +475,18 @@ export const acceptOrder = async (req: AuthRequest, res: Response): Promise<void
   try {
     const { id } = req.params;
     let { order, assignment } = await findOrderAndAssignment(id);
-    const userId = req.user?.id;
+    if (!order && mongoose.Types.ObjectId.isValid(id)) {
+      order = await Order.findById(id);
+    }
+    if (!order) {
+      order = await Order.findOne({ orderNumber: id });
+    }
+    if (!order) {
+      res.status(404).json({ success: false, message: 'Order not found' });
+      return;
+    }
 
+    const userId = req.user?.id;
     let partner = await DeliveryPartner.findOne({ userId });
     if (!partner && userId && mongoose.Types.ObjectId.isValid(userId)) {
       partner = await DeliveryPartner.findById(userId);
@@ -378,38 +498,88 @@ export const acceptOrder = async (req: AuthRequest, res: Response): Promise<void
       partner = (await DeliveryPartner.findOne({ status: 'active' })) || (await DeliveryPartner.findOne({}));
     }
 
-    let partnerIdObj: any = partner?._id || new mongoose.Types.ObjectId();
-    let deliveryPartnerIdObj: any = partner?.userId || partnerIdObj;
-    if (!mongoose.Types.ObjectId.isValid(deliveryPartnerIdObj)) {
-      deliveryPartnerIdObj = partnerIdObj;
+    const partnerUserId = partner?.userId ? String(partner.userId) : (partner?._id ? String(partner._id) : String(userId));
+    const partnerName = partner?.name || 'Delivery Partner';
+    const partnerPhone = partner?.mobile || '+91 98765 43210';
+    const partnerIdObj: any = partner?._id || new mongoose.Types.ObjectId();
+    const deliveryPartnerIdObj: any = partner?.userId || partnerIdObj;
+
+    // Guard against accepting Store Self-Delivery orders by platform delivery boys
+    const isSelfDeliveryOrder =
+      order.deliveryType === 'self_delivery' ||
+      order.deliveryType === 'store_delivery' ||
+      Boolean(order.isVendorSelfDelivery) ||
+      Boolean(order.isSelfDelivery);
+
+    let isVendorSelfDeliveryActive = false;
+    if (order.sellerId) {
+      const vDoc = await Vendor.findOne({ $or: [{ _id: order.sellerId }, { userId: order.sellerId }] });
+      if (vDoc?.isSelfDelivery || vDoc?.deliveryMode === 'self_delivery') {
+        isVendorSelfDeliveryActive = true;
+      }
     }
 
-    if (order) {
-      const newStatus = ['ready_for_pickup', 'Ready', 'Packed'].includes(order.orderStatus)
-        ? order.orderStatus
-        : 'Accepted';
-      addOrderTimelineStep(order, newStatus, `Order offer accepted by rider ${partner?.name || 'Partner'}`);
-      await Order.findByIdAndUpdate(order._id, {
-        deliveryAgentId: partner ? String(partner._id) : undefined,
-        deliveryType: 'Platform',
-        orderStatus: newStatus,
-        timeline: order.timeline,
-        orderStatusObj: order.orderStatusObj
+    if (isSelfDeliveryOrder || isVendorSelfDeliveryActive) {
+      res.status(400).json({
+        success: false,
+        message: 'The vendor has chosen Store Self-Delivery for this order. Platform delivery partners cannot accept or be assigned to this order.'
       });
+      return;
     }
 
+    // Concurrency / Conflict Guard: Ensure only the first rider wins
+    const isAlreadyAssignedToOther = order.deliveryAgentId &&
+      String(order.deliveryAgentId) !== String(partnerUserId) &&
+      String(order.deliveryAgentId) !== String(partnerIdObj);
+
+    if (isAlreadyAssignedToOther) {
+      res.status(409).json({
+        success: false,
+        message: 'This order has already been accepted by another delivery partner in your territory.'
+      });
+      return;
+    }
+
+    // Ensure OTP codes exist for store pickup and customer delivery
+    if (!order.pickupVerification || !order.pickupVerification.otp) {
+      order.pickupVerification = {
+        otp: Math.floor(1000 + Math.random() * 9000).toString(),
+        verified: false
+      };
+    }
+    if (!order.deliveryVerification || !order.deliveryVerification.otp) {
+      order.deliveryVerification = {
+        otp: Math.floor(1000 + Math.random() * 9000).toString(),
+        otpExpires: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        verified: false,
+        verificationMethod: 'None'
+      };
+    }
+
+    // Update order status to Accepted and bind to winning rider
+    order.deliveryAgentId = partnerUserId;
+    order.set('assignedDeliveryAgent', partnerName);
+    order.set('deliveryAgentName', partnerName);
+    order.set('deliveryAgentPhone', partnerPhone);
+    order.deliveryType = 'Platform';
+    order.orderStatus = 'Accepted';
+
+    addOrderTimelineStep(order, 'Accepted', `Order offer accepted by territory rider ${partnerName}. Heading to store for pickup.`);
+    await order.save();
+
+    // Upsert DeliveryAssignment
     if (assignment) {
       await DeliveryAssignment.findByIdAndUpdate(assignment._id, {
         deliveryPartnerId: deliveryPartnerIdObj,
         partnerId: partnerIdObj,
         partnerSnapshot: {
-          name: partner?.name || 'Delivery Partner',
-          phoneMasked: partner?.mobile || '+91 98765 43210',
+          name: partnerName,
+          phoneMasked: partnerPhone,
         },
         status: 'Accepted',
         acceptedAt: new Date()
       });
-    } else if (order) {
+    } else {
       try {
         assignment = new DeliveryAssignment({
           orderId: order._id,
@@ -418,8 +588,8 @@ export const acceptOrder = async (req: AuthRequest, res: Response): Promise<void
           vendorId: mongoose.Types.ObjectId.isValid(order.sellerId) ? order.sellerId : undefined,
           customerId: mongoose.Types.ObjectId.isValid(order.customerId) ? order.customerId : undefined,
           partnerSnapshot: {
-            name: partner?.name || 'Delivery Partner',
-            phoneMasked: partner?.mobile || '+91 98765 43210',
+            name: partnerName,
+            phoneMasked: partnerPhone,
           },
           status: 'Accepted',
           assignedAt: new Date(),
@@ -435,7 +605,34 @@ export const acceptOrder = async (req: AuthRequest, res: Response): Promise<void
       }
     }
 
-    res.status(200).json({ success: true, message: 'Order accepted', orderStatus: 'Accepted', assignment, order });
+    // Emit event notifications to vendor and customer
+    try {
+      const { notificationEmitter } = require('../../modules/notifications/events/notificationEmitter');
+      if (notificationEmitter) {
+        notificationEmitter.emitNotification(
+          'order.agent_assigned',
+          {
+            agentName: partnerName,
+            agentPhone: partnerPhone,
+            orderNumber: order.orderNumber,
+            entityType: 'order',
+            entityId: order._id
+          },
+          [
+            { userId: order.sellerId, role: 'vendor' },
+            { userId: order.customerId, role: 'customer' }
+          ]
+        );
+      }
+    } catch (_) {}
+
+    res.status(200).json({
+      success: true,
+      message: `Order #${order.orderNumber} successfully accepted and assigned to you!`,
+      orderStatus: 'Accepted',
+      assignment,
+      order
+    });
   } catch (err: any) {
     console.error('[acceptOrder] Error:', err);
     res.status(500).json({ success: false, message: 'Failed to accept order', error: err.message });
@@ -611,6 +808,10 @@ export const deliverOrder = async (req: AuthRequest, res: Response): Promise<voi
     const { order, assignment } = await findOrderAndAssignment(id);
 
     if (order) {
+      const waterOrder=order.items?.some((item:any)=>item.waterDetails?.returnable);
+      if(waterOrder && (!otp || !order.deliveryVerification?.otp || String(otp).trim()!==String(order.deliveryVerification.otp).trim())) {
+        res.status(400).json({success:false,message:'Enter the customer’s valid delivery OTP.'});return;
+      }
       if (otp && order.deliveryVerification?.otp) {
         const expected = String(order.deliveryVerification.otp).trim();
         const received = String(otp).trim();
@@ -624,6 +825,17 @@ export const deliverOrder = async (req: AuthRequest, res: Response): Promise<voi
       order.deliveryVerification.verified = true;
       if (!order.paymentDetails) order.paymentDetails = {};
       order.paymentDetails.status = 'completed';
+
+      // Always transition order status to Delivered and commit stock deduction
+      try {
+        await OrderStateMachine.transition(order._id, 'Delivered', {
+          userId: req.user?.id,
+          notes: 'Customer delivery OTP verified. Order delivered successfully to doorstep'
+        });
+      } catch (transitionErr) {
+        console.warn('[deliverOrder] OrderStateMachine transition notice, committing stock directly:', transitionErr);
+        await InventoryService.commitStock(order._id);
+      }
 
       addOrderTimelineStep(order, 'Delivered', 'Customer delivery OTP verified. Order delivered successfully to doorstep');
       await Order.findByIdAndUpdate(order._id, {
@@ -690,17 +902,22 @@ export const collectCodPayment = async (req: AuthRequest, res: Response): Promis
 export const failedOrder = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
+    const { reason } = req.body || {};
     const { order, assignment } = await findOrderAndAssignment(id);
+    const failureReason = reason || 'Delivery attempt failed / Doorstep customer unreachable';
 
     if (order) {
-      order.orderStatus = 'Failed';
+      order.orderStatus = 'Failed to Deliver';
+      order.slotMissed = true;
+      addOrderTimelineStep(order, 'Failed to Deliver', `Delivery partner marked delivery as failed: ${failureReason}`);
       await order.save();
     }
     if (assignment) {
       assignment.status = 'Failed';
+      assignment.failedReason = failureReason;
       await assignment.save();
     }
-    res.status(200).json({ success: true, message: 'Order marked as failed' });
+    res.status(200).json({ success: true, message: 'Order marked as Failed to Deliver' });
   } catch (err: any) {
     res.status(500).json({ message: 'Failed to update failed order status', error: err.message });
   }
@@ -1221,12 +1438,19 @@ export const getSubscriptions = async (req: AuthRequest, res: Response): Promise
       return;
     }
 
+    const calendarToday = indiaDate();
+    const calendarStart = new Date(`${calendarToday}T00:00:00Z`); calendarStart.setUTCDate(calendarStart.getUTCDate() - 3);
+    const calendarEnd = new Date(`${calendarToday}T00:00:00Z`); calendarEnd.setUTCDate(calendarEnd.getUTCDate() + 3);
+    const assignedTasks = await SubscriptionDeliveryTask.find({ riderId: { $in: partnerIds }, date: { $gte: calendarStart.toISOString().slice(0, 10), $lte: calendarEnd.toISOString().slice(0, 10) } }).select('subscriptionId').lean();
     let dbSubscriptions: any[] = await LocalShopSubscription.find({
       $or: [
         { deliveryAgentId: { $in: partnerIds } },
-        { assignedDeliveryAgent: { $in: partnerIds } }
+        { assignedDeliveryAgent: { $in: partnerIds } },
+        { _id: { $in: assignedTasks.map(task => task.subscriptionId) } }
       ]
     }).lean();
+    const canonicalTasks = await SubscriptionDeliveryTask.find({ subscriptionId: { $in: dbSubscriptions.map(sub => sub._id) }, date: { $gte: calendarStart.toISOString().slice(0, 10), $lte: calendarEnd.toISOString().slice(0, 10) } }).select('subscriptionId date status riderId').lean();
+    const routeStops = await DairyRouteStop.find({ subscriptionId: { $in: dbSubscriptions.map(sub => sub._id) }, date: calendarToday }).select('subscriptionId name position').lean();
 
     const mappedDbSubs: any[] = [];
     for (const sub of dbSubscriptions) {
@@ -1253,12 +1477,13 @@ export const getSubscriptions = async (req: AuthRequest, res: Response): Promise
         : (sub.pickupAddress || 'Shop #14, Main Commercial Market Road, LB Nagar, Hyderabad - 500074');
       const storePhone = vendorObj?.mobile || vendorObj?.phone || sub.pickupPhone || '+91 98480 12345';
 
-      const custName = userObj?.name || sub.customerName || 'K. Ananya Reddy (Customer)';
-      const custPhone = userObj?.phone || userObj?.mobile || sub.customerPhone || '+91 95503 79505';
-      const custAddr = userObj?.address || sub.address || 'Flat 402, Sri Sai Nivas Apartments, Road No. 3, Vasavi Colony, LB Nagar, Hyderabad - 500074';
+      const custName = sub.customerName || userObj?.name || 'Customer';
+      const custPhone = sub.customerPhone || userObj?.phone || userObj?.mobile || '';
+      const custAddr = sub.deliveryAddress || sub.address || userObj?.address || '';
 
       mappedDbSubs.push({
         ...sub,
+        canonicalDelivery: true,
         id: sub._id,
         productName: sub.productName || 'Fresh Organic Milk & Grocery Run',
         customerName: custName,
@@ -1316,13 +1541,27 @@ export const getSubscriptions = async (req: AuthRequest, res: Response): Promise
       return;
     }
 
-    const todayObj = new Date();
-    const todayStr = todayObj.toISOString().split('T')[0];
+    const todayObj = new Date(`${calendarToday}T00:00:00Z`);
+    const todayStr = calendarToday;
 
     // Compute dynamic 7-day calendar history and date statuses based on frequency scheduling rules
     allSubs = allSubs.map((sub: any) => {
       const subId = sub._id?.toString() || sub.id || 'SUB-100';
       const history: Array<{ date: string; status: string }> = [];
+      if (sub.canonicalDelivery) {
+        const labels: Record<string, string> = { pending: 'Pending', assigned: 'Assigned', started: 'Out for Delivery', delivered: 'Delivered', failed: 'Failed' };
+        for (let offset = -3; offset <= 3; offset++) {
+          const day = new Date(todayObj); day.setUTCDate(day.getUTCDate() + offset); const date = day.toISOString().slice(0, 10);
+          const task = canonicalTasks.find(item => String(item.subscriptionId) === subId && item.date === date);
+          if (task?.riderId && !partnerIds.some(id => String(id) === String(task.riderId))) continue;
+          if (task?.status === 'cancelled') continue;
+          if (task && (isDeliveryDue(sub, date) || ['started', 'delivered', 'failed'].includes(task.status))) history.push({ date, status: labels[task.status] || 'Pending' });
+        }
+        const todayStatus = history.find(item => item.date === todayStr)?.status || 'Not scheduled';
+        const routeStop = routeStops.find(stop => String(stop.subscriptionId) === subId);
+        const masterStatus = (sub.status === 'paused' || sub.status === 'cancelled') ? sub.status : 'active';
+        return { ...sub, status: masterStatus, planStatus: masterStatus, runStatus: todayStatus, calendarHistory: history, routeName: routeStop?.name || '', routeStopOrder: routeStop?.position || null };
+      }
 
       for (let i = -3; i <= 3; i++) {
         const d = new Date(todayObj);
@@ -1341,7 +1580,7 @@ export const getSubscriptions = async (req: AuthRequest, res: Response): Promise
           } else if (sub.skippedDates?.includes(dateStr)) {
             statusForDate = 'Skipped';
           } else if (i === 0) {
-            statusForDate = subscriptionRunStore.get(`${subId}:latest`)?.status || 'Pending';
+            statusForDate = subscriptionRunStore.get(`${subId}:${todayStr}`)?.status || 'Pending';
           } else {
             statusForDate = i < 0 ? 'Pending' : 'Scheduled';
           }
@@ -1351,12 +1590,14 @@ export const getSubscriptions = async (req: AuthRequest, res: Response): Promise
       }
 
       const todayStatus = subscriptionRunStore.get(`${subId}:${todayStr}`)?.status ||
-                          subscriptionRunStore.get(`${subId}:latest`)?.status ||
                           (sub.completedDates?.includes(todayStr) ? 'Delivered' : 'Pending');
+
+      const masterStatus = (sub.status === 'paused' || sub.status === 'cancelled') ? sub.status : 'active';
 
       return {
         ...sub,
-        status: todayStatus,
+        status: masterStatus,
+        planStatus: masterStatus,
         runStatus: todayStatus,
         calendarHistory: history
       };
@@ -1371,6 +1612,16 @@ export const getSubscriptions = async (req: AuthRequest, res: Response): Promise
 export const updateSubscriptionRun = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { subscriptionId } = req.params;
+    if (mongoose.isValidObjectId(subscriptionId) && await LocalShopSubscription.exists({ _id: subscriptionId })) {
+      const partner = await DeliveryPartner.findOne({ userId: req.user?.id, status: 'active' });
+      if (!partner) { res.status(403).json({ message: 'An active delivery partner account is required.' }); return; }
+      const actions: Record<string, 'start' | 'deliver' | 'fail'> = { 'Out for Delivery': 'start', Started: 'start', Delivered: 'deliver', Failed: 'fail' };
+      const action = actions[req.body.status];
+      if (!action) { res.status(400).json({ message: 'Choose Start Delivery Run, Delivered, or Failed.' }); return; }
+      const task = await updateDairyDelivery({ subscriptionId, date: req.body.date || indiaDate(), action, actorId: req.user!.id,
+        riderUserId: String(partner.userId), riderPartnerId: String(partner._id), otp: req.body.otp, proofPhoto: req.body.proofPhoto, notes: req.body.notes });
+      res.json({ success: true, message: 'Delivery updated.', task, status: req.body.status, date: task.date }); return;
+    }
     const { status, notes, proofPhoto, date } = req.body;
     const targetDate = date || new Date().toISOString().split('T')[0];
 
@@ -1435,7 +1686,7 @@ export const updateSubscriptionRun = async (req: AuthRequest, res: Response): Pr
       walletDeducted
     });
   } catch (error: any) {
-    res.status(500).json({ message: 'Failed to update subscription status', error: error.message });
+    res.status(error instanceof DairyDeliveryError ? error.statusCode : 500).json({ message: error instanceof DairyDeliveryError ? error.message : 'Failed to update subscription status' });
   }
 };
 

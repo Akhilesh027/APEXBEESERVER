@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
+const applicationCorrectionController_1 = require("../controllers/applicationCorrectionController");
 const adminController_1 = require("../controllers/adminController");
 const vendorController_1 = require("../controllers/vendorController");
 const referralController_1 = require("../controllers/referralController");
@@ -9,6 +10,8 @@ const bulkController_1 = require("../controllers/bulkController");
 const router = (0, express_1.Router)();
 // Restrict all routes under admin to users with 'admin' role
 router.get('/applications', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.getApplications);
+router.patch('/applications/:id/request-changes', auth_1.protect, (0, auth_1.restrictTo)('admin'), applicationCorrectionController_1.requestApplicationChanges);
+router.patch('/applications/:id/subcategory-decision', auth_1.protect, (0, auth_1.restrictTo)('admin'), applicationCorrectionController_1.reviewApplicationSubcategory);
 router.get('/applications/:id', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.getApplicationById);
 router.put('/applications/:id', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.updateApplicationDetails);
 router.patch('/applications/:id', auth_1.protect, (0, auth_1.restrictTo)('admin'), adminController_1.updateApplicationDetails);

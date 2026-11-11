@@ -1,5 +1,6 @@
 import { SubscriptionStatement } from '../models/SubscriptionStatement';
 import { SubscriptionDeliveryTask } from '../models/SubscriptionDeliveryTask';
+import { statementDeliveryWindow } from './subscriptionPlan';
 
 export class SubscriptionReconciliationService {
   /**
@@ -9,8 +10,7 @@ export class SubscriptionReconciliationService {
     const statement = await SubscriptionStatement.findById(statementId);
     if (!statement) return false;
 
-    const startDate = `${statement.billingPeriod}-01`;
-    const endDate = `${statement.billingPeriod}-31`;
+    const { startDate, endDate } = statementDeliveryWindow(statement);
 
     const tasks = await SubscriptionDeliveryTask.find({
       subscriptionId: statement.subscriptionId,

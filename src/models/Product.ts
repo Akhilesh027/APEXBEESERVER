@@ -14,6 +14,8 @@ export interface IProduct extends Document {
   galleryAssetIds: mongoose.Types.ObjectId[];
   specifications: Record<string, any>;
   taxClassId?: mongoose.Types.ObjectId;
+  gstRate?: number;
+  gstPricingMode?: 'inclusive' | 'exclusive';
   returnPolicyId?: mongoose.Types.ObjectId;
   moderationStatus: ProductModerationStatus;
   isActive: boolean;
@@ -40,8 +42,14 @@ export interface IProduct extends Document {
   brand?: string;
   discountPercent?: number;
   attributes?: any;
+  dairyDetails?: import('../services/dairyProductDetails').DairyProductDetails;
+  waterDetails?: { volumeLitres: number; returnable: boolean; depositAmount: number; workspaceId: mongoose.Types.ObjectId };
+  expiryDate?: Date;
   isStoreProduct?: boolean;
   isSubscriptionAvailable?: boolean;
+  batchTrackingEnabled?: boolean;
+  inventoryVersion?: number;
+  bundleComponents?: Array<{ productId: mongoose.Types.ObjectId; name: string; quantity: number }>;
   isPreOrder?: boolean;
   preOrderType?: 'ADVANCE_NOTICE' | 'RELEASE_DATE' | 'DAILY_CUTOFF' | 'SPECIFIC_DAYS';
   preOrderLeadTimeDays?: number;
@@ -109,6 +117,8 @@ const ProductSchema = new Schema<IProduct>(
     galleryAssetIds: [{ type: Schema.Types.ObjectId, ref: 'MediaAsset' }],
     specifications: { type: Schema.Types.Mixed, default: {} },
     taxClassId: { type: Schema.Types.ObjectId },
+    gstRate: { type: Number, default: 0, min: 0, max: 100 },
+    gstPricingMode: { type: String, enum: ['inclusive', 'exclusive'], default: 'inclusive' },
     returnPolicyId: { type: Schema.Types.ObjectId },
     moderationStatus: {
       type: String,
@@ -140,8 +150,17 @@ const ProductSchema = new Schema<IProduct>(
     brand: { type: String },
     discountPercent: { type: Number, default: 0 },
     attributes: { type: Schema.Types.Mixed },
+    waterDetails: { type: new Schema({ volumeLitres: { type: Number, required: true, min: 0.1, max: 1000 }, returnable: { type: Boolean, required: true }, depositAmount: { type: Number, required: true, min: 0 }, workspaceId: { type: Schema.Types.ObjectId, required: true } }, { _id: false }), default: undefined },
+    dairyDetails: {
+      dairyType: String, fatPercentage: { type: Number, min: 0, max: 100 },
+      packSize: Number, packUnit: { type: String, enum: ['ml', 'g'] }, expiryDate: String,
+    },
+    expiryDate: Date,
     isStoreProduct: { type: Boolean, default: false },
     isSubscriptionAvailable: { type: Boolean, default: false },
+    batchTrackingEnabled: { type: Boolean, default: false },
+    inventoryVersion: { type: Number, default: 0 },
+    bundleComponents: [{ productId: { type: Schema.Types.ObjectId, ref: 'Product' }, name: String, quantity: Number }],
     isPreOrder: { type: Boolean, default: false },
     preOrderType: {
       type: String,

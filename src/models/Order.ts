@@ -6,8 +6,20 @@ export interface IOrderItem {
   sku: string;
   quantity: number;
   price: number;
+  originalPrice?: number;
+  itemTotal?: number;
+  image?: string;
+  color?: string;
+  size?: string;
+  variantId?: string;
+  variantName?: string;
+  selectedVariant?: any;
+  selectedAttributes?: any;
+  attributes?: any;
+  vendorId?: mongoose.Types.ObjectId | string;
   categoryId?: mongoose.Types.ObjectId | string;
   categoryName?: string;
+  waterDetails?: {volumeLitres:number;returnable:boolean;depositAmount:number;workspaceId:mongoose.Types.ObjectId};
   isPreOrder?: boolean;
   preOrderReleaseDate?: Date | null;
   preOrderDeliveryDate?: Date | null;
@@ -44,6 +56,10 @@ export type OrderStatus =
   | 'served'
   | 'Served'
   | 'completed'
+  | 'Failed to Deliver'
+  | 'failed_to_deliver'
+  | 'Failed'
+  | 'failed'
   | 'Cancelled';
 
 export interface IOrder extends Document {
@@ -77,6 +93,8 @@ export interface IOrder extends Document {
   packingChecklist: string[];
   orderSummary?: any;
   checkoutRequestHash?: string;
+  businessInquiryId?: mongoose.Types.ObjectId;
+  procurementPurchaseOrderId?: mongoose.Types.ObjectId;
   deliveryVerification?: any;
   courierPartner?: string;
   trackingId?: string;
@@ -84,6 +102,8 @@ export interface IOrder extends Document {
   fulfillment?: any;
   deliveryDetails?: any;
   isSelfPickup?: boolean;
+  isVendorSelfDelivery?: boolean;
+  isSelfDelivery?: boolean;
   categoryId?: mongoose.Types.ObjectId | string;
   categoryName?: string;
   orderType?: string;
@@ -101,26 +121,55 @@ export interface IOrder extends Document {
   preOrderDeliveryDate?: Date | null;
   preOrderTimeSlot?: string;
   preOrderCustomNote?: string;
+  slotExtended?: boolean;
+  slotExtendedUntil?: Date | null;
+  slotExtensionReason?: string;
+  slotExtensionHistory?: Array<{
+    extendedAt: Date;
+    extendedUntil: Date;
+    reason: string;
+    extendedBy?: string;
+  }>;
+  slotMissed?: boolean;
+  isInventoryCommitted?: boolean;
+  inventoryCommittedAt?: Date | null;
 }
 
-const OrderItemSchema = new Schema<IOrderItem>({
-  productId: { type: Schema.Types.ObjectId, ref: 'Product', required: false },
-  productName: { type: String, required: true },
-  sku: { type: String, default: 'N/A' },
-  quantity: { type: Number, required: true, default: 1 },
-  price: { type: Number, required: true },
-  categoryId: { type: Schema.Types.Mixed },
-  categoryName: { type: String, default: '' },
-  isPreOrder: { type: Boolean, default: false },
-  preOrderReleaseDate: { type: Date, default: null },
-  preOrderDeliveryDate: { type: Date, default: null },
-  preOrderTimeSlot: { type: String, default: '' },
-  preOrderCustomNote: { type: String, default: '' },
-});
+const OrderItemSchema = new Schema<IOrderItem>(
+  {
+    productId: { type: Schema.Types.ObjectId, ref: 'Product', required: false },
+    productName: { type: String, required: true },
+    sku: { type: String, default: 'N/A' },
+    quantity: { type: Number, required: true, default: 1 },
+    price: { type: Number, required: true },
+    originalPrice: { type: Number, default: 0 },
+    itemTotal: { type: Number, default: 0 },
+    image: { type: String, default: '' },
+    color: { type: String, default: '' },
+    size: { type: String, default: '' },
+    variantId: { type: String, default: '' },
+    variantName: { type: String, default: '' },
+    selectedVariant: { type: Schema.Types.Mixed, default: undefined },
+    selectedAttributes: { type: Schema.Types.Mixed, default: undefined },
+    attributes: { type: Schema.Types.Mixed, default: undefined },
+    vendorId: { type: Schema.Types.Mixed },
+    categoryId: { type: Schema.Types.Mixed },
+    categoryName: { type: String, default: '' },
+    waterDetails: {type: new Schema({volumeLitres:Number,returnable:Boolean,depositAmount:Number,workspaceId:Schema.Types.ObjectId},{_id:false}),default:undefined},
+    isPreOrder: { type: Boolean, default: false },
+    preOrderReleaseDate: { type: Date, default: null },
+    preOrderDeliveryDate: { type: Date, default: null },
+    preOrderTimeSlot: { type: String, default: '' },
+    preOrderCustomNote: { type: String, default: '' },
+  },
+  { _id: true, strict: false }
+);
 
 const OrderSchema = new Schema<IOrder>(
   {
     orderNumber: { type: String, required: true, unique: true },
+    businessInquiryId: { type: Schema.Types.ObjectId, ref: 'BusinessInquiry', unique: true, sparse: true },
+    procurementPurchaseOrderId: { type: Schema.Types.ObjectId, ref: 'PurchaseOrder', unique: true, sparse: true },
     customerId: { type: Schema.Types.ObjectId, ref: 'User', required: false },
     sellerId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     items: { type: [OrderItemSchema], required: true },
@@ -169,6 +218,10 @@ const OrderSchema = new Schema<IOrder>(
         'served',
         'Served',
         'completed',
+        'Failed to Deliver',
+        'failed_to_deliver',
+        'Failed',
+        'failed',
         'Cancelled',
       ],
       default: 'placed',
@@ -181,8 +234,10 @@ const OrderSchema = new Schema<IOrder>(
     },
     deliveryType: {
       type: String,
-      enum: ['Platform', 'Vendor', 'Independent'],
+      enum: ['Platform', 'Vendor', 'Independent', 'self_delivery', 'store_delivery', 'pickup', 'delivery'],
     },
+    isVendorSelfDelivery: { type: Boolean, default: false },
+    isSelfDelivery: { type: Boolean, default: false },
     deliveryAgentId: { type: String },
     customerNotes: { type: String, default: '' },
     returnReason: { type: String },
@@ -234,6 +289,20 @@ const OrderSchema = new Schema<IOrder>(
     preOrderDeliveryDate: { type: Date, default: null },
     preOrderTimeSlot: { type: String, default: '' },
     preOrderCustomNote: { type: String, default: '' },
+    slotExtended: { type: Boolean, default: false },
+    slotExtendedUntil: { type: Date, default: null },
+    slotExtensionReason: { type: String, default: '' },
+    slotExtensionHistory: [
+      {
+        extendedAt: { type: Date, default: Date.now },
+        extendedUntil: { type: Date, required: true },
+        reason: { type: String, default: '' },
+        extendedBy: { type: String, default: '' }
+      }
+    ],
+    slotMissed: { type: Boolean, default: false },
+    isInventoryCommitted: { type: Boolean, default: false },
+    inventoryCommittedAt: { type: Date, default: null },
   },
   { timestamps: true }
 );

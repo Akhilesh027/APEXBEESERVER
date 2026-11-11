@@ -14,7 +14,34 @@ const SubscriptionBillingService_1 = require("../services/SubscriptionBillingSer
 const SubscriptionSettlementService_1 = require("../services/SubscriptionSettlementService");
 const SubscriptionStatement_1 = require("../models/SubscriptionStatement");
 const WalletEngine_1 = require("../services/WalletEngine");
+const subscriptionPlan_1 = require("../services/subscriptionPlan");
+const Product_1 = __importDefault(require("../models/Product"));
+const dairyOrderRules_1 = require("../services/dairyOrderRules");
+const dairyDeliveryService_1 = require("../services/dairyDeliveryService");
+const subscriptionScheduleService_1 = require("../services/subscriptionScheduleService");
+const routePlanningService_1 = require("../services/routePlanningService");
+const businessPdfService_1 = require("../services/businessPdfService");
+const dairyReviews_1 = require("../services/dairyReviews");
+const Notification_1 = __importDefault(require("../models/Notification"));
 const router = (0, express_1.Router)();
+router.get('/subscriptions/:subId/review', auth_1.protect, async (req, res) => {
+    try {
+        const { review, eligible } = await (0, dairyReviews_1.ownedDairyReview)(req.params.subId, req.user.id);
+        res.json({ review, eligible });
+    }
+    catch (error) {
+        res.status(400).json({ message: error.message });
+    }
+});
+router.post('/subscriptions/:subId/review', auth_1.protect, async (req, res) => {
+    try {
+        const review = await (0, dairyReviews_1.submitDairyReview)(req.params.subId, req.user.id, req.body);
+        res.status(201).json({ message: 'Dairy review submitted.', review });
+    }
+    catch (error) {
+        res.status(error.code === 11000 ? 409 : 400).json({ message: error.code === 11000 ? 'This subscription already has a review.' : error.message });
+    }
+});
 // 0. GET /subscriptions/admin/all - Admin subscription master registry
 router.get('/subscriptions/admin/all', auth_1.protect, async (req, res) => {
     try {
@@ -29,103 +56,6 @@ router.get('/subscriptions/admin/all', auth_1.protect, async (req, res) => {
         res.status(200).json({
             success: true,
             subscriptions
-        });
-    }
-    catch (err) {
-        res.status(500).json({ success: false, message: err.message });
-    }
-});
-// 0.1 PATCH /subscriptions/:id/status - Update subscription status or assigned delivery agent
-router.patch('/subscriptions/:id/status', auth_1.protect, async (req, res) => {
-    try {
-        const { id } = req.params;
-        const { status } = req.body;
-        const authUser = req.user;
-        const authUserIdStr = String(authUser?.id || authUser?._id || '');
-        if (!mongoose_1.default.Types.ObjectId.isValid(id)) {
-            res.status(400).json({ success: false, message: 'Invalid subscription ID' });
-            return;
-        }
-        const sub = await LocalShopSubscription_1.default.findById(id);
-        if (!sub) {
-            res.status(404).json({ success: false, message: 'Subscription not found' });
-            return;
-        }
-        const isAdmin = authUser?.roles?.includes('admin');
-        const isOwner = String(sub.userId) === authUserIdStr;
-        const isVendor = String(sub.vendorId) === authUserIdStr || authUser?.roles?.includes('vendor') || authUser?.roles?.includes('wholesaler');
-        if (!isAdmin && !isOwner && !isVendor) {
-            res.status(403).json({ success: false, message: 'Not authorized to update this subscription' });
-            return;
-        }
-        if (status) {
-            sub.status = status;
-        }
-        if (req.body.autoRenew !== undefined) {
-            sub.autoRenew = Boolean(req.body.autoRenew);
-        }
-        const agentId = req.body.deliveryAgentId || req.body.assignedAgentId || req.body.agentId;
-        const agentType = req.body.deliveryAgentType || req.body.assignedAgentType || req.body.agentType;
-        const agentName = req.body.deliveryAgentName || req.body.agentName;
-        if (agentId !== undefined)
-            sub.deliveryAgentId = agentId;
-        if (agentType !== undefined)
-            sub.deliveryAgentType = agentType;
-        if (agentName !== undefined)
-            sub.deliveryAgentName = agentName;
-        await sub.save();
-        res.status(200).json({
-            success: true,
-            message: 'Subscription updated successfully',
-            subscription: sub
-        });
-    }
-    catch (err) {
-        res.status(500).json({ success: false, message: err.message });
-    }
-});
-// 0.2 PATCH /subscriptions/:id - Pause / Resume / Update subscription & delivery agent
-router.patch('/subscriptions/:id', auth_1.protect, async (req, res) => {
-    try {
-        const { id } = req.params;
-        const authUser = req.user;
-        const authUserIdStr = String(authUser?.id || authUser?._id || '');
-        if (!mongoose_1.default.Types.ObjectId.isValid(id)) {
-            res.status(400).json({ success: false, message: 'Invalid subscription ID' });
-            return;
-        }
-        const sub = await LocalShopSubscription_1.default.findById(id);
-        if (!sub) {
-            res.status(404).json({ success: false, message: 'Subscription not found' });
-            return;
-        }
-        const isAdmin = authUser?.roles?.includes('admin');
-        const isOwner = String(sub.userId) === authUserIdStr;
-        const isVendor = String(sub.vendorId) === authUserIdStr || authUser?.roles?.includes('vendor') || authUser?.roles?.includes('wholesaler');
-        if (!isAdmin && !isOwner && !isVendor) {
-            res.status(403).json({ success: false, message: 'Not authorized to update this subscription' });
-            return;
-        }
-        if (req.body.status) {
-            sub.status = req.body.status;
-        }
-        if (req.body.autoRenew !== undefined) {
-            sub.autoRenew = Boolean(req.body.autoRenew);
-        }
-        const agentId = req.body.deliveryAgentId || req.body.assignedAgentId || req.body.agentId;
-        const agentType = req.body.deliveryAgentType || req.body.assignedAgentType || req.body.agentType;
-        const agentName = req.body.deliveryAgentName || req.body.agentName;
-        if (agentId !== undefined)
-            sub.deliveryAgentId = agentId;
-        if (agentType !== undefined)
-            sub.deliveryAgentType = agentType;
-        if (agentName !== undefined)
-            sub.deliveryAgentName = agentName;
-        await sub.save();
-        res.status(200).json({
-            success: true,
-            message: 'Subscription updated successfully',
-            subscription: sub
         });
     }
     catch (err) {
@@ -291,10 +221,60 @@ router.get('/subscriptions/admin/all', auth_1.protect, async (req, res) => {
     }
 });
 // 2. POST /subscriptions
-router.post('/subscriptions', async (req, res) => {
+router.post('/subscriptions', auth_1.protect, async (req, res) => {
     try {
+        if (String(req.user?.id) !== String(req.body.userId)) {
+            res.status(403).json({ success: false, message: 'You can only create your own subscription.' });
+            return;
+        }
         const { userId, productId, vendorId, productName, productImage, quantity, unitPrice, frequency, customDays, deliverySlot, autoRenew, customerName, customerPhone, address, deliveryAddress, userLocation } = req.body;
-        const startDate = new Date().toISOString().split('T')[0];
+        let plan;
+        try {
+            plan = (0, subscriptionPlan_1.parseSubscriptionPlan)(req.body);
+        }
+        catch (error) {
+            res.status(400).json({ success: false, message: error.message });
+            return;
+        }
+        const startDate = plan.startDate;
+        // Store all new subscriptions against the vendor record, even when a
+        // storefront sends its older userId identifier.
+        if (!mongoose_1.default.isValidObjectId(productId) || !mongoose_1.default.isValidObjectId(vendorId)) {
+            res.status(400).json({ success: false, message: 'Choose a valid product and store.' });
+            return;
+        }
+        const subscriptionProduct = await Product_1.default.findById(productId).select('sellerId name thumbnail images baseSellingPrice adminPricing isSubscriptionAvailable status isActive waterDetails dairyDetails categoryId subCategoryId subcategoryId');
+        const subscriptionVendor = subscriptionProduct && await Vendor_1.Vendor.findOne({ $or: [{ _id: subscriptionProduct.sellerId }, { userId: subscriptionProduct.sellerId }] });
+        if (!subscriptionVendor || ![subscriptionVendor._id, subscriptionVendor.userId].some(id => String(id) === String(vendorId))) {
+            res.status(400).json({ success: false, message: 'This subscription product does not belong to the selected store.' });
+            return;
+        }
+        const recurringQuantity = Number(quantity);
+        const recurringUnitPrice = Number(subscriptionProduct.adminPricing?.customerSellingAmount ?? subscriptionProduct.adminPricing?.sellingPrice ?? subscriptionProduct.baseSellingPrice);
+        if (subscriptionVendor.status !== 'active' || subscriptionVendor.marketplaceStatus !== 'Approved' || subscriptionProduct.status !== 'Live' || !subscriptionProduct.isActive || !subscriptionProduct.isSubscriptionAvailable || !Number.isSafeInteger(recurringQuantity) || recurringQuantity < 1 || recurringQuantity > 1000 || !Number.isFinite(recurringUnitPrice) || recurringUnitPrice <= 0) {
+            res.status(400).json({ success: false, message: 'Choose an available subscription product and a whole quantity between 1 and 1,000.' });
+            return;
+        }
+        const dairy = !subscriptionProduct.waterDetails && await (0, dairyOrderRules_1.isDairyCatalogProduct)(subscriptionProduct);
+        if (dairy) {
+            try {
+                const settings = await (0, dairyOrderRules_1.getDairySettings)(subscriptionVendor.userId);
+                (0, dairyOrderRules_1.enforceDairyOrderMode)(settings, 'subscription');
+                const period = (0, dairyDeliveryService_1.deliveryPeriod)(typeof deliverySlot === 'string' ? deliverySlot : '');
+                if ((settings?.morningDelivery || settings?.eveningDelivery) &&
+                    !(period === 'morning' && settings.morningDelivery || period === 'evening' && settings.eveningDelivery)) {
+                    throw new Error('Choose a delivery slot offered by this dairy store.');
+                }
+            }
+            catch (error) {
+                res.status(409).json({ success: false, message: error.message });
+                return;
+            }
+        }
+        if (autoRenew !== undefined && typeof autoRenew !== 'boolean') {
+            res.status(400).json({ success: false, message: 'Auto-renew must be on or off.' });
+            return;
+        }
         let finalCustomerName = customerName || '';
         let finalCustomerPhone = customerPhone || '';
         let finalAddress = address || deliveryAddress || (userLocation && userLocation.address) || '';
@@ -347,7 +327,7 @@ router.post('/subscriptions', async (req, res) => {
             }
         }
         // Wallet balance validation check (Option B: check if wallet has at least first delivery cost)
-        const minRequiredBalance = Number(unitPrice || 0) * Number(quantity || 1);
+        const minRequiredBalance = recurringUnitPrice * recurringQuantity;
         try {
             const wallet = await WalletEngine_1.WalletEngine.getOrCreateWallet(userId);
             if (wallet.availableBalance < minRequiredBalance) {
@@ -360,17 +340,19 @@ router.post('/subscriptions', async (req, res) => {
         }
         catch (walletErr) {
             console.error('Wallet validation failed during subscription creation:', walletErr);
+            res.status(503).json({ success: false, message: 'The wallet could not be checked. Please try again.' });
+            return;
         }
         const subscription = new LocalShopSubscription_1.default({
             userId,
             productId,
-            vendorId,
-            productName,
-            productImage,
-            quantity: Number(quantity || 1),
-            unitPrice: Number(unitPrice || 0),
-            frequency,
-            customDays: customDays || [],
+            vendorId: subscriptionVendor._id,
+            ...(subscriptionProduct.waterDetails ? { portalType: 'water' } : dairy ? { portalType: 'dairy', currentPeriodEnd: (0, subscriptionPlan_1.currentSubscriptionCycleEnd)(plan, startDate) } : {}),
+            productName: subscriptionProduct.name,
+            productImage: subscriptionProduct.thumbnail || subscriptionProduct.images?.[0] || '',
+            quantity: recurringQuantity,
+            unitPrice: recurringUnitPrice,
+            ...plan,
             deliverySlot,
             status: 'active',
             autoRenew: autoRenew !== false,
@@ -379,9 +361,16 @@ router.post('/subscriptions', async (req, res) => {
             customerPhone: finalCustomerPhone,
             address: finalAddress,
             deliveryAddress: finalAddress,
+            ...(String(userLocation?.address || '').trim().toLowerCase() === finalAddress.trim().toLowerCase() && (0, routePlanningService_1.mapPoint)(userLocation) ? { deliveryLocation: (0, routePlanningService_1.mapPoint)(userLocation) } : {}),
             startDate
         });
         await subscription.save();
+        try {
+            await Notification_1.default.create({ recipientId: subscriptionVendor.userId, recipientType: 'User', eventCode: 'dairy.new_subscription', title: 'New customer subscription', message: `${subscription.productName}: ${subscription.quantity} packs per scheduled delivery, starting ${subscription.startDate}.`, entityType: 'subscription', entityId: subscription._id, status: 'unread', deepLink: '/#dairy-subscriptions' });
+        }
+        catch {
+            console.error('Subscription created; vendor notification could not be saved.');
+        }
         res.status(201).json({
             success: true,
             message: 'Subscription created successfully',
@@ -393,7 +382,7 @@ router.post('/subscriptions', async (req, res) => {
     }
 });
 // 3. PATCH /subscriptions/:subId
-router.patch('/subscriptions/:subId', auth_1.protect, async (req, res) => {
+router.patch(['/subscriptions/:subId', '/subscriptions/:subId/status'], auth_1.protect, async (req, res) => {
     try {
         const { subId } = req.params;
         if (!mongoose_1.default.Types.ObjectId.isValid(subId)) {
@@ -419,19 +408,68 @@ router.patch('/subscriptions/:subId', auth_1.protect, async (req, res) => {
             res.status(404).json({ success: false, message: 'Resource not found' });
             return;
         }
-        const { status, autoRenew, deliveryAgentId, deliveryAgentType, deliveryAgentName } = req.body;
+        const { status, autoRenew } = req.body;
+        const deliveryAgentId = req.body.deliveryAgentId !== undefined ? req.body.deliveryAgentId : req.body.assignedAgentId ?? req.body.agentId;
+        const deliveryAgentType = req.body.deliveryAgentType ?? req.body.assignedAgentType ?? req.body.agentType;
+        const deliveryAgentName = req.body.deliveryAgentName ?? req.body.agentName;
+        if (status !== undefined && !['active', 'paused', 'cancelled'].includes(status)) {
+            res.status(400).json({ message: 'Choose active, paused or cancelled.' });
+            return;
+        }
+        if (autoRenew !== undefined && typeof autoRenew !== 'boolean') {
+            res.status(400).json({ message: 'Auto-renew must be on or off.' });
+            return;
+        }
+        if (!isAdmin && !isVendor && [deliveryAgentId, deliveryAgentType, deliveryAgentName].some(value => value !== undefined)) {
+            res.status(403).json({ message: 'Only the store can assign delivery partners.' });
+            return;
+        }
+        if (autoRenew !== undefined && !isCustomer && !isAdmin) {
+            res.status(403).json({ message: 'Only the customer can change auto-renewal.' });
+            return;
+        }
+        if (autoRenew !== undefined && (status !== undefined || [deliveryAgentId, deliveryAgentType, deliveryAgentName].some(value => value !== undefined))) {
+            res.status(400).json({ message: 'Save the renewal setting separately from other subscription changes.' });
+            return;
+        }
+        if (autoRenew !== undefined && (subscription.status === 'expired' || subscription.status === 'cancelled' || status === 'cancelled')) {
+            res.status(409).json({ message: 'Create a new subscription to restart this plan.' });
+            return;
+        }
+        if (status !== undefined) {
+            try {
+                await (0, subscriptionScheduleService_1.updateCustomerSchedule)(subId, status);
+            }
+            catch (error) {
+                res.status(409).json({ message: error.message });
+                return;
+            }
+        }
         const updates = {};
-        if (status !== undefined)
-            updates.status = status;
-        if (autoRenew !== undefined)
-            updates.autoRenew = autoRenew;
+        if (autoRenew !== undefined) {
+            const product = subscription.portalType ? null : await Product_1.default.findById(subscription.productId).select('sellerId categoryId subCategoryId subcategoryId dairyDetails');
+            if (subscription.portalType === 'dairy' || (product && await (0, dairyOrderRules_1.isDairyCatalogProduct)(product))) {
+                try {
+                    await (0, subscriptionScheduleService_1.updateDairyAutoRenew)(subId, autoRenew);
+                }
+                catch (error) {
+                    res.status(409).json({ message: error.message });
+                    return;
+                }
+            }
+            else {
+                updates.autoRenew = autoRenew;
+            }
+        }
         if (deliveryAgentId !== undefined)
             updates.deliveryAgentId = deliveryAgentId;
         if (deliveryAgentType !== undefined)
             updates.deliveryAgentType = deliveryAgentType;
         if (deliveryAgentName !== undefined)
             updates.deliveryAgentName = deliveryAgentName;
-        const updatedSubscription = await LocalShopSubscription_1.default.findByIdAndUpdate(subId, { $set: updates }, { new: true });
+        const updatedSubscription = Object.keys(updates).length
+            ? await LocalShopSubscription_1.default.findByIdAndUpdate(subId, { $set: updates }, { new: true })
+            : await LocalShopSubscription_1.default.findById(subId);
         if (!updatedSubscription) {
             res.status(404).json({ success: false, message: 'Subscription not found' });
             return;
@@ -455,8 +493,10 @@ router.post('/subscriptions/:subId/skip', auth_1.protect, async (req, res) => {
             return;
         }
         const { date } = req.body;
-        if (!date) {
-            res.status(400).json({ success: false, message: 'Skip date is required' });
+        const from = req.body.fromDate ?? date;
+        const through = req.body.toDate ?? date;
+        if (!from || !through) {
+            res.status(400).json({ success: false, message: 'Choose a start and end date to skip.' });
             return;
         }
         const subscription = await LocalShopSubscription_1.default.findById(subId);
@@ -478,14 +518,18 @@ router.post('/subscriptions/:subId/skip', auth_1.protect, async (req, res) => {
             res.status(404).json({ success: false, message: 'Resource not found' });
             return;
         }
-        if (!subscription.skippedDates.includes(date)) {
-            subscription.skippedDates.push(date);
-            await subscription.save();
+        let updated;
+        try {
+            updated = await (0, subscriptionScheduleService_1.updateCustomerSchedule)(subId, 'skip', from, through);
+        }
+        catch (error) {
+            res.status(409).json({ message: error.message });
+            return;
         }
         res.status(200).json({
             success: true,
-            message: `Date ${date} successfully skipped for this subscription`,
-            subscription
+            message: from === through ? `Delivery skipped for ${from}.` : `Deliveries skipped from ${from} to ${through}.`,
+            subscription: updated
         });
     }
     catch (err) {
@@ -546,7 +590,7 @@ router.get('/notifications/:userId', async (req, res) => {
     }
 });
 // 8. POST /billing/generate
-router.post('/billing/generate', async (req, res) => {
+router.post('/billing/generate', auth_1.protect, (0, auth_1.restrictTo)('admin'), async (req, res) => {
     try {
         const { subscriptionId, billingPeriod } = req.body;
         if (!subscriptionId || !billingPeriod) {
@@ -561,7 +605,7 @@ router.post('/billing/generate', async (req, res) => {
     }
 });
 // 9. GET /billing/statements
-router.get('/billing/statements', async (req, res) => {
+router.get('/billing/statements', auth_1.protect, (0, auth_1.restrictTo)('admin'), async (req, res) => {
     try {
         const statements = await SubscriptionStatement_1.SubscriptionStatement.find()
             .populate('subscriptionId')
@@ -574,7 +618,52 @@ router.get('/billing/statements', async (req, res) => {
     }
 });
 // 10. GET /billing/statements/:id
-router.get('/billing/statements/:id', async (req, res) => {
+router.get('/subscriptions/:subId/statements', auth_1.protect, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        if (!mongoose_1.default.isValidObjectId(req.params.subId)) {
+            res.status(400).json({ message: 'Invalid subscription.' });
+            return;
+        }
+        const subscription = await LocalShopSubscription_1.default.findOne({ _id: req.params.subId, userId });
+        if (!subscription) {
+            res.status(404).json({ message: 'Subscription not found.' });
+            return;
+        }
+        const statements = await SubscriptionStatement_1.SubscriptionStatement.find({ subscriptionId: subscription._id, customerId: userId }).select('statementNumber billingPeriod periodStart periodEnd grossAmount settlementStatus').sort({ generatedDate: -1 }).lean();
+        res.json({ statements });
+    }
+    catch {
+        res.status(500).json({ message: 'Unable to load subscription statements.' });
+    }
+});
+router.get('/billing/statements/:id/pdf', auth_1.protect, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        if (!mongoose_1.default.isValidObjectId(req.params.id)) {
+            res.status(400).json({ message: 'Invalid statement.' });
+            return;
+        }
+        const statement = await SubscriptionStatement_1.SubscriptionStatement.findOne({ _id: req.params.id, customerId: userId });
+        if (!statement) {
+            res.status(404).json({ message: 'Statement not found.' });
+            return;
+        }
+        const [subscription, vendor, customer] = await Promise.all([LocalShopSubscription_1.default.findById(statement.subscriptionId), Vendor_1.Vendor.findById(statement.vendorId), User_1.User.findById(userId).select('name')]);
+        if (!subscription || !vendor) {
+            res.status(404).json({ message: 'Statement information is unavailable.' });
+            return;
+        }
+        const pdf = await (0, businessPdfService_1.renderBusinessPdf)((0, businessPdfService_1.statementPdfData)(statement, vendor, subscription, subscription.customerName || customer?.name || 'Customer'));
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="statement-${statement._id}.pdf"`);
+        res.send(pdf);
+    }
+    catch {
+        res.status(500).json({ message: 'Unable to create the billing document.' });
+    }
+});
+router.get('/billing/statements/:id', auth_1.protect, (0, auth_1.restrictTo)('admin'), async (req, res) => {
     try {
         const statement = await SubscriptionStatement_1.SubscriptionStatement.findById(req.params.id)
             .populate('subscriptionId')
@@ -591,7 +680,7 @@ router.get('/billing/statements/:id', async (req, res) => {
     }
 });
 // 11. PATCH /billing/statements/:id/approve
-router.patch('/billing/statements/:id/approve', async (req, res) => {
+router.patch('/billing/statements/:id/approve', auth_1.protect, (0, auth_1.restrictTo)('admin'), async (req, res) => {
     try {
         const statement = await SubscriptionSettlementService_1.SubscriptionSettlementService.settleStatement(req.params.id);
         res.status(200).json({ success: true, statement });
@@ -629,14 +718,19 @@ router.get('/subscriptions/:subId/tasks', auth_1.protect, async (req, res) => {
         }
         const { SubscriptionDeliveryTask } = require('../models/SubscriptionDeliveryTask');
         const tasks = await SubscriptionDeliveryTask.find({ subscriptionId: subId }).sort({ date: -1 });
-        res.status(200).json({ success: true, tasks });
+        res.status(200).json({ success: true, tasks: tasks.map((task) => {
+                const value = task.toObject();
+                if (!isCustomer && !isAdmin)
+                    delete value.otp;
+                return value;
+            }) });
     }
     catch (err) {
         res.status(500).json({ success: false, message: err.message });
     }
 });
 // 13. GET /billing/pending-tasks
-router.get('/billing/pending-tasks', async (req, res) => {
+router.get('/billing/pending-tasks', auth_1.protect, (0, auth_1.restrictTo)('admin'), async (req, res) => {
     try {
         const { SubscriptionDeliveryTask } = require('../models/SubscriptionDeliveryTask');
         const tasks = await SubscriptionDeliveryTask.find({
@@ -679,53 +773,8 @@ router.get('/billing/pending-tasks', async (req, res) => {
     }
 });
 // 14. PATCH /billing/tasks/:taskId/approve
-router.patch('/billing/tasks/:taskId/approve', async (req, res) => {
-    const session = await mongoose_1.default.startSession();
-    session.startTransaction();
-    try {
-        const { taskId } = req.params;
-        const { SubscriptionDeliveryTask } = require('../models/SubscriptionDeliveryTask');
-        const { WalletLedgerService } = require('../services/WalletLedgerService');
-        const { CommissionService } = require('../services/CommissionService');
-        const task = await SubscriptionDeliveryTask.findById(taskId);
-        if (!task) {
-            res.status(404).json({ success: false, message: 'Delivery task not found' });
-            return;
-        }
-        if (task.status !== 'delivered') {
-            res.status(400).json({ success: false, message: 'Task is not marked as delivered' });
-            return;
-        }
-        if (task.isPaidToVendor) {
-            res.status(400).json({ success: false, message: 'Task payout has already been processed' });
-            return;
-        }
-        const sub = await LocalShopSubscription_1.default.findById(task.subscriptionId);
-        if (!sub) {
-            res.status(404).json({ success: false, message: 'Subscription not found for this task' });
-            return;
-        }
-        const grossAmount = sub.unitPrice * sub.quantity;
-        const splits = await CommissionService.calculateSubscriptionSplits(grossAmount);
-        // 1. Debit customer wallet (only if not already debited by the delivery boy)
-        if (!task.isDebitedFromUser) {
-            await WalletLedgerService.debit(sub.userId, grossAmount, 'payment', task._id, 'SubscriptionDeliveryTask', `Direct task payment for run on date ${task.date}`, session);
-            task.isDebitedFromUser = true;
-        }
-        // 2. Credit net vendor wallet
-        await WalletLedgerService.credit(sub.vendorId, splits.vendorAmount, 'subscription_credit', task._id, 'SubscriptionDeliveryTask', `Payout for subscription delivery run on date ${task.date}`, session);
-        // Update task status
-        task.isPaidToVendor = true;
-        await task.save({ session });
-        await session.commitTransaction();
-        session.endSession();
-        res.status(200).json({ success: true, message: 'Task payout released successfully', task });
-    }
-    catch (err) {
-        await session.abortTransaction();
-        session.endSession();
-        res.status(500).json({ success: false, message: err.message });
-    }
+router.patch('/billing/tasks/:taskId/approve', auth_1.protect, (0, auth_1.restrictTo)('admin'), async (_req, res) => {
+    res.status(410).json({ success: false, message: 'Individual task payouts have been replaced by billing statement settlement. Generate or select the closed-cycle statement and approve it from Subscription Billing.' });
 });
 // 5. GET /billing/:userId
 router.get('/billing/:userId', async (req, res) => {
@@ -786,7 +835,7 @@ router.get('/billing/:userId', async (req, res) => {
     }
 });
 // 15. POST /scheduler/run
-router.post('/scheduler/run', async (req, res) => {
+router.post('/scheduler/run', auth_1.protect, (0, auth_1.restrictTo)('admin'), async (req, res) => {
     try {
         const { SubscriptionSchedulerService } = require('../services/SubscriptionSchedulerService');
         const result = await SubscriptionSchedulerService.runDailyScheduler();
@@ -797,7 +846,7 @@ router.post('/scheduler/run', async (req, res) => {
     }
 });
 // 16. POST /scheduler/holds
-router.post('/scheduler/holds', async (req, res) => {
+router.post('/scheduler/holds', auth_1.protect, (0, auth_1.restrictTo)('admin'), async (req, res) => {
     try {
         const { SubscriptionSchedulerService } = require('../services/SubscriptionSchedulerService');
         const result = await SubscriptionSchedulerService.processWalletHoldsForTomorrow();

@@ -36,6 +36,10 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.SubscriptionStatement = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
 const SubscriptionStatementSchema = new mongoose_1.Schema({
+    billingCycle: { type: String, enum: ['weekly', 'monthly'] },
+    periodStart: String,
+    periodEnd: String,
+    deliveryItems: [{ taskId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'SubscriptionDeliveryTask' }, date: String, quantity: Number, unitPrice: Number, amount: Number }],
     statementNumber: {
         type: String,
         required: true,

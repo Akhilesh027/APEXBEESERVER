@@ -1,10 +1,18 @@
 import mongoose from "mongoose";
 import { User } from "../models/User";
 import { Franchise } from "../models/Franchise";
+import { Territory } from "../models/Territory";
 import { WalletEngine } from "./WalletEngine";
 import { CommissionSettlement } from "../models/CommissionSettlement";
 import { SettlementEngine } from "./SettlementEngine";
 import { FeeInvoice } from "../models/FeeInvoice";
+import { Vendor } from "../models/Vendor";
+import { BusinessApplication } from "../models/BusinessApplication";
+import { RestaurantProfile } from "../models/RestaurantProfile";
+
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
 export interface TerritoryLocation {
   state?: string;
@@ -41,7 +49,51 @@ export interface FeeCommissionResult {
 
 export class AssignmentCommissionService {
   /**
+   * Helper to resolve an active User ID from a Franchise doc or ID.
+   */
+  private static async resolveUserIdFromFranchise(
+    franchiseDocOrId: any,
+    excludeUserId?: any
+  ): Promise<mongoose.Types.ObjectId | null> {
+    if (!franchiseDocOrId) return null;
+
+    let fDoc: any = null;
+    if (typeof franchiseDocOrId === "string" || franchiseDocOrId instanceof mongoose.Types.ObjectId) {
+      fDoc = await Franchise.findById(franchiseDocOrId);
+    } else {
+      fDoc = franchiseDocOrId;
+    }
+
+    if (!fDoc) return null;
+
+    // Check by fDoc.userId
+    if (fDoc.userId) {
+      if (!excludeUserId || fDoc.userId.toString() !== excludeUserId.toString()) {
+        const u = await User.findOne({
+          _id: fDoc.userId,
+          status: { $in: ["active", "Active"] }
+        });
+        if (u) return u._id as any;
+      }
+    }
+
+    // Check by fDoc.email
+    if (fDoc.email) {
+      const u = await User.findOne({
+        email: { $regex: new RegExp(`^${fDoc.email.trim()}$`, "i") },
+        status: { $in: ["active", "Active"] }
+      });
+      if (u && (!excludeUserId || u._id.toString() !== excludeUserId.toString())) {
+        return u._id as any;
+      }
+    }
+
+    return null;
+  }
+
+  /**
    * Resolve territory franchise users for state, district, and mandal.
+   * Strictly prioritizes the currently assigned franchise on that territory.
    */
   static async resolveTerritoryFranchisers(
     location?: TerritoryLocation,
@@ -61,80 +113,320 @@ export class AssignmentCommissionService {
 
     const { state, district, mandal } = location;
 
-    // 1. Mandal Franchiser
-    if (mandal) {
-      const mandalFranchise = await Franchise.findOne({
-        franchiseLevel: "mandal",
-        mandal: { $regex: new RegExp(`^${mandal}$`, "i") },
-        status: { $in: ["active", "Approved", "approved", "verified"] }
+    // 1. Mandal Franchiser (strictly for this mandal territory)
+    if (mandal && String(mandal).trim()) {
+      let cleanMandal = String(mandal).trim();
+      const normMandal = cleanMandal.replace(/\s*mandal$/i, "").trim();
+      const escapedMandal = escapeRegex(cleanMandal);
+      const escapedNormMandal = escapeRegex(normMandal);
+      const mandalRegexStr = `^(${escapedMandal}|${escapedNormMandal})$`;
+
+      const mandalQuery: any = {
+        level: "Mandal",
+        $or: [
+          { mandal: { $regex: new RegExp(mandalRegexStr, "i") } },
+          { name: { $regex: new RegExp(mandalRegexStr, "i") } }
+        ]
+      };
+      if (district && String(district).trim()) {
+        const cleanDist = String(district).trim();
+        const normDist = cleanDist.replace(/\s*district$/i, "").trim();
+        const distRegexStr = `^(${escapeRegex(cleanDist)}|${escapeRegex(normDist)})$`;
+        mandalQuery.district = { $regex: new RegExp(distRegexStr, "i") };
+      }
+
+      // Priority 1: Check Territory collection
+      const mandalTerritories = await Territory.find(mandalQuery);
+      const activeMandalTerritory = mandalTerritories.find(
+        (t) => t.franchiseStatus === "ACTIVE" && (t.franchiseId || t.currentFranchisee?.franchiseId || t.currentFranchisee?.masterUserId || t.currentFranchisee?.email)
+      ) || mandalTerritories[0];
+
+      if (activeMandalTerritory) {
+        if (activeMandalTerritory.franchiseId) {
+          mandalFranchiseUserId = await this.resolveUserIdFromFranchise(activeMandalTerritory.franchiseId, excludeUserId);
+        }
+        if (!mandalFranchiseUserId && activeMandalTerritory.currentFranchisee?.franchiseId) {
+          mandalFranchiseUserId = await this.resolveUserIdFromFranchise(activeMandalTerritory.currentFranchisee.franchiseId, excludeUserId);
+        }
+        if (!mandalFranchiseUserId && activeMandalTerritory.currentFranchisee?.masterUserId) {
+          const candidateId = activeMandalTerritory.currentFranchisee.masterUserId;
+          if (!excludeUserId || candidateId.toString() !== excludeUserId.toString()) {
+            const u = await User.findOne({ _id: candidateId, status: { $in: ["active", "Active"] } });
+            if (u) mandalFranchiseUserId = u._id as any;
+          }
+        }
+        if (!mandalFranchiseUserId && activeMandalTerritory.currentFranchisee?.email) {
+          const u = await User.findOne({
+            email: { $regex: new RegExp(`^${escapeRegex(activeMandalTerritory.currentFranchisee.email.trim())}$`, "i") },
+            status: { $in: ["active", "Active"] }
+          });
+          if (u && (!excludeUserId || u._id.toString() !== excludeUserId.toString())) {
+            mandalFranchiseUserId = u._id as any;
+          }
+        }
+        if (!mandalFranchiseUserId) {
+          const assignedFranchise = await Franchise.findOne({
+            assignedTerritories: activeMandalTerritory._id,
+            status: { $in: ["active", "Approved", "approved", "verified"] }
+          });
+          if (assignedFranchise) {
+            mandalFranchiseUserId = await this.resolveUserIdFromFranchise(assignedFranchise, excludeUserId);
+          }
+        }
+      }
+
+      // Priority 2: Franchises that have assignedTerritories non-empty
+      if (!mandalFranchiseUserId) {
+        const assignedFranchises = await Franchise.find({
+          franchiseLevel: "mandal",
+          $or: [
+            { mandal: { $regex: new RegExp(mandalRegexStr, "i") } },
+            { businessName: { $regex: new RegExp(mandalRegexStr, "i") } }
+          ],
+          assignedTerritories: { $exists: true, $not: { $size: 0 } },
+          status: { $in: ["active", "Approved", "approved", "verified"] }
+        }).sort({ updatedAt: -1, createdAt: -1 });
+
+        for (const mf of assignedFranchises) {
+          const candidateUserId = await this.resolveUserIdFromFranchise(mf, excludeUserId);
+          if (candidateUserId) {
+            mandalFranchiseUserId = candidateUserId;
+            break;
+          }
+        }
+      }
+
+      // Priority 3: Fallback only if no territory assignment existed
+      if (!mandalFranchiseUserId) {
+        const mandalFranchises = await Franchise.find({
+          franchiseLevel: "mandal",
+          $or: [
+            { mandal: { $regex: new RegExp(mandalRegexStr, "i") } },
+            { businessName: { $regex: new RegExp(mandalRegexStr, "i") } }
+          ],
+          status: { $in: ["active", "Approved", "approved", "verified"] }
+        }).sort({ updatedAt: -1, createdAt: -1 });
+
+        for (const mf of mandalFranchises) {
+          const candidateUserId = await this.resolveUserIdFromFranchise(mf, excludeUserId);
+          if (candidateUserId) {
+            mandalFranchiseUserId = candidateUserId;
+            break;
+          }
+        }
+      }
+    }
+
+    // 2. District Franchiser (strictly for this district territory)
+    if (district && String(district).trim()) {
+      let cleanDistrict = String(district).trim();
+      const normDistrict = cleanDistrict.replace(/\s*district$/i, "").trim();
+      const escapedDist = escapeRegex(cleanDistrict);
+      const escapedNormDist = escapeRegex(normDistrict);
+      const distRegexStr = `^(${escapedDist}|${escapedNormDist})$`;
+
+      const distQuery: any = {
+        level: "District",
+        $or: [
+          { district: { $regex: new RegExp(distRegexStr, "i") } },
+          { name: { $regex: new RegExp(distRegexStr, "i") } }
+        ]
+      };
+      if (state && String(state).trim()) {
+        const cleanState = String(state).trim();
+        const normState = cleanState.replace(/\s*state$/i, "").trim();
+        const stateRegexStr = `^(${escapeRegex(cleanState)}|${escapeRegex(normState)})$`;
+        distQuery.state = { $regex: new RegExp(stateRegexStr, "i") };
+      }
+
+      // Priority 1: Check Territory collection
+      const distTerritories = await Territory.find(distQuery);
+      const activeDistTerritory = distTerritories.find(
+        (t) => t.franchiseStatus === "ACTIVE" && (t.franchiseId || t.currentFranchisee?.franchiseId || t.currentFranchisee?.masterUserId || t.currentFranchisee?.email)
+      ) || distTerritories[0];
+
+      if (activeDistTerritory) {
+        if (activeDistTerritory.franchiseId) {
+          districtFranchiseUserId = await this.resolveUserIdFromFranchise(activeDistTerritory.franchiseId, excludeUserId);
+        }
+        if (!districtFranchiseUserId && activeDistTerritory.currentFranchisee?.franchiseId) {
+          districtFranchiseUserId = await this.resolveUserIdFromFranchise(activeDistTerritory.currentFranchisee.franchiseId, excludeUserId);
+        }
+        if (!districtFranchiseUserId && activeDistTerritory.currentFranchisee?.masterUserId) {
+          const candidateId = activeDistTerritory.currentFranchisee.masterUserId;
+          if (!excludeUserId || candidateId.toString() !== excludeUserId.toString()) {
+            const u = await User.findOne({ _id: candidateId, status: { $in: ["active", "Active"] } });
+            if (u) districtFranchiseUserId = u._id as any;
+          }
+        }
+        if (!districtFranchiseUserId && activeDistTerritory.currentFranchisee?.email) {
+          const u = await User.findOne({
+            email: { $regex: new RegExp(`^${escapeRegex(activeDistTerritory.currentFranchisee.email.trim())}$`, "i") },
+            status: { $in: ["active", "Active"] }
+          });
+          if (u && (!excludeUserId || u._id.toString() !== excludeUserId.toString())) {
+            districtFranchiseUserId = u._id as any;
+          }
+        }
+        if (!districtFranchiseUserId) {
+          const assignedFranchise = await Franchise.findOne({
+            assignedTerritories: activeDistTerritory._id,
+            status: { $in: ["active", "Approved", "approved", "verified"] }
+          });
+          if (assignedFranchise) {
+            districtFranchiseUserId = await this.resolveUserIdFromFranchise(assignedFranchise, excludeUserId);
+          }
+        }
+      }
+
+      // Priority 2: Franchises that have assignedTerritories non-empty
+      if (!districtFranchiseUserId) {
+        const assignedFranchises = await Franchise.find({
+          franchiseLevel: "district",
+          $or: [
+            { district: { $regex: new RegExp(distRegexStr, "i") } },
+            { businessName: { $regex: new RegExp(distRegexStr, "i") } }
+          ],
+          assignedTerritories: { $exists: true, $not: { $size: 0 } },
+          status: { $in: ["active", "Approved", "approved", "verified"] }
+        }).sort({ updatedAt: -1, createdAt: -1 });
+
+        for (const df of assignedFranchises) {
+          const candidateUserId = await this.resolveUserIdFromFranchise(df, excludeUserId);
+          if (candidateUserId) {
+            districtFranchiseUserId = candidateUserId;
+            break;
+          }
+        }
+      }
+
+      // Priority 3: Fallback only if no territory assignment existed
+      if (!districtFranchiseUserId) {
+        const distFranchises = await Franchise.find({
+          franchiseLevel: "district",
+          $or: [
+            { district: { $regex: new RegExp(distRegexStr, "i") } },
+            { businessName: { $regex: new RegExp(distRegexStr, "i") } }
+          ],
+          status: { $in: ["active", "Approved", "approved", "verified"] }
+        }).sort({ updatedAt: -1, createdAt: -1 });
+
+        for (const df of distFranchises) {
+          const candidateUserId = await this.resolveUserIdFromFranchise(df, excludeUserId);
+          if (candidateUserId) {
+            districtFranchiseUserId = candidateUserId;
+            break;
+          }
+        }
+      }
+    }
+
+    // 3. State Franchiser (strictly for this state territory)
+    if (state && String(state).trim()) {
+      let cleanState = String(state).trim();
+      const normState = cleanState.replace(/\s*state$/i, "").trim();
+      const escapedState = escapeRegex(cleanState);
+      const escapedNormState = escapeRegex(normState);
+      const stateRegexStr = `^(${escapedState}|${escapedNormState})$`;
+
+      // Priority 1: Check Territory collection for this state
+      const stateTerritories = await Territory.find({
+        level: "State",
+        $or: [
+          { state: { $regex: new RegExp(stateRegexStr, "i") } },
+          { name: { $regex: new RegExp(stateRegexStr, "i") } }
+        ]
       });
-      if (mandalFranchise && mandalFranchise.userId) {
-        if (!excludeUserId || mandalFranchise.userId.toString() !== excludeUserId.toString()) {
-          mandalFranchiseUserId = mandalFranchise.userId as any;
+      const activeStateTerritory = stateTerritories.find(
+        (t) => t.franchiseStatus === "ACTIVE" && (t.franchiseId || t.currentFranchisee?.franchiseId || t.currentFranchisee?.masterUserId || t.currentFranchisee?.email)
+      ) || stateTerritories[0];
+
+      if (activeStateTerritory) {
+        // 1a. Direct franchiseId on territory (set when admin reassigns territory!)
+        if (activeStateTerritory.franchiseId) {
+          stateFranchiseUserId = await this.resolveUserIdFromFranchise(activeStateTerritory.franchiseId, excludeUserId);
         }
-      } else {
-        const mandalUser = await User.findOne({
-          roles: { $in: ["mandal_franchise", "franchise"] },
-          "territory.mandal": { $regex: new RegExp(`^${mandal}$`, "i") }
-        });
-        if (mandalUser && (!excludeUserId || mandalUser._id.toString() !== excludeUserId.toString())) {
-          mandalFranchiseUserId = mandalUser._id as any;
+
+        // 1b. currentFranchisee.franchiseId
+        if (!stateFranchiseUserId && activeStateTerritory.currentFranchisee?.franchiseId) {
+          stateFranchiseUserId = await this.resolveUserIdFromFranchise(activeStateTerritory.currentFranchisee.franchiseId, excludeUserId);
+        }
+
+        // 1c. currentFranchisee.masterUserId
+        if (!stateFranchiseUserId && activeStateTerritory.currentFranchisee?.masterUserId) {
+          const candidateId = activeStateTerritory.currentFranchisee.masterUserId;
+          if (!excludeUserId || candidateId.toString() !== excludeUserId.toString()) {
+            const u = await User.findOne({ _id: candidateId, status: { $in: ["active", "Active"] } });
+            if (u) stateFranchiseUserId = u._id as any;
+          }
+        }
+
+        // 1d. currentFranchisee.email
+        if (!stateFranchiseUserId && activeStateTerritory.currentFranchisee?.email) {
+          const u = await User.findOne({
+            email: { $regex: new RegExp(`^${escapeRegex(activeStateTerritory.currentFranchisee.email.trim())}$`, "i") },
+            status: { $in: ["active", "Active"] }
+          });
+          if (u && (!excludeUserId || u._id.toString() !== excludeUserId.toString())) {
+            stateFranchiseUserId = u._id as any;
+          }
+        }
+
+        // 1e. Franchise with assignedTerritories containing this territory._id
+        if (!stateFranchiseUserId) {
+          const assignedFranchise = await Franchise.findOne({
+            assignedTerritories: activeStateTerritory._id,
+            status: { $in: ["active", "Approved", "approved", "verified"] }
+          });
+          if (assignedFranchise) {
+            stateFranchiseUserId = await this.resolveUserIdFromFranchise(assignedFranchise, excludeUserId);
+          }
+        }
+      }
+
+      // Priority 2: Franchises that have assignedTerritories non-empty in this state
+      if (!stateFranchiseUserId) {
+        const assignedFranchises = await Franchise.find({
+          franchiseLevel: "state",
+          $or: [
+            { state: { $regex: new RegExp(stateRegexStr, "i") } },
+            { businessName: { $regex: new RegExp(stateRegexStr, "i") } }
+          ],
+          assignedTerritories: { $exists: true, $not: { $size: 0 } },
+          status: { $in: ["active", "Approved", "approved", "verified"] }
+        }).sort({ updatedAt: -1, createdAt: -1 });
+
+        for (const sf of assignedFranchises) {
+          const candidateUserId = await this.resolveUserIdFromFranchise(sf, excludeUserId);
+          if (candidateUserId) {
+            stateFranchiseUserId = candidateUserId;
+            break;
+          }
+        }
+      }
+
+      // Priority 3: Fallback only if no territory assignment existed
+      if (!stateFranchiseUserId) {
+        const stateFranchises = await Franchise.find({
+          franchiseLevel: "state",
+          $or: [
+            { state: { $regex: new RegExp(stateRegexStr, "i") } },
+            { businessName: { $regex: new RegExp(stateRegexStr, "i") } }
+          ],
+          status: { $in: ["active", "Approved", "approved", "verified"] }
+        }).sort({ updatedAt: -1, createdAt: -1 });
+
+        for (const sf of stateFranchises) {
+          const candidateUserId = await this.resolveUserIdFromFranchise(sf, excludeUserId);
+          if (candidateUserId) {
+            stateFranchiseUserId = candidateUserId;
+            break;
+          }
         }
       }
     }
 
-    // 2. District Franchiser
-    if (district) {
-      const distFranchise = await Franchise.findOne({
-        franchiseLevel: "district",
-        district: { $regex: new RegExp(`^${district}$`, "i") },
-        status: { $in: ["active", "Approved", "approved", "verified"] }
-      });
-      if (distFranchise && distFranchise.userId) {
-        if (!excludeUserId || distFranchise.userId.toString() !== excludeUserId.toString()) {
-          districtFranchiseUserId = distFranchise.userId as any;
-        }
-      } else {
-        const distUser = await User.findOne({
-          roles: { $in: ["district_franchise", "franchise"] },
-          "territory.district": { $regex: new RegExp(`^${district}$`, "i") }
-        });
-        if (distUser && (!excludeUserId || distUser._id.toString() !== excludeUserId.toString())) {
-          districtFranchiseUserId = distUser._id as any;
-        }
-      }
-    }
-
-    // 3. State Franchiser
-    if (state) {
-      const stateFranchise = await Franchise.findOne({
-        franchiseLevel: "state",
-        state: { $regex: new RegExp(`^${state}$`, "i") },
-        status: { $in: ["active", "Approved", "approved", "verified"] }
-      });
-      if (stateFranchise && stateFranchise.userId) {
-        if (!excludeUserId || stateFranchise.userId.toString() !== excludeUserId.toString()) {
-          stateFranchiseUserId = stateFranchise.userId as any;
-        }
-      } else {
-        const stateUser = await User.findOne({
-          roles: { $in: ["state_franchise", "franchise"] },
-          "territory.state": { $regex: new RegExp(`^${state}$`, "i") }
-        });
-        if (stateUser && (!excludeUserId || stateUser._id.toString() !== excludeUserId.toString())) {
-          stateFranchiseUserId = stateUser._id as any;
-        }
-      }
-    }
-
-    // Fallback: If not resolved by exact state, find any active state franchise
-    if (!stateFranchiseUserId) {
-      const anyState = await Franchise.findOne({ franchiseLevel: "state", status: { $in: ["active", "Approved", "approved", "verified"] } });
-      if (anyState && anyState.userId && (!excludeUserId || anyState.userId.toString() !== excludeUserId.toString())) {
-        stateFranchiseUserId = anyState.userId as any;
-      }
-    }
-
+    // STRICT: If no active franchise exists for this territory, return null. Never use default fallback to random states.
     return { stateFranchiseUserId, districtFranchiseUserId, mandalFranchiseUserId };
   }
 
@@ -157,8 +449,60 @@ export class AssignmentCommissionService {
       sourceUser = await User.findById(sourceUserId);
     }
 
+    // Auto-resolve missing location details from Vendor, BusinessApplication, RestaurantProfile, or User territory
+    let effectiveLocation: TerritoryLocation = location ? { ...location } : {};
+    let vendorDoc: any = null;
+    let appDoc: any = null;
+    let restDoc: any = null;
+
+    if (sourceUserId) {
+      vendorDoc = await Vendor.findOne({ $or: [{ userId: sourceUserId }, { _id: sourceUserId }] });
+      if (!vendorDoc && sourceUser?.email) {
+        vendorDoc = await Vendor.findOne({ email: sourceUser.email.toLowerCase().trim() });
+      }
+
+      appDoc = await BusinessApplication.findOne({
+        $or: [
+          { userId: sourceUserId },
+          ...(sourceUser?.email ? [{ email: sourceUser.email.toLowerCase().trim() }] : []),
+          ...(sourceUser?.phone ? [{ mobile: sourceUser.phone.trim() }] : [])
+        ]
+      }).sort({ createdAt: -1 });
+
+      restDoc = await RestaurantProfile.findOne({
+        $or: [{ userId: sourceUserId }, { _id: sourceUserId }]
+      });
+
+      effectiveLocation.state = effectiveLocation.state || vendorDoc?.state || appDoc?.state || restDoc?.state || sourceUser?.territory?.state || "";
+      effectiveLocation.district = effectiveLocation.district || vendorDoc?.district || appDoc?.district || restDoc?.district || restDoc?.city || sourceUser?.territory?.district || "";
+      effectiveLocation.mandal = effectiveLocation.mandal || vendorDoc?.mandal || appDoc?.mandal || restDoc?.mandal || restDoc?.locality || sourceUser?.territory?.mandal || "";
+    }
+
     // 2. Resolve territory franchisers
-    const franchisers = await this.resolveTerritoryFranchisers(location, sourceUserId);
+    const franchisers = await this.resolveTerritoryFranchisers(effectiveLocation, sourceUserId);
+
+    // Fallback: If any territory franchiser was not resolved by territory lookup,
+    // check direct assignedFranchise links on User, Vendor, or BusinessApplication!
+    if (!franchisers.mandalFranchiseUserId) {
+      const directMandal = sourceUser?.assignedFranchise?.mandalFranchiseId || vendorDoc?.mandalFranchiseId || appDoc?.assignedFranchise?.mandalFranchiseId;
+      if (directMandal) {
+        franchisers.mandalFranchiseUserId = await this.resolveUserIdFromFranchise(directMandal, sourceUserId);
+      }
+    }
+
+    if (!franchisers.districtFranchiseUserId) {
+      const directDist = sourceUser?.assignedFranchise?.districtFranchiseId || vendorDoc?.districtFranchiseId || appDoc?.assignedFranchise?.districtFranchiseId;
+      if (directDist) {
+        franchisers.districtFranchiseUserId = await this.resolveUserIdFromFranchise(directDist, sourceUserId);
+      }
+    }
+
+    if (!franchisers.stateFranchiseUserId) {
+      const directState = sourceUser?.assignedFranchise?.stateFranchiseId || vendorDoc?.stateFranchiseId || appDoc?.assignedFranchise?.stateFranchiseId;
+      if (directState) {
+        franchisers.stateFranchiseUserId = await this.resolveUserIdFromFranchise(directState, sourceUserId);
+      }
+    }
 
     // 3. Define percentage rules according to serviceKey / role
     // Defaults: L1: 10%, L2: 3%, L3: 2%, Mandal: 10%, District: 5%, State: 3%
@@ -225,13 +569,16 @@ export class AssignmentCommissionService {
       const shareAmount = Math.round((amount * share.percent) / 100);
       if (shareAmount > 0 && share.recipientId) {
         try {
-          await WalletEngine.credit(share.recipientId, shareAmount, {
+          const creditWallet = await WalletEngine.credit(share.recipientId, shareAmount, {
             category: "Commission",
             source: `${share.tier}_commission`,
             remarks: notes || `Fee Commission for ${serviceKey || 'enrollment'} (${share.tier})`,
             referenceId: referenceId || new mongoose.Types.ObjectId(),
             referenceType: "SYSTEM"
           });
+
+          const lastLedger = creditWallet?.ledgerEntries?.[creditWallet.ledgerEntries.length - 1];
+          const txId = lastLedger?.transactionId;
 
           await CommissionSettlement.create({
             recipientId: share.recipientId,
@@ -242,6 +589,8 @@ export class AssignmentCommissionService {
             released: true,
             walletCredited: true,
             releasedAt: new Date(),
+            releasedTransactionId: txId,
+            referenceId: referenceId,
             notes: notes || `Fee commission (${share.tier}) for ${serviceKey}`
           });
 

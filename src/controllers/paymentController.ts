@@ -5,6 +5,9 @@ import { Order } from '../models/Order';
 import { RazorpayService } from '../services/razorpayService';
 import { WalletEngine } from '../services/WalletEngine';
 import { SmsService } from '../services/smsService';
+import mongoose from 'mongoose';
+import Product from '../models/Product';
+import { enforceOneTimeDairyOrder } from '../services/dairyOrderRules';
 
 /**
  * GET /api/payment/config
@@ -36,6 +39,15 @@ export const createOrderPayment = async (req: AuthRequest, res: Response) => {
     const parsedAmount = Number(amount);
     if (isNaN(parsedAmount) || parsedAmount <= 0) {
       return res.status(400).json({ success: false, message: 'Invalid order amount' });
+    }
+    const { productIds } = req.body;
+    if (productIds !== undefined) {
+      if (!Array.isArray(productIds) || !productIds.length || productIds.length > 100 || productIds.some(id => typeof id !== 'string' || !mongoose.isValidObjectId(id))) {
+        return res.status(400).json({ success: false, message: 'Choose valid checkout products.' });
+      }
+      const products = await Product.find({ _id: { $in: productIds } }).select('sellerId categoryId subCategoryId subcategoryId dairyDetails').lean();
+      try { await enforceOneTimeDairyOrder(products); }
+      catch (error) { return res.status(409).json({ success: false, message: (error as Error).message }); }
     }
 
     const order = await RazorpayService.createOrder(

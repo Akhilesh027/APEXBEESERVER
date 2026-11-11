@@ -50,9 +50,11 @@ export class CheckoutService {
         quantity: Number(item.quantity) || 1,
         color: item.color,
         size: item.size,
-        variantId: item.variantId || item.productId,
+        variantId: item.variantId || undefined,
       })),
-      input.couponCode
+      input.couponCode,
+      session,
+      true
     );
 
     const orderNumber = `AB-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -68,12 +70,38 @@ export class CheckoutService {
       const targetTimeSlot = origInputItem.preOrderTimeSlot || item.preOrderTimeSlot || '';
       const targetCustomNote = origInputItem.preOrderCustomNote || item.preOrderCustomNote || '';
 
+      const resolvedColor = origInputItem.color || origInputItem.selectedColor || item.color || '';
+      const resolvedSize = origInputItem.size || origInputItem.selectedSize || item.size || '';
+      const resolvedVariantId = origInputItem.variantId || item.variantId || '';
+      const resolvedVariant = origInputItem.selectedVariant || origInputItem.variant || item.selectedVariant || null;
+      const resolvedVariantName =
+        origInputItem.variantName ||
+        origInputItem.variant?.name ||
+        origInputItem.variant?.title ||
+        origInputItem.variant?.label ||
+        item.variantName ||
+        (resolvedVariant?.name || resolvedVariant?.title || resolvedVariant?.label || '');
+      const resolvedAttrs = origInputItem.selectedAttributes || origInputItem.attributes || item.selectedAttributes || item.attributes || (resolvedVariant?.attributes || null);
+
       return {
         productId: new mongoose.Types.ObjectId(item.productId),
-        productName: item.name,
-        sku: item.sku || item.slug || `SKU-${item.productId}` || 'N/A',
+        productName: origInputItem.itemName || item.name,
+        name: origInputItem.itemName || item.name,
+        ...(item.waterDetails ? {waterDetails:item.waterDetails} : {}),
+        sku: item.sku || origInputItem.sku || item.slug || `SKU-${item.productId}` || 'N/A',
         quantity: item.quantity,
         price: item.price,
+        originalPrice: item.originalPrice || origInputItem.originalPrice || item.price,
+        itemTotal: item.itemTotal || (item.price * item.quantity),
+        image: item.image || origInputItem.image || origInputItem.thumbnail || '',
+        color: resolvedColor !== 'default' ? resolvedColor : '',
+        size: resolvedSize !== 'default' && resolvedSize !== 'One Size' ? resolvedSize : '',
+        variantId: resolvedVariantId,
+        variantName: resolvedVariantName,
+        selectedVariant: resolvedVariant,
+        selectedAttributes: resolvedAttrs,
+        attributes: resolvedAttrs,
+        vendorId: item.vendorId || origInputItem.vendorId,
         categoryId: item.categoryId || primaryCategoryId,
         categoryName: item.categoryName || primaryCategoryName,
         isPreOrder: Boolean(item.isPreOrder || origInputItem.isPreOrder),
@@ -89,15 +117,15 @@ export class CheckoutService {
 
     const timeline = [
       {
-        status: 'pending',
+        status: 'Placed',
         date: new Date().toISOString(),
-        note: 'Order placed successfully (price verified by backend)',
+        note: 'Order placed successfully (verified by backend)',
       },
     ];
 
     if (isPaidOnline) {
       timeline.push({
-        status: 'paid',
+        status: 'Paid',
         date: new Date().toISOString(),
         note: resolvedPaymentMethod === 'razorpay'
           ? `Payment completed via Razorpay (${input.paymentDetails?.razorpayPaymentId || input.paymentDetails?.transactionId || 'online'})`
@@ -106,7 +134,7 @@ export class CheckoutService {
     }
 
     const orderStatusObj = {
-      currentStatus: 'pending',
+      currentStatus: 'Placed',
       timeline: timeline.map(t => ({
         status: t.status,
         timestamp: t.date,
@@ -114,10 +142,18 @@ export class CheckoutService {
       })),
     };
 
-    const finalGrandTotal = input.paymentDetails?.amount ?? input.orderSummary?.grandTotal ?? pricing.orderSummary.grandTotal;
+    const walletDeduction = Number(input.orderSummary?.walletDeduction || 0);
+    const rewardsDeduction = Number(input.orderSummary?.rewardsDeduction || input.orderSummary?.rewardPointsUsed || 0);
+    const finalGrandTotal = Math.max(0, pricing.orderSummary.grandTotal - walletDeduction - rewardsDeduction);
     const mergedOrderSummary = {
-      ...pricing.orderSummary,
       ...(input.orderSummary || {}),
+      ...pricing.orderSummary,
+      cgst: pricing.orderSummary.cgst,
+      sgst: pricing.orderSummary.sgst,
+      tax: pricing.orderSummary.tax,
+      subtotal: pricing.orderSummary.subtotal,
+      walletDeduction,
+      rewardsDeduction,
       grandTotal: finalGrandTotal,
       total: finalGrandTotal
     };

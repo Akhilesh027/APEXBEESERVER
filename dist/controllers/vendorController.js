@@ -27,6 +27,7 @@ const Category_1 = require("../models/Category");
 const authz_1 = require("../utils/authz");
 const BusinessApplication_1 = require("../models/BusinessApplication");
 const VendorCategoryAccess_1 = require("../models/VendorCategoryAccess");
+const RestaurantProfile_1 = require("../models/RestaurantProfile");
 function escapeRegex(text) {
     return text.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
 }
@@ -78,6 +79,7 @@ const getVendorProfile = async (req, res) => {
                     phone: userDoc.phone || '9876543210',
                     category: 'Devotional',
                     primaryCategory: 'Devotional',
+                    categories: ['Devotional'],
                     businessType: 'Vendor',
                     status: 'active',
                     marketplaceStatus: 'Approved'
@@ -267,14 +269,24 @@ const updateVendorProfile = async (req, res) => {
             vendor.businessName = updates.businessName;
         if (updates.ownerName !== undefined)
             vendor.ownerName = updates.ownerName;
-        if (updates.email !== undefined)
-            vendor.email = updates.email;
+        if (updates.email !== undefined) {
+            if (!vendor.verifiedBadge && vendor.kycStatus !== 'Verified') {
+                vendor.email = updates.email;
+            }
+        }
         if (updates.mobile !== undefined)
             vendor.mobile = updates.mobile;
         if (updates.address !== undefined)
             vendor.address = updates.address;
         if (updates.pincode !== undefined)
             vendor.pincode = updates.pincode;
+        if (updates.hasGst !== undefined)
+            vendor.hasGst = !!updates.hasGst;
+        if (updates.gstPricingMode !== undefined)
+            vendor.gstPricingMode = updates.gstPricingMode;
+        if (updates.categoryParameters !== undefined) {
+            vendor.categoryParameters = { ...(vendor.categoryParameters || {}), ...updates.categoryParameters };
+        }
         if (updates.gstNumber !== undefined)
             vendor.gstNumber = updates.gstNumber;
         if (updates.panNumber !== undefined)
@@ -1021,15 +1033,86 @@ const getVendorDetails = async (req, res) => {
             vendor = await Vendor_1.Vendor.findOne({ userId: vendorId });
         }
         if (!vendor) {
+            let restaurant = null;
+            if (mongoose_1.default.Types.ObjectId.isValid(vendorId)) {
+                restaurant = await RestaurantProfile_1.RestaurantProfile.findOne({
+                    $or: [
+                        { _id: vendorId },
+                        { userId: vendorId },
+                        { vendorId: vendorId },
+                        { storeId: vendorId }
+                    ]
+                });
+            }
+            else {
+                restaurant = await RestaurantProfile_1.RestaurantProfile.findOne({ slug: vendorId });
+            }
+            if (restaurant) {
+                const rObj = restaurant.toObject();
+                const isOpen = rObj.acceptingOrders !== false &&
+                    rObj.operationalStatus !== 'CLOSED' &&
+                    rObj.operationalStatus !== 'TEMPORARILY_CLOSED';
+                const vendorData = {
+                    _id: rObj._id,
+                    vendorId: rObj._id,
+                    userId: rObj.userId,
+                    businessName: rObj.restaurantName,
+                    category: 'Food & Dining',
+                    categories: ['Food & Dining', ...(rObj.cuisines || [])],
+                    logo: rObj.logo || rObj.coverImage || '',
+                    banner: rObj.coverImage || rObj.bannerImage || '',
+                    storeDesign: {
+                        logoUrl: rObj.logo || rObj.coverImage || '',
+                        bannerUrl: rObj.coverImage || rObj.bannerImage || '',
+                        description: rObj.description || ''
+                    },
+                    address: rObj.address,
+                    locality: rObj.locality,
+                    city: rObj.city,
+                    state: rObj.state,
+                    pincode: rObj.pincode,
+                    mobile: rObj.phone,
+                    phone: rObj.phone,
+                    email: rObj.email,
+                    minOrder: rObj.minimumOrderValue || 0,
+                    estimatedDeliveryMinutes: rObj.averagePreparationMinutes || 25,
+                    deliveryCharge: 0,
+                    rating: {
+                        average: typeof rObj.rating === 'number' ? rObj.rating : (rObj.rating?.average || 4.7),
+                        totalReviews: rObj.rating?.totalReviews || 12
+                    },
+                    verifiedBadge: rObj.verificationStatus === 'APPROVED',
+                    liveStatus: isOpen ? 'open' : 'closed',
+                    isOpen: isOpen,
+                    computedAvailability: isOpen ? 'open' : 'closed'
+                };
+                res.status(200).json({
+                    success: true,
+                    vendor: vendorData
+                });
+                return;
+            }
             res.status(404).json({ success: false, message: "Vendor profile not found" });
             return;
         }
         const vObj = vendor.toObject();
-        const computedAvailability = VendorMarketplaceService_1.VendorMarketplaceService.calculateAvailability(vObj.businessHours, vObj.liveStatus);
+        // Check if vendor has a linked RestaurantProfile
+        const linkedRestaurant = await RestaurantProfile_1.RestaurantProfile.findOne({
+            $or: [
+                { vendorId: vendor._id },
+                { storeId: vendor._id },
+                { userId: vendor.userId }
+            ]
+        });
+        let computedAvailability = VendorMarketplaceService_1.VendorMarketplaceService.calculateAvailability(vObj.businessHours, vObj.liveStatus);
+        if (vObj.liveStatus === 'open' || (linkedRestaurant && linkedRestaurant.acceptingOrders !== false && linkedRestaurant.operationalStatus !== 'CLOSED')) {
+            computedAvailability = 'open';
+        }
         res.status(200).json({
             success: true,
             vendor: {
                 ...vObj,
+                isOpen: computedAvailability === 'open',
                 computedAvailability
             }
         });

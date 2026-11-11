@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { protect } from '../middleware/auth';
+import vendorWorkspaceRoutes from './vendorWorkspaceRoutes';
 import {
   getVendorProfile,
   updateVendorProfile,
@@ -34,6 +35,7 @@ import {
 } from '../controllers/vendorController';
 
 const router = Router();
+router.use('/workspace', vendorWorkspaceRoutes);
 
 // Public marketplace lookup routes (placed first to avoid wildcard conflicts)
 router.get('/nearby', getNearbyVendors);

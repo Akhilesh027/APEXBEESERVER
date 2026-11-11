@@ -43,11 +43,17 @@ const OrderItemSchema = new mongoose_1.Schema({
     price: { type: Number, required: true },
     categoryId: { type: mongoose_1.Schema.Types.Mixed },
     categoryName: { type: String, default: '' },
+    waterDetails: { type: new mongoose_1.Schema({ volumeLitres: Number, returnable: Boolean, depositAmount: Number, workspaceId: mongoose_1.Schema.Types.ObjectId }, { _id: false }), default: undefined },
     isPreOrder: { type: Boolean, default: false },
     preOrderReleaseDate: { type: Date, default: null },
+    preOrderDeliveryDate: { type: Date, default: null },
+    preOrderTimeSlot: { type: String, default: '' },
+    preOrderCustomNote: { type: String, default: '' },
 });
 const OrderSchema = new mongoose_1.Schema({
     orderNumber: { type: String, required: true, unique: true },
+    businessInquiryId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'BusinessInquiry', unique: true, sparse: true },
+    procurementPurchaseOrderId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'PurchaseOrder', unique: true, sparse: true },
     customerId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: false },
     sellerId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true },
     items: { type: [OrderItemSchema], required: true },
@@ -108,8 +114,10 @@ const OrderSchema = new mongoose_1.Schema({
     },
     deliveryType: {
         type: String,
-        enum: ['Platform', 'Vendor', 'Independent'],
+        enum: ['Platform', 'Vendor', 'Independent', 'self_delivery', 'store_delivery', 'pickup', 'delivery'],
     },
+    isVendorSelfDelivery: { type: Boolean, default: false },
+    isSelfDelivery: { type: Boolean, default: false },
     deliveryAgentId: { type: String },
     customerNotes: { type: String, default: '' },
     returnReason: { type: String },
@@ -158,6 +166,9 @@ const OrderSchema = new mongoose_1.Schema({
     productSharerId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', default: null },
     isPreOrder: { type: Boolean, default: false },
     preOrderReleaseDate: { type: Date, default: null },
+    preOrderDeliveryDate: { type: Date, default: null },
+    preOrderTimeSlot: { type: String, default: '' },
+    preOrderCustomNote: { type: String, default: '' },
 }, { timestamps: true });
 OrderSchema.index({ orderNumber: 1 });
 OrderSchema.index({ customerId: 1 });

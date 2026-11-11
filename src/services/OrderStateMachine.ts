@@ -6,6 +6,9 @@ import { SettlementEngine } from './SettlementEngine';
 import { WalletEngine } from './WalletEngine';
 import { PaymentAttempt } from '../models/PaymentAttempt';
 import { TransactionalOutbox } from './TransactionalOutbox';
+import { BusinessInquiry } from '../models/BusinessOperations';
+import { updateWholesaleOrderLifecycle } from './wholesaleOrderLifecycle';
+import { recordWaterOrderDelivery } from './waterOrderLifecycle';
 
 export type OrderStatus =
   | 'Placed'
@@ -415,6 +418,13 @@ export class OrderStateMachine {
   static isValidTransition(from: string, to: string): boolean {
     if (!from || !to) return false;
     if (from.toLowerCase() === to.toLowerCase()) return true;
+    const toLower = to.toLowerCase();
+    const fromLower = from.toLowerCase();
+    if (['failed to deliver', 'failed_to_deliver', 'failed'].includes(toLower)) {
+      if (!['delivered', 'completed', 'refunded', 'cancelled'].includes(fromLower)) {
+        return true;
+      }
+    }
     const allowed = this.transitions[from] || [];
     if (allowed.includes(to)) return true;
     // Case-insensitive check
@@ -451,6 +461,8 @@ export class OrderStateMachine {
         throw new Error(`Invalid order status transition from ${fromStatus} to ${toStatus}`);
       }
 
+      await updateWholesaleOrderLifecycle(order,String(toStatus),sessionToUse);
+      await recordWaterOrderDelivery(order,String(toStatus),meta.userId,sessionToUse);
       // 1. EXECUTE INVENTORY & COUPON & SETTLEMENT SIDE EFFECTS
       if (['Delivered', 'Confirmed', 'Payment Verified'].includes(toStatus)) {
         // Commit stock and coupon
@@ -485,7 +497,7 @@ export class OrderStateMachine {
       }
 
       // If transition to Refunded, process wallet refund
-      if (toStatus === 'Refunded') {
+      if (toStatus === 'Refunded' && order.paymentStatus !== 'Refunded') {
         const refundAmount = order.orderSummary?.grandTotal || order.totalAmount;
         await WalletEngine.credit(
           order.customerId,
@@ -503,6 +515,11 @@ export class OrderStateMachine {
       }
 
       // 2. SET NEW STATUS AND TIMELINES
+      if (order.businessInquiryId) {
+        const status = String(toStatus).toLowerCase();
+        if (['delivered', 'completed', 'served'].includes(status)) await BusinessInquiry.updateOne({ _id: order.businessInquiryId, orderId: order._id }, { $set: { status: 'completed' } }, { session: sessionToUse });
+        if (['cancelled', 'returned', 'refunded'].includes(status)) await BusinessInquiry.updateOne({ _id: order.businessInquiryId, orderId: order._id }, { $set: { status: 'declined' } }, { session: sessionToUse });
+      }
       order.orderStatus = toStatus as any;
 
       const nowStr = new Date().toISOString();

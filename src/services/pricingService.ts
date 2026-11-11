@@ -2,6 +2,8 @@ import mongoose from 'mongoose';
 import Product from '../models/Product';
 import FoodMenuItem from '../models/FoodMenuItem';
 import { Coupon } from '../models/Coupon';
+import { Vendor } from '../models/Vendor';
+import { enforceOneTimeDairyOrder } from './dairyOrderRules';
 
 export interface CheckoutItemInput {
   productId: string;
@@ -26,6 +28,8 @@ export interface CalculatedCheckout {
     discount: number;
     couponDiscount?: number;
     tax?: number;
+    cgst?: number;
+    sgst?: number;
     total: number;
     grandTotal: number;
   };
@@ -40,7 +44,9 @@ export class PricingService {
    */
   static async calculateCheckoutPricing(
     items: CheckoutItemInput[],
-    couponCode?: string
+    couponCode?: string,
+    session?: mongoose.ClientSession,
+    enforceRetailDairyRules = false
   ): Promise<CalculatedCheckout> {
     if (!items || items.length === 0) {
       throw new Error('Checkout items list cannot be empty.');
@@ -54,7 +60,9 @@ export class PricingService {
     let discount = 0;
 
     const uniqueProductIds = Array.from(new Set(items.map((i) => i.productId)));
-    const products = await Product.find({ _id: { $in: uniqueProductIds } });
+    const productQuery = Product.find({ _id: { $in: uniqueProductIds } });
+    const products = await (session ? productQuery.session(session) : productQuery);
+    if (enforceRetailDairyRules) await enforceOneTimeDairyOrder(products, session);
     const productsMap = new Map(products.map((p) => [p._id.toString(), p]));
 
     let firstSellerId = '';
@@ -125,6 +133,8 @@ export class PricingService {
           platformFeeAmount: itemPlatformFee,
           distributedFrom: distFrom,
           vendorCommissionPercent: foodItem.vendorCommissionPercent || 0,
+          gstRate: 5,
+          gstPricingMode: 'inclusive',
         });
 
         continue;
@@ -197,9 +207,11 @@ export class PricingService {
       packingFee += itemPacking * item.quantity;
       platformFee += itemPlatformFee * item.quantity;
 
+      if(product.waterDetails && !Number.isSafeInteger(item.quantity)) throw new Error('Water cans and bottles require a whole quantity.');
       orderItems.push({
         productId: product._id.toString(),
         name: product.name,
+        ...(product.waterDetails ? {waterDetails:product.waterDetails} : {}),
         price: unitSelling,
         originalPrice: resolvedMrp,
         image: product.thumbnail || product.images?.[0] || '/placeholder.png',
@@ -210,10 +222,36 @@ export class PricingService {
         itemTotal,
         deliveryFee: itemShipping,
         sku: matchedVariant?.sku || product.sku || 'SKU-GEN',
+        variantId: matchedVariant?._id?.toString() || item.variantId || null,
+        variantName: matchedVariant?.name || matchedVariant?.title || matchedVariant?.label || matchedVariant?.variantName || null,
+        selectedVariant: matchedVariant || null,
+        selectedAttributes: (item as any).selectedAttributes || (item as any).attributes || matchedVariant?.attributes || null,
+        attributes: (item as any).attributes || (item as any).selectedAttributes || matchedVariant?.attributes || null,
         categoryId: product.categoryId || null,
         categoryName: (product as any).categoryName || (product as any).category || '',
         orderType: 'RETAIL',
+        gstRate: product.gstRate !== undefined ? Number(product.gstRate) : 0,
+        gstPricingMode: product.gstPricingMode || 'inclusive',
       });
+    }
+
+    // Check Vendor Delivery configuration (if vendor has configured delivery charge)
+    if (firstSellerId && mongoose.Types.ObjectId.isValid(firstSellerId)) {
+      try {
+        const vendor = await Vendor.findOne({ $or: [{ _id: firstSellerId }, { userId: firstSellerId }] });
+        if (vendor) {
+          if (vendor.deliveryMode === 'pickup_only') {
+            shippingFee = 0;
+          } else if (vendor.deliveryMode === 'self_delivery' || vendor.isSelfDelivery) {
+            // If item-level shipping was not specified, apply the vendor's self-delivery charge
+            if (shippingFee === 0 && Number(vendor.deliveryCharge) > 0) {
+              shippingFee = Number(vendor.deliveryCharge);
+            }
+          }
+        }
+      } catch (err) {
+        // Non-blocking fallback
+      }
     }
 
     // Coupon Validation Logic
@@ -267,9 +305,39 @@ export class PricingService {
 
     const mrpDiscount = Math.max(0, totalMrp - subtotal);
     const discountedPrice = Math.max(0, subtotal - discount);
-    const taxableAmount = discountedPrice + packingFee + shippingFee + platformFee;
-    const tax = Math.round(taxableAmount * 0.05);
-    const grandTotal = taxableAmount + tax;
+
+    // GST calculation: item-level based on each product's saved GST rate and pricing mode
+    let totalExclusiveCgst = 0;
+    let totalExclusiveSgst = 0;
+    let totalInclusiveCgst = 0;
+    let totalInclusiveSgst = 0;
+
+    for (const oi of orderItems) {
+      const rate = Number(oi.gstRate || 0);
+      const mode = oi.gstPricingMode || 'inclusive';
+      const itemTot = oi.price * oi.quantity;
+      if (rate > 0) {
+        if (mode === 'exclusive') {
+          const itemTax = (itemTot * rate) / 100;
+          const half = Math.round((itemTax / 2) * 100) / 100;
+          totalExclusiveCgst += half;
+          totalExclusiveSgst += half;
+        } else {
+          const base = itemTot / (1 + rate / 100);
+          const itemTax = itemTot - base;
+          const half = Math.round((itemTax / 2) * 100) / 100;
+          totalInclusiveCgst += half;
+          totalInclusiveSgst += half;
+        }
+      }
+    }
+
+    const exclusiveTax = totalExclusiveCgst + totalExclusiveSgst;
+    const inclusiveTax = totalInclusiveCgst + totalInclusiveSgst;
+    const tax = exclusiveTax + inclusiveTax;
+    const cgst = totalExclusiveCgst + totalInclusiveCgst;
+    const sgst = totalExclusiveSgst + totalInclusiveSgst;
+    const grandTotal = Math.max(0, discountedPrice + packingFee + shippingFee + platformFee + exclusiveTax);
 
     return {
       orderItems,
@@ -286,6 +354,8 @@ export class PricingService {
         discount,
         couponDiscount: discount,
         tax,
+        cgst,
+        sgst,
         total: grandTotal,
         grandTotal,
       },

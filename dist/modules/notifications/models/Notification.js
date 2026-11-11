@@ -44,6 +44,7 @@ const NotificationSchema = new mongoose_1.Schema({
         default: 'User'
     },
     eventCode: { type: String, required: true, index: true },
+    dedupeKey: { type: String, unique: true, sparse: true },
     status: {
         type: String,
         required: true,

@@ -673,29 +673,70 @@ export class SettlementEngine {
     forceOrderId?: string | mongoose.Types.ObjectId,
     adminId?: string | mongoose.Types.ObjectId
   ): Promise<{ releasedTxs: number; releasedSettlements: number }> {
-    const session = sessionOverride || await mongoose.startSession();
     let releasedTxs = 0;
     let releasedSettlements = 0;
 
-    const executeBlock = async (sess: ClientSession) => {
+    const executeBlock = async (sess?: ClientSession) => {
       const now = new Date();
       const notificationsToEmit: Array<{ eventCode: string; payload: any; recipients: any[] }> = [];
 
-      // Determine query filters based on forceOrderId
+      let resolvedOrder: any = null;
+      let orderDbId: mongoose.Types.ObjectId | null = null;
+
+      if (forceOrderId) {
+        if (mongoose.Types.ObjectId.isValid(forceOrderId)) {
+          let q = Order.findById(forceOrderId);
+          if (sess) q = q.session(sess);
+          resolvedOrder = await q;
+        }
+        if (!resolvedOrder) {
+          let q = Order.findOne({ orderNumber: String(forceOrderId) });
+          if (sess) q = q.session(sess);
+          resolvedOrder = await q;
+        }
+        if (resolvedOrder) {
+          orderDbId = resolvedOrder._id;
+        }
+      }
+
+      // If releasing for a specific order and no settlements exist yet, generate them first!
+      if (resolvedOrder && orderDbId) {
+        let qTxs = ReferralTransaction.countDocuments({ orderId: orderDbId });
+        if (sess) qTxs = qTxs.session(sess);
+        const existingTxsCount = await qTxs;
+
+        let qSettlements = CommissionSettlement.countDocuments({ orderId: orderDbId });
+        if (sess) qSettlements = qSettlements.session(sess);
+        const existingSettlementsCount = await qSettlements;
+
+        if (existingTxsCount === 0 && existingSettlementsCount === 0) {
+          console.log(`[SettlementEngine] Generating missing settlements for order ${resolvedOrder.orderNumber} (${orderDbId})...`);
+          await this.createSettlements(resolvedOrder, sess);
+        }
+      }
+
+      // Determine query filters based on forceOrderId / orderDbId
       let txQuery: any = { status: { $in: ["placed", "pending"] }, releaseDate: { $lte: now } };
       let settlementQuery: any = { status: { $in: ["placed", "pending"] }, releaseDate: { $lte: now } };
 
-      if (forceOrderId) {
+      if (orderDbId) {
+        txQuery = { orderId: orderDbId, status: { $in: ["placed", "pending"] } };
+        settlementQuery = { orderId: orderDbId, status: { $in: ["placed", "pending"] } };
+      } else if (forceOrderId) {
         txQuery = { orderId: forceOrderId, status: { $in: ["placed", "pending"] } };
         settlementQuery = { orderId: forceOrderId, status: { $in: ["placed", "pending"] } };
       }
 
       // 1. Process Referral Transactions release
-      const pendingTxs = await ReferralTransaction.find(txQuery).session(sess);
+      let queryTxs = ReferralTransaction.find(txQuery);
+      if (sess) queryTxs = queryTxs.session(sess);
+      const pendingTxs = await queryTxs;
 
       for (const tx of pendingTxs) {
         // Return protection check
-        const order = await Order.findById(tx.orderId).session(sess);
+        const order = (resolvedOrder && String(resolvedOrder._id) === String(tx.orderId))
+          ? resolvedOrder
+          : (sess ? await Order.findById(tx.orderId).session(sess) : await Order.findById(tx.orderId));
         if (!order) continue;
         if (
           ['Returned', 'Cancelled'].includes(order.orderStatus) ||
@@ -711,7 +752,7 @@ export class SettlementEngine {
         await WalletEngine.release(tx.recipientUserId, tx.amount, {
           category: "Referral Bonus",
           source: tx.transactionType,
-          remarks: `Released referral bonus level ${tx.level} for order ${tx.orderId}`,
+          remarks: `Released referral bonus level ${tx.level} for order ${order.orderNumber || tx.orderId}`,
           referenceId: tx._id,
           referenceType: "ORDER",
           releasedTransactionId: txId
@@ -724,7 +765,11 @@ export class SettlementEngine {
         if (adminId) {
           tx.releasedBy = adminId;
         }
-        await tx.save({ session: sess });
+        if (sess) {
+          await tx.save({ session: sess });
+        } else {
+          await tx.save();
+        }
 
         // Queue notification
         notificationsToEmit.push({
@@ -740,18 +785,24 @@ export class SettlementEngine {
 
         // Mark customer as first order qualified if first_order_bonus is released
         if (tx.transactionType === "first_order_bonus" && tx.referredUserId) {
-          await User.findByIdAndUpdate(tx.referredUserId, { firstOrderQualified: true }).session(sess);
+          let qUser = User.findByIdAndUpdate(tx.referredUserId, { firstOrderQualified: true });
+          if (sess) qUser = qUser.session(sess);
+          await qUser;
         }
 
         releasedTxs++;
       }
 
       // 2. Process Commission Settlements release
-      const pendingSettlements = await CommissionSettlement.find(settlementQuery).session(sess);
+      let querySettlements = CommissionSettlement.find(settlementQuery);
+      if (sess) querySettlements = querySettlements.session(sess);
+      const pendingSettlements = await querySettlements;
 
       for (const s of pendingSettlements) {
         // Return protection check
-        const order = await Order.findById(s.orderId).session(sess);
+        const order = (resolvedOrder && String(resolvedOrder._id) === String(s.orderId))
+          ? resolvedOrder
+          : (sess ? await Order.findById(s.orderId).session(sess) : await Order.findById(s.orderId));
         if (!order) continue;
         if (
           ['Returned', 'Cancelled'].includes(order.orderStatus) ||
@@ -774,7 +825,7 @@ export class SettlementEngine {
         await WalletEngine.release(s.recipientId, s.amount, {
           category,
           source: `${s.settlementType}_settlement`,
-          remarks: `Released ${s.settlementType} payout for order ${s.orderId}`,
+          remarks: `Released ${s.settlementType} payout for order ${order.orderNumber || s.orderId}`,
           referenceId: s._id,
           referenceType: "ORDER",
           releasedTransactionId: txId
@@ -788,7 +839,11 @@ export class SettlementEngine {
         if (adminId) {
           s.releasedBy = adminId;
         }
-        await s.save({ session: sess });
+        if (sess) {
+          await s.save({ session: sess });
+        } else {
+          await s.save();
+        }
 
         // Queue notification
         if (s.recipientId && s.recipientId.toString() !== this.COMPANY_ID.toString()) {
@@ -807,17 +862,20 @@ export class SettlementEngine {
       }
 
       // 3. Update the Order details
-      if (forceOrderId && (releasedTxs > 0 || releasedSettlements > 0)) {
-        const order = await Order.findById(forceOrderId).session(sess);
-        if (order && order.commissionReleaseStatus !== 'Released') {
-          order.commissionReleaseStatus = 'Released';
-          order.commissionReleasedAt = now;
-          order.timeline.push({
-            status: 'Commissions Released',
-            date: now.toISOString(),
-            note: 'Commissions successfully released.'
-          });
-          await order.save({ session: sess });
+      if (resolvedOrder) {
+        resolvedOrder.commissionReleaseStatus = 'Released';
+        resolvedOrder.isCommissionReleased = true;
+        resolvedOrder.commissionReleasedAt = now;
+        resolvedOrder.timeline = resolvedOrder.timeline || [];
+        resolvedOrder.timeline.push({
+          status: 'Commissions Released',
+          date: now.toISOString(),
+          note: `Commissions successfully distributed & released by admin (${releasedTxs} referral bonuses, ${releasedSettlements} vendor/franchise settlements).`
+        });
+        if (sess) {
+          await resolvedOrder.save({ session: sess });
+        } else {
+          await resolvedOrder.save();
         }
       }
 
@@ -834,15 +892,26 @@ export class SettlementEngine {
     if (sessionOverride) {
       await executeBlock(sessionOverride);
     } else {
-      session.startTransaction();
+      let session: ClientSession | null = null;
       try {
-        await executeBlock(session);
-        await session.commitTransaction();
-      } catch (err) {
-        await session.abortTransaction();
-        throw err;
-      } finally {
-        await session.endSession();
+        session = await mongoose.startSession();
+        session.startTransaction();
+      } catch (sessErr: any) {
+        session = null;
+      }
+
+      if (session) {
+        try {
+          await executeBlock(session);
+          await session.commitTransaction();
+        } catch (err) {
+          await session.abortTransaction();
+          throw err;
+        } finally {
+          await session.endSession();
+        }
+      } else {
+        await executeBlock(undefined);
       }
     }
 

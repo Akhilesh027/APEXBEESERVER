@@ -4,6 +4,7 @@ import { Inventory } from '../models/Inventory';
 import { Vendor } from '../models/Vendor';
 import { Coupon } from '../models/Coupon';
 import { Wallet } from '../models/Wallet';
+import { enforceOneTimeDairyOrder } from '../services/dairyOrderRules';
 
 interface ExtendedRequest extends Request {
   user?: {
@@ -41,6 +42,8 @@ export const getCheckoutQuote = async (req: ExtendedRequest, res: Response) => {
       if (!storeProduct) {
         return res.status(404).json({ success: false, message: `Product listing not found: ${item.storeProductId}` });
       }
+      try { await enforceOneTimeDairyOrder([storeProduct.productId as any]); }
+      catch (error) { return res.status(409).json({ success: false, message: (error as Error).message }); }
 
       if (!primaryStoreId) {
         primaryStoreId = storeProduct.storeId.toString();
@@ -180,6 +183,8 @@ export const getCheckoutQuote = async (req: ExtendedRequest, res: Response) => {
           subtotal,
           couponDiscount,
           tax,
+          cgst: Math.round((tax / 2) * 100) / 100,
+          sgst: Math.round((tax / 2) * 100) / 100,
           deliveryCharge,
           platformFee,
           walletDeduction,

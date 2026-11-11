@@ -1,0 +1,52 @@
+import assert from 'node:assert/strict';
+import {test} from 'node:test';
+import express from 'express';
+import request from 'supertest';
+import jwt from 'jsonwebtoken';
+import mongoose from 'mongoose';
+import router from '../routes/vendorWorkspaceRoutes';
+import {Vendor} from '../models/Vendor';
+import Category from '../models/Category';
+import Product from '../models/Product';
+import {VendorCategoryAccess} from '../models/VendorCategoryAccess';
+import LocalShopSubscription from '../models/LocalShopSubscription';
+import {BusinessApplication} from '../models/BusinessApplication';
+import {BusinessCalendar} from '../models/BusinessCalendar';
+import {SubscriptionDeliveryTask} from '../models/SubscriptionDeliveryTask';
+import {User} from '../models/User';
+import {ContainerAccount,WaterMovement} from '../models/BusinessOperations';
+import {WaterOperationsService} from '../services/waterOperationsService';
+
+test('water endpoints require approved Water Cans access, scope balances and share recurring plans without dairy settings',async()=>{
+  const user='507f1f77bcf86cd799439011',vendor='507f1f77bcf86cd799439012',parent='507f1f77bcf86cd799439013',water='507f1f77bcf86cd799439014',product='507f1f77bcf86cd799439015',milk='507f1f77bcf86cd799439016',grocery='507f1f77bcf86cd799439017';
+  const originals:Array<[any,string,any]>=[],mock=(target:any,key:string,value:any)=>{originals.push([target,key,target[key]]);target[key]=value;};
+  const query=(value:any)=>{const q:any={select:()=>q,sort:()=>q,limit:()=>q,lean:async()=>value};return q;};
+  const app=express();app.use(express.json());app.use('/workspace',router);
+  const token=jwt.sign({id:user,roles:['vendor']},process.env.JWT_SECRET || 'supersecretjwtkeyforapexbeebusinessoperatingnetwork');
+  const auth=(req:any)=>req.set('Authorization',`Bearer ${token}`);
+  let records=0;
+  try {
+    mock(Vendor,'findOne',async()=>({_id:vendor,userId:user,status:'active',marketplaceStatus:'Approved',categories:['Daily Needs'],approvedSubcategories:['Water Cans','Milk and Dairy','Grocery']}));
+    mock(Category,'find',(filter:any)=>query(filter.parentId?[]:[{_id:parent,name:'Daily Needs',slug:'daily-needs',level:1},...[[water,'Water Cans','water-cans'],[milk,'Milk and Dairy','milk-and-dairy'],[grocery,'Grocery','grocery']].map(([_id,name,slug])=>({_id,name,slug,level:2,parentId:parent}))]));
+    mock(VendorCategoryAccess,'find',()=>query([]));
+    mock(Product,'find',(filter:any)=>{assert.ok(filter.sellerId.$in.includes(vendor));return query([{_id:product,sellerId:vendor,name:'20 L water',waterDetails:{volumeLitres:20,returnable:true,depositAmount:150,workspaceId:water},stock:10}]);});
+    mock(LocalShopSubscription,'find',()=>query([{_id:'sub',productId:product,quantity:2,status:'active',startDate:'2026-11-06',frequency:'daily',skippedDates:[]}]));
+    mock(BusinessApplication,'findOne',()=>query({businessDetails:{dairy:{weeklyHoliday:'Friday'}}}));
+    mock(BusinessCalendar,'find',()=>query([]));mock(SubscriptionDeliveryTask,'find',()=>query([]));mock(User,'find',()=>query([]));
+    mock(ContainerAccount,'find',()=>query([]));mock(WaterMovement,'find',()=>query([]));
+    for(const model of [ContainerAccount,WaterMovement])mock(model,'aggregate',async(pipeline:any[])=>{assert.equal(String(pipeline[0].$match.vendorId),vendor);assert.equal(String(pipeline[0].$match.workspaceId),water);return [];});
+    await request(app).get(`/workspace/water?workspaceId=${water}`).expect(401);
+    await auth(request(app).get(`/workspace/water?workspaceId=${grocery}`)).expect(403);
+    await auth(request(app).get(`/workspace/water/recurring?workspaceId=${milk}`)).expect(403);
+    await auth(request(app).get(`/workspace/dairy?workspaceId=${grocery}`)).expect(403);
+    const catalog=await auth(request(app).get(`/workspace/water?workspaceId=${water}`)).expect(200);
+    assert.equal(catalog.body.products[0].waterDetails.volumeLitres,20);assert.equal(catalog.body.totals.outstanding,0);
+    const plan=await auth(request(app).get(`/workspace/water/recurring?workspaceId=${water}&date=2026-11-06`)).expect(200);
+    assert.equal(plan.body.holiday,false);assert.equal(plan.body.subscriptions[0].litres,40);assert.equal(plan.body.demand[0].litres,40);
+    mock(mongoose,'startSession',async()=>({withTransaction:async(callback:any)=>callback(),endSession:async()=>{}}));
+    mock(WaterOperationsService,'record',async(scope:any)=>{records++;assert.equal(scope.workspace.id,water);return {duplicate:false};});
+    await auth(request(app).post('/workspace/water/movements')).send({workspaceId:grocery}).expect(403);assert.equal(records,0);
+    await auth(request(app).post('/workspace/water/movements')).send({workspaceId:water,requestId:'water-auto-manual-fake'}).expect(400);assert.equal(records,0);
+    await auth(request(app).post('/workspace/water/movements')).send({workspaceId:water,requestId:'manual-movement-reference'}).expect(200);assert.equal(records,1);
+  } finally {originals.reverse().forEach(([target,key,value])=>target[key]=value);}
+});

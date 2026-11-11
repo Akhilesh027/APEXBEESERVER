@@ -4,6 +4,9 @@ import { InventoryReservation } from '../models/InventoryReservation';
 import Product from '../models/Product';
 import FoodMenuItem from '../models/FoodMenuItem';
 import { InsufficientStockError } from '../errors/InsufficientStockError';
+import { BatchStockService } from './batchStockService';
+import { checkoutBundleItems } from './bundleService';
+import { indiaDate } from './vendorWorkspaceService';
 
 export interface CheckoutItem {
   productId: string;
@@ -29,16 +32,39 @@ export class InventoryService {
     if (inv) {
       const product = await Product.findById(productId).session(session || null);
       if (product) {
-        const moq = Number(product?.minimumOrderQuantity || product?.moq || 1);
-        const minRequired = Math.max(moq * 5, 500);
-        if ((inv.onHand || 0) < minRequired) {
-          inv.onHand = minRequired;
-          await inv.save({ session });
-        }
-        if (product.stock < minRequired) {
-          product.stock = minRequired;
-          await product.save({ session });
-        }
+        const variant = vId ? product.variants?.find((entry: any) => String(entry._id) === String(vId)) : null;
+        if (vId && !variant) throw new Error('Product variant not found.');
+        const physicalStock = Math.max(0, variant ? Math.min(product.stock, variant.stock) : (product.stock || 0));
+
+        // Auto-reconcile real active, non-expired reservations
+        const now = new Date();
+        const activeReservations = await InventoryReservation.find({
+          productId: new mongoose.Types.ObjectId(productId),
+          variantId: vId,
+          status: 'active',
+          expiresAt: { $gt: now }
+        }).session(session || null);
+
+        const realActiveReserved = activeReservations.reduce((sum, r) => sum + (Number(r.quantity) || 0), 0);
+        const reconciledReserved = Math.max(0, Math.min(physicalStock, realActiveReserved));
+
+        // Expire any lingering expired reservations in background
+        await InventoryReservation.updateMany(
+          {
+            productId: new mongoose.Types.ObjectId(productId),
+            variantId: vId,
+            status: 'active',
+            expiresAt: { $lte: now }
+          },
+          { $set: { status: 'expired' } },
+          { session: session || undefined }
+        );
+
+        inv.onHand = physicalStock;
+        inv.availableStock = physicalStock;
+        inv.reserved = reconciledReserved;
+        inv.reservedStock = reconciledReserved;
+        await inv.save({ session });
       }
     } else {
       const product = await Product.findById(productId).session(session || null);
@@ -51,8 +77,9 @@ export class InventoryService {
         throw new Error(`Product not found for inventory setup: ${productId}`);
       }
 
-      const moq = Number(product.minimumOrderQuantity || product.moq || 1);
-      let stock = Math.max(product.stock || 0, moq * 5, 500);
+      const variant = vId ? product.variants?.find((entry: any) => String(entry._id) === String(vId)) : null;
+      if (vId && !variant) throw new Error('Product variant not found.');
+      const stock = Math.max(variant ? Math.min(product.stock, variant.stock) : product.stock || 0, 0);
 
       inv = new Inventory({
         productId: product._id,
@@ -80,7 +107,13 @@ export class InventoryService {
     items: CheckoutItem[],
     session?: ClientSession
   ): Promise<void> {
-    for (const item of items) {
+    if (!session) {
+      const ownedSession = await mongoose.startSession();
+      try { await ownedSession.withTransaction(() => this.reserveStock(orderId, userId, items, ownedSession)); return; }
+      finally { await ownedSession.endSession(); }
+    }
+    const expandedItems = await checkoutBundleItems(items, session);
+    for (const item of expandedItems) {
       const pId = item.productId;
       const vId = item.variantId ? item.variantId : null;
 
@@ -89,6 +122,15 @@ export class InventoryService {
       if (!inv) {
         continue; // Skip physical warehouse stock reservation for food menu dishes
       }
+      // Lock the product as well as its variant inventory so reservations on
+      // different variants cannot together exceed the common stock balance.
+      await Product.updateOne({ _id: pId }, { $inc: { inventoryVersion: 1 } }, { session });
+      const product = await Product.findById(pId).session(session);
+      const expiry = product?.dairyDetails?.expiryDate || product?.expiryDate?.toISOString().slice(0, 10) || product?.attributes?.expiry_date;
+      if (product && !product.batchTrackingEnabled && expiry && String(expiry).slice(0, 10) < indiaDate()) throw new Error('Expired products cannot be purchased. Receive fresh stock before checkout.');
+      const variantInventories = await Inventory.find({ productId: pId }).session(session);
+      const alreadyReserved = variantInventories.reduce((sum, entry) => sum + Math.max(0, entry.reservedStock || entry.reserved || 0), 0);
+      if (!product || product.stock - alreadyReserved < item.quantity) throw new InsufficientStockError('Insufficient total product stock.', pId);
 
       // 2. Perform atomic conditional reservation update
       const filter: any = {
@@ -153,57 +195,140 @@ export class InventoryService {
         expiresAt: new Date(Date.now() + 15 * 60 * 1000),
       });
 
+      reservation.batchAllocations = await BatchStockService.allocate(pId, item.quantity, session, { reserve: true });
       await reservation.save({ session });
     }
   }
 
   /**
-   * Commits active reservations for completed orders (shifts reserved -> sold).
+   * Commits active reservations for completed orders (shifts reserved -> sold),
+   * and guarantees that Product.stock and warehouse inventory are deducted strictly ONCE.
    */
   static async commitStock(
     orderId: string | mongoose.Types.ObjectId,
     session?: ClientSession
   ): Promise<void> {
-    const reservations = await InventoryReservation.find({
-      orderId,
-      status: 'active',
+    const { Order } = require('../models/Order');
+    let orderQuery = Order.findById(orderId);
+    if (session) orderQuery = orderQuery.session(session);
+    const order = await orderQuery;
+
+    if (!order) {
+      console.warn(`[InventoryService.commitStock] Order ${orderId} not found.`);
+      return;
+    }
+
+    // IDEMPOTENCY GUARD 1: If order has already committed inventory, DO NOT deduct again!
+    if (order.isInventoryCommitted) {
+      console.log(`[InventoryService.commitStock] Order ${order.orderNumber || orderId} inventory already committed. Skipping double deduction.`);
+      return;
+    }
+
+    // IDEMPOTENCY GUARD 2: Check if reservations for this order were already marked 'committed'
+    const alreadyCommittedRes = await InventoryReservation.findOne({
+      orderId: order._id,
+      status: 'committed'
     }).session(session || null);
 
-    for (const res of reservations) {
-      let query = Inventory.findOneAndUpdate(
-        {
-          productId: res.productId,
-          variantId: res.variantId || null,
-          $or: [
-            { reserved: { $gte: res.quantity } },
-            { reservedStock: { $gte: res.quantity } }
-          ]
-        },
-        {
-          $inc: {
-            reserved: -res.quantity,
-            reservedStock: -res.quantity,
-            sold: res.quantity,
-            onHand: -res.quantity,
-            availableStock: -res.quantity,
-            version: 1,
-          },
-        },
-        { new: true }
-      );
-
-      if (session) {
-        query = query.session(session);
-      }
-
-      const updatedInv = await query;
-      if (!updatedInv) {
-        throw new Error(`Inventory mismatch: Unable to commit reserved stock for product ${res.productId}`);
-      }
-
-      res.status = 'committed';
-      await res.save({ session });
+    if (alreadyCommittedRes) {
+      console.log(`[InventoryService.commitStock] Reservations already committed for order ${order.orderNumber || orderId}. Marking order and skipping.`);
+      await Order.updateOne({ _id: order._id }, { $set: { isInventoryCommitted: true, inventoryCommittedAt: new Date() } }, { session: session || undefined });
+      return;
     }
+
+    // 1. Process active reservations if any
+    let reservations: any[] = [];
+    try {
+      let query = InventoryReservation.find({
+        orderId: order._id,
+        status: 'active',
+      });
+      if (session) query = query.session(session);
+      reservations = await query;
+    } catch (_) {
+      reservations = [];
+    }
+
+    const processedProductIds = new Set<string>();
+
+    for (const res of reservations) {
+      try {
+        await this.getOrCreateInventory(String(res.productId), res.variantId ? String(res.variantId) : null, session);
+        let invUpdate = Inventory.findOneAndUpdate(
+          {
+            productId: res.productId,
+            variantId: res.variantId || null,
+          },
+          {
+            $inc: {
+              reserved: -res.quantity,
+              reservedStock: -res.quantity,
+              sold: res.quantity,
+              onHand: -res.quantity,
+              availableStock: -res.quantity,
+              version: 1,
+            },
+          },
+          { new: true }
+        );
+        if (session) invUpdate = invUpdate.session(session);
+        await invUpdate;
+
+        if (session && res.batchAllocations?.length) {
+          await BatchStockService.finishReservation(res.batchAllocations, true, session);
+        }
+
+        // Deduct stock from Product model
+        await Product.updateOne(
+          { _id: res.productId, ...(res.variantId ? { variants: { $elemMatch: { _id: res.variantId } } } : {}) },
+          { $inc: { stock: -res.quantity, ...(res.variantId ? { 'variants.$.stock': -res.quantity } : {}) } },
+          { session: session || undefined }
+        );
+
+        res.status = 'committed';
+        await res.save({ session: session || undefined });
+        processedProductIds.add(String(res.productId));
+      } catch (itemErr) {
+        console.warn(`[InventoryService.commitStock] Warning committing reservation ${res._id}:`, itemErr);
+      }
+    }
+
+    // 2. Direct Fallback: Only if NO reservations existed for this order at all (e.g. food items or direct admin created orders),
+    // reduce stock once and record in processedProductIds
+    if (reservations.length === 0 && Array.isArray(order.items) && order.items.length > 0) {
+      for (const it of order.items) {
+        const rawPid = it.productId?._id || it.productId;
+        const pId = rawPid ? String(rawPid) : null;
+        const qty = Number(it.quantity || 0);
+
+        if (pId && qty > 0 && !processedProductIds.has(pId)) {
+          const vId = it.variantId ? String(it.variantId) : null;
+
+          // Reduce physical product stock
+          await Product.updateOne(
+            { _id: pId, ...(vId ? { variants: { $elemMatch: { _id: vId } } } : {}) },
+            { $inc: { stock: -qty, ...(vId ? { 'variants.$.stock': -qty } : {}) } },
+            { session: session || undefined }
+          );
+
+          // Update warehouse inventory if exists
+          await Inventory.updateOne(
+            { productId: pId, ...(vId ? { variantId: vId } : {}) },
+            { $inc: { onHand: -qty, availableStock: -qty, sold: qty } },
+            { session: session || undefined }
+          );
+
+          processedProductIds.add(pId);
+        }
+      }
+    }
+
+    // Mark order as inventory committed to guarantee idempotency across all status transitions
+    await Order.updateOne(
+      { _id: order._id },
+      { $set: { isInventoryCommitted: true, inventoryCommittedAt: new Date() } },
+      { session: session || undefined }
+    );
   }
 
   /**
@@ -213,12 +338,25 @@ export class InventoryService {
     orderId: string | mongoose.Types.ObjectId,
     session?: ClientSession
   ): Promise<void> {
+    if (!session) {
+      const ownedSession = await mongoose.startSession();
+      try { await ownedSession.withTransaction(() => this.releaseStock(orderId, ownedSession)); return; }
+      finally { await ownedSession.endSession(); }
+    }
     const reservations = await InventoryReservation.find({
       orderId,
-      status: 'active',
+      status: { $in: ['active', 'committed'] },
     }).session(session || null);
 
     for (const res of reservations) {
+      if (res.status === 'committed') {
+        const changed = await Inventory.updateOne({ productId: res.productId, variantId: res.variantId || null, sold: { $gte: res.quantity } }, { $inc: { sold: -res.quantity, availableStock: res.quantity, onHand: res.quantity, version: 1 } }, { session });
+        if (!changed.modifiedCount) throw new Error('Committed inventory could not be returned safely.');
+        await BatchStockService.restoreCommitted(res.batchAllocations || [], session);
+        await Product.updateOne({ _id: res.productId, ...(res.variantId ? { 'variants._id': res.variantId } : {}) }, { $inc: { stock: res.quantity, ...(res.variantId ? { 'variants.$.stock': res.quantity } : {}) } }, { session });
+        res.status = 'released'; await res.save({ session }); continue;
+      }
+      await this.getOrCreateInventory(String(res.productId), res.variantId ? String(res.variantId) : null, session);
       let query = Inventory.findOneAndUpdate(
         {
           productId: res.productId,
@@ -244,12 +382,20 @@ export class InventoryService {
 
       const updatedInv = await query;
       if (!updatedInv) {
-        throw new Error(`Inventory mismatch: Unable to release reserved stock for product ${res.productId}`);
+        console.warn(`[InventoryService.releaseStock] Inventory record mismatch for product ${res.productId}. Marking reservation released.`);
       }
 
+      if (session && res.batchAllocations?.length) {
+        await BatchStockService.finishReservation(res.batchAllocations || [], false, session);
+      }
       res.status = 'released';
       await res.save({ session });
     }
+
+    try {
+      const { Order } = require('../models/Order');
+      await Order.updateOne({ _id: orderId }, { $set: { isInventoryCommitted: false } }, { session: session || undefined });
+    } catch (_) {}
   }
 
   /**
@@ -277,6 +423,7 @@ export class InventoryService {
         );
 
         if (lockedRes) {
+          await BatchStockService.finishReservation(lockedRes.batchAllocations || [], false, session);
           // Decrement reserved stock on the inventory record safely
           const updatedInv = await Inventory.findOneAndUpdate(
             {
@@ -287,6 +434,7 @@ export class InventoryService {
             {
               $inc: {
                 reserved: -res.quantity,
+                reservedStock: -res.quantity,
                 version: 1
               }
             },

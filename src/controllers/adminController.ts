@@ -2,6 +2,10 @@ import { Request, Response } from "express";
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 import { BusinessApplication } from "../models/BusinessApplication";
+import { applicationDecisions, approvedApplicationSubcategories } from '../services/applicationSubcategoryDecisions';
+import { mergeVendorBusinessAccess } from '../services/additionalVendorAccess';
+import { CategoryGovernanceInputError, saveVendorCategoryAccess } from '../services/vendorCategoryGovernance';
+import { activateAdditionalVendorAccess } from '../services/additionalVendorActivation';
 import { RestaurantProfile } from "../models/RestaurantProfile";
 import { FoodMenuCategory } from "../models/FoodMenuCategory";
 import { FoodMenuItem } from "../models/FoodMenuItem";
@@ -815,7 +819,7 @@ export const updateApplicationDetails = async (
       }
     }
     if (updates.subCategory) (app as any).subCategory = updates.subCategory;
-    if (Array.isArray(updates.approvedSubcategories)) (app as any).approvedSubcategories = updates.approvedSubcategories;
+    if (Array.isArray(updates.approvedSubcategories) && !(app.onboardingVersion === 2 && app.subcategoryDecisions?.length)) (app as any).approvedSubcategories = updates.approvedSubcategories;
 
     await app.save();
 
@@ -886,6 +890,18 @@ export const approveApplication = async (
       return;
     }
 
+    if (app.onboardingVersion === 2 && !['pending', 'pending_approval', 'pre_approved', 'rejected'].includes(app.status)) {
+      res.status(409).json({ message: 'The applicant must resubmit requested corrections before initial approval.' });
+      return;
+    }
+    let reviewedSubcategories: string[] | undefined;
+    if (app.onboardingVersion === 2 && app.applicationType === 'vendor') {
+      reviewedSubcategories = approvedApplicationSubcategories(app.subcategoryDecisions?.length ? app : {
+        requestedSubcategories: app.requestedSubcategories,
+        approvedSubcategories: Array.isArray(approvedSubcategories) ? approvedSubcategories : app.approvedSubcategories,
+      });
+      if (!reviewedSubcategories.length) { res.status(400).json({ message: 'Approve at least one requested subcategory before document verification.' }); return; }
+    }
     if (adminRemarks !== undefined) app.adminRemarks = adminRemarks;
     if (businessName !== undefined) app.businessName = businessName;
     if (ownerName !== undefined) app.ownerName = ownerName;
@@ -922,6 +938,10 @@ export const approveApplication = async (
     }
     if (Array.isArray(approvedSubcategories)) {
       (app as any).approvedSubcategories = approvedSubcategories;
+    }
+    if (reviewedSubcategories) {
+      app.approvedSubcategories = reviewedSubcategories;
+      if (!app.subcategoryDecisions?.length) app.subcategoryDecisions = applicationDecisions(app);
     }
     app.status = "pre_approved";
 
@@ -1027,6 +1047,32 @@ export const verifyKycApplication = async (
       return;
     }
 
+    // New onboarding applications must complete initial approval and document submission first.
+    if (app.onboardingVersion === 2 && (!['under_review', 'kyc_submitted'].includes(app.status) || app.kycStatus !== 'pending')) {
+      res.status(400).json({ message: 'Initial approval and document submission are required before final verification.' });
+      return;
+    }
+    const reviewedSubcategories = app.onboardingVersion === 2 && app.applicationType === 'vendor' ? approvedApplicationSubcategories(app) : undefined;
+    if (reviewedSubcategories && !reviewedSubcategories.length) { res.status(400).json({ message: 'No approved subcategory is eligible for activation.' }); return; }
+    const reviewedCategoryRows = reviewedSubcategories ? await Category.find({
+      _id: { $in: (app.categorySelections || []).flatMap(selection => selection.subcategoryIds) },
+      level: 2, isActive: true, name: { $in: reviewedSubcategories },
+    }).select('_id parentId name').lean() : undefined;
+    if (reviewedCategoryRows && reviewedCategoryRows.length !== reviewedSubcategories!.length) {
+      res.status(400).json({ message: 'An approved subcategory is unavailable or no longer matches the application. Reopen application review.' }); return;
+    }
+    const reviewedParents = reviewedCategoryRows ? await Category.find({
+      _id: { $in: reviewedCategoryRows.map(child => child.parentId) }, level: 1, isActive: true,
+    }).select('_id name').lean() : undefined;
+    if (reviewedParents && reviewedCategoryRows?.some(child => !reviewedParents.some(parent => String(parent._id) === String(child.parentId)))) {
+      res.status(400).json({ message: 'An approved category is no longer available. Reopen application review.' }); return;
+    }
+
+    if (app.isAdditionalCategoryApplication && app.applicationType === 'vendor') {
+      const activated = await activateAdditionalVendorAccess(app._id);
+      res.status(200).json({ success: true, message: 'Reviewed additional business access activated. Existing store details and access were preserved.', application: activated });
+      return;
+    }
     // Apply any edited field overrides from req.body
     if (businessName !== undefined) app.businessName = businessName;
     if (ownerName !== undefined) app.ownerName = ownerName;
@@ -1064,6 +1110,10 @@ export const verifyKycApplication = async (
     }
     if (Array.isArray(approvedSubcategories) && approvedSubcategories.length > 0) {
       (app as any).approvedSubcategories = approvedSubcategories;
+    }
+    if (reviewedSubcategories) {
+      app.approvedSubcategories = reviewedSubcategories;
+      app.subCategory = reviewedSubcategories[0];
     }
     if (Array.isArray(requestedCapabilities) && requestedCapabilities.length > 0) {
       (app as any).requestedCapabilities = requestedCapabilities;
@@ -1258,7 +1308,7 @@ export const verifyKycApplication = async (
               .filter(Boolean)
             : [];
 
-      const vendorCategories = (app as any).categories && (app as any).categories.length > 0
+      const vendorCategories = reviewedParents ? reviewedParents.map(parent => parent.name) : (app as any).categories && (app as any).categories.length > 0
         ? (app as any).categories
         : (assignedCat ? String(assignedCat).split(',').map((s: string) => s.trim()).filter(Boolean) : []);
 
@@ -1267,7 +1317,7 @@ export const verifyKycApplication = async (
       for (const catName of vendorCategories) {
         try {
           const safeCat = escapeRegex(catName.toLowerCase().trim());
-          const matched = await Category.findOne({
+          const matched = reviewedParents ? reviewedParents.find(parent => parent.name === catName) : await Category.findOne({
             level: 1,
             $or: [
               { slug: { $regex: new RegExp(`^${safeCat}$`, "i") } },
@@ -1313,7 +1363,26 @@ export const verifyKycApplication = async (
       } else {
         updateObj.$unset = { location: "" };
       }
+      if (app.businessInformation?.openingTime && app.businessInformation?.closingTime && app.businessInformation.serviceRadiusKm !== undefined) {
+        const information = app.businessInformation;
+        updateObj.$set.deliveryRadiusKm = information.serviceRadiusKm;
+        updateObj.$set.liveStatus = information.acceptsOrders ? 'open' : 'closed';
+        updateObj.$set.gallery = information.shopPhotos || [];
+        updateObj.$set.fssaiNumber = app.fssaiNumber || '';
+        if (information.logoUrl) updateObj.$set['storeDesign.logoUrl'] = information.logoUrl;
+        updateObj.$set.businessHours = Object.fromEntries(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map(day => [day, {
+          open: information.openingTime, close: information.closingTime,
+          enabled: app.businessDetails?.dairy?.weeklyHoliday?.toLowerCase() !== day,
+        }]));
+      }
 
+      if (app.isAdditionalCategoryApplication && existingVendor) {
+        const merged = mergeVendorBusinessAccess(existingVendor, updateObj.$set);
+        // A category extension grants reviewed access without replacing the
+        // established store's profile, opening hours, bank records or location.
+        updateObj.$set = Object.fromEntries(['category', 'primaryCategory', 'categories', 'allowedCategories', 'subCategory', 'approvedSubcategories', 'subCategories'].map(key => [key, merged[key]]));
+        delete updateObj.$unset;
+      }
       const savedVendor = await Vendor.findOneAndUpdate(
         { userId: user._id },
         updateObj,
@@ -1337,6 +1406,9 @@ export const verifyKycApplication = async (
               : ["pooja_store", "general_store", "retail_store", "shopping_store"];
 
           for (const parentCat of parentsToGrant) {
+            const previousAccess = app.isAdditionalCategoryApplication ? await VendorCategoryAccess.findOne({ vendorId: savedVendor._id, parentCategoryId: parentCat._id }) : null;
+            const grantedIds = reviewedCategoryRows ? reviewedCategoryRows.filter(child => String(child.parentId) === String(parentCat._id)).map(child => child._id) : [];
+            const mergedIds = [...new Map([...(previousAccess && ['approved', 'partially_approved'].includes(previousAccess.status) ? previousAccess.approvedSubcategoryIds || [] : []), ...grantedIds].map(id => [String(id), id])).values()];
             await VendorCategoryAccess.findOneAndUpdate(
               {
                 vendorId: savedVendor._id,
@@ -1347,6 +1419,7 @@ export const verifyKycApplication = async (
                   vendorId: savedVendor._id,
                   storeId: savedVendor._id,
                   parentCategoryId: parentCat._id,
+                  ...(reviewedCategoryRows ? { approvedSubcategoryIds: mergedIds } : {}),
                   requestedCapabilities: reqCaps,
                   approvedCapabilities: reqCaps,
                   status: "approved",
@@ -1370,13 +1443,13 @@ export const verifyKycApplication = async (
         }
 
         try {
-          (user as any).categories = vendorCategories.length > 0 ? vendorCategories : [assignedCat];
-          (user as any).primaryCategory = vendorCategories[0] || assignedCat;
-          (user as any).allowedCategories = allowedCategoryIds;
+          (user as any).categories = savedVendor.categories;
+          (user as any).primaryCategory = savedVendor.primaryCategory;
+          (user as any).allowedCategories = savedVendor.allowedCategories;
           if (user.sellerProfile) {
-            (user.sellerProfile as any).categories = vendorCategories.length > 0 ? vendorCategories : [assignedCat];
-            (user.sellerProfile as any).primaryCategory = vendorCategories[0] || assignedCat;
-            (user.sellerProfile as any).allowedCategories = allowedCategoryIds;
+            (user.sellerProfile as any).categories = savedVendor.categories;
+            (user.sellerProfile as any).primaryCategory = savedVendor.primaryCategory;
+            (user.sellerProfile as any).allowedCategories = savedVendor.allowedCategories;
           }
           await user.save();
         } catch (uErr) {
@@ -1671,8 +1744,21 @@ export const verifyKycApplication = async (
           pincode: app.pincode || (user as any)?.pincode || '',
           storeType: 'restaurant',
           categories: ['Food & Dining'],
+          primaryCategory: 'Food & Dining',
+          category: 'Food & Dining',
+          subCategory: app.subCategory || app.foodBusinessType || 'Restaurants',
+          approvedSubcategories: [app.subCategory || app.foodBusinessType || 'Restaurants'],
+          subCategories: [app.subCategory || app.foodBusinessType || 'Restaurants'],
           marketplaceStatus: 'Approved',
         });
+        await vendor.save();
+      } else {
+        vendor.categories = ['Food & Dining'];
+        vendor.primaryCategory = 'Food & Dining';
+        vendor.category = 'Food & Dining';
+        vendor.subCategory = app.subCategory || app.foodBusinessType || vendor.subCategory || 'Restaurants';
+        vendor.approvedSubcategories = [vendor.subCategory];
+        vendor.subCategories = [vendor.subCategory];
         await vendor.save();
       }
 
@@ -1685,7 +1771,9 @@ export const verifyKycApplication = async (
 
         const normalizeBusinessType = (bt?: string): any => {
           const raw = String(bt || '').toUpperCase().trim();
-          if (raw === 'CAFE_BAKERY' || raw === 'CAFE' || raw === 'BAKERY') return 'CAFE_BAKERY_BEVERAGES';
+          if (raw === 'CAFE_BAKERY' || raw === 'CAFE' || raw === 'BAKERY' || raw.includes('CAFE') || raw.includes('BAKERY') || raw.includes('BEVERAGE')) return 'CAFE_BAKERY_BEVERAGES';
+          if (raw.includes('STREET') || raw.includes('CHAAT') || raw.includes('FAST FOOD') || raw.includes('SNACK') || raw.includes('TIFFIN')) return 'STREET_FOOD';
+          if (raw.includes('SWEET') || raw.includes('DESSERT') || raw.includes('ICE CREAM')) return 'SWEETS_DESSERTS';
           if (['RESTAURANT', 'STREET_FOOD', 'CAFE_BAKERY_BEVERAGES', 'CAFE_BAKERY', 'SWEETS_DESSERTS'].includes(raw)) return raw;
           return 'RESTAURANT';
         };
@@ -1728,6 +1816,7 @@ export const verifyKycApplication = async (
     }
 
     app.status = "verified";
+    app.kycStatus = 'verified';
 
     await app.save();
 
@@ -2367,15 +2456,15 @@ export const updateAdminVendorProfile = async (
     if (updates.deliveryCharge !== undefined) vendor.deliveryCharge = Number(updates.deliveryCharge);
     if (updates.liveStatus !== undefined) vendor.liveStatus = updates.liveStatus;
 
-    // Category and subcategories
-    if (updates.category !== undefined) vendor.category = updates.category;
-    if (updates.primaryCategory !== undefined) vendor.primaryCategory = updates.primaryCategory;
-    if (updates.subCategory !== undefined) vendor.subCategory = updates.subCategory;
-    if (Array.isArray(updates.approvedSubcategories)) {
-      vendor.approvedSubcategories = updates.approvedSubcategories;
-      vendor.subCategories = updates.approvedSubcategories;
-    }
-    if (Array.isArray(updates.categories)) vendor.categories = updates.categories;
+    const oldCategories = vendor.categories?.length ? vendor.categories : [vendor.category].filter(Boolean);
+    const requestedCategories = Array.isArray(updates.categories) && updates.categories.length
+      ? updates.categories : updates.category !== undefined ? String(updates.category).split(',').map(value => value.trim()).filter(Boolean) : oldCategories;
+    const categoriesChanged = JSON.stringify(requestedCategories) !== JSON.stringify(oldCategories);
+    const mainSubcategoryChanged = updates.subCategory !== undefined && String(updates.subCategory).trim() !== String(vendor.subCategory || '').trim();
+    const primaryChanged = updates.primaryCategory !== undefined && updates.primaryCategory !== vendor.primaryCategory;
+    const explicitSubcategories = Array.isArray(updates.approvedSubcategories);
+    const categoryChanged = categoriesChanged || mainSubcategoryChanged || primaryChanged || explicitSubcategories;
+    const preserveAccess = explicitSubcategories ? undefined : { removeSubcategory: mainSubcategoryChanged ? vendor.subCategory : undefined };
 
     // Status and governance
     if (updates.status !== undefined) vendor.status = updates.status;
@@ -2413,7 +2502,15 @@ export const updateAdminVendorProfile = async (
       };
     }
 
-    const saved = await vendor.save();
+    let saved = vendor;
+    if (categoryChanged) {
+      const categoryBody = {
+        categories: requestedCategories,
+        primaryCategory: updates.primaryCategory || vendor.primaryCategory,
+        approvedSubcategories: explicitSubcategories ? updates.approvedSubcategories : mainSubcategoryChanged && updates.subCategory ? [updates.subCategory] : [],
+      };
+      await mongoose.connection.transaction(session => saveVendorCategoryAccess(vendor, categoryBody, session, preserveAccess));
+    } else saved = await vendor.save();
 
     // Synchronize with User account
     try {
@@ -2472,6 +2569,10 @@ export const updateAdminVendorProfile = async (
       vendor: saved,
     });
   } catch (error: any) {
+    if (error instanceof CategoryGovernanceInputError) {
+      res.status(400).json({ success: false, message: error.message });
+      return;
+    }
     console.error("Update admin vendor profile error:", error);
     res.status(500).json({
       success: false,
@@ -4078,177 +4179,36 @@ export const getMetrics = async (req: Request, res: Response): Promise<void> => 
 };
 
 export const updateVendorCategoryGovernance = async (req: Request, res: Response): Promise<void> => {
+  let session: mongoose.ClientSession | undefined;
   try {
     const { userId } = req.params;
-    const { primaryCategory, category, categories, allowedCategories, subCategory, approvedSubcategories } = req.body;
-
-    const rawCats = categories;
-    const catList = Array.isArray(rawCats) && rawCats.length > 0
-      ? rawCats.flatMap((s: any) => typeof s === 'string' && s.includes(',') ? s.split(',').map((x: string) => x.trim()) : String(s).trim()).filter(Boolean)
-      : (primaryCategory || category)
-        ? String(primaryCategory || category).split(',').map((s: string) => s.trim()).filter(Boolean)
-        : [];
-
-    const app = await BusinessApplication.findOne({ userId });
-    if (app) {
-      if (catList.length > 0) {
-        app.categories = catList;
-        app.primaryCategory = primaryCategory || catList[0];
-        app.category = catList.join(', ');
-      } else if (primaryCategory) {
-        app.primaryCategory = primaryCategory;
-        app.category = primaryCategory;
-      }
-      if (subCategory) app.subCategory = subCategory;
-      if (Array.isArray(approvedSubcategories)) app.approvedSubcategories = approvedSubcategories;
-      await app.save();
+    if (!mongoose.isValidObjectId(userId)) {
+      res.status(400).json({ success: false, message: 'Choose a valid vendor account.' });
+      return;
     }
-
-    const vendor = await Vendor.findOne({ userId });
-    if (vendor) {
-      const allowedCategoryIds: any[] = [];
-
-      // If allowedCategories array passed from frontend, pre-populate valid ObjectIds
-      if (Array.isArray(allowedCategories) && allowedCategories.length > 0) {
-        for (const acId of allowedCategories) {
-          const idStr = String(typeof acId === 'object' ? (acId._id || acId) : acId).trim();
-          if (mongoose.Types.ObjectId.isValid(idStr) && !allowedCategoryIds.some(id => String(id) === idStr)) {
-            allowedCategoryIds.push(new mongoose.Types.ObjectId(idStr));
-          }
-        }
+    session = await mongoose.startSession();
+    const data = await session.withTransaction(async () => {
+      const vendor = await Vendor.findOne({ userId }).session(session!);
+      if (!vendor) return null;
+      const categoryFields = await saveVendorCategoryAccess(vendor, req.body, session!);
+      const app = await BusinessApplication.findOne({ userId, applicationType: 'vendor', isAdditionalCategoryApplication: { $ne: true } }).sort({ createdAt: -1 }).session(session!);
+      if (app) {
+        Object.assign(app, categoryFields);
+        await app.save({ session });
       }
-
-      if (catList.length > 0) {
-        vendor.categories = catList;
-        vendor.primaryCategory = primaryCategory || catList[0];
-        vendor.category = catList.join(', ');
-
-        for (const catName of catList) {
-          const safeCat = escapeRegex(catName.toLowerCase().trim());
-          const parentCat = await Category.findOne({
-            level: 1,
-            $or: [
-              { slug: { $regex: new RegExp(`^${safeCat}$`, 'i') } },
-              { name: { $regex: new RegExp(`^${safeCat}$`, 'i') } },
-              { slug: { $regex: new RegExp(safeCat, 'i') } },
-              { name: { $regex: new RegExp(safeCat, 'i') } },
-            ],
-          });
-          if (parentCat) {
-            if (!allowedCategoryIds.some(id => String(id) === String(parentCat._id))) {
-              allowedCategoryIds.push(parentCat._id);
-            }
-            await VendorCategoryAccess.findOneAndUpdate(
-              { vendorId: vendor._id, parentCategoryId: parentCat._id },
-              {
-                $set: {
-                  vendorId: vendor._id,
-                  storeId: vendor._id,
-                  parentCategoryId: parentCat._id,
-                  status: 'approved',
-                  approvedCapabilities: ['general_store', 'retail_store', 'shopping_store', 'pooja_store'],
-                  approvedItemTypes: ['product', 'service'],
-                  restrictions: {
-                    canCreateProducts: true,
-                    canCreateServices: true,
-                    canJoinFestivalCombos: true,
-                    canAcceptBulkOrders: true,
-                    canSellWholesale: true,
-                    canOfferSubscriptions: true,
-                  },
-                  approvedAt: new Date(),
-                },
-              },
-              { upsert: true, new: true }
-            );
-          }
-        }
-        if (allowedCategoryIds.length > 0) {
-          vendor.allowedCategories = allowedCategoryIds;
-          // Revoke any category access not in allowedCategoryIds
-          await VendorCategoryAccess.updateMany(
-            {
-              $or: [{ vendorId: vendor._id }, { storeId: vendor._id }],
-              parentCategoryId: { $nin: allowedCategoryIds }
-            },
-            { $set: { status: 'rejected' } }
-          );
-        }
-      } else if (primaryCategory) {
-        vendor.primaryCategory = primaryCategory;
-        vendor.category = primaryCategory;
-        vendor.categories = [primaryCategory];
-
-        const safeCat = escapeRegex(primaryCategory.toLowerCase().trim());
-        const parentCat = await Category.findOne({
-          level: 1,
-          $or: [
-            { slug: { $regex: new RegExp(safeCat, 'i') } },
-            { name: { $regex: new RegExp(safeCat, 'i') } },
-          ],
-        });
-        if (parentCat) {
-          await VendorCategoryAccess.findOneAndUpdate(
-            { vendorId: vendor._id, parentCategoryId: parentCat._id },
-            {
-              $set: {
-                vendorId: vendor._id,
-                storeId: vendor._id,
-                parentCategoryId: parentCat._id,
-                status: 'approved',
-                approvedCapabilities: ['general_store', 'retail_store', 'shopping_store', 'pooja_store'],
-                approvedItemTypes: ['product', 'service'],
-                restrictions: {
-                  canCreateProducts: true,
-                  canCreateServices: true,
-                  canJoinFestivalCombos: true,
-                  canAcceptBulkOrders: true,
-                  canSellWholesale: true,
-                  canOfferSubscriptions: true,
-                },
-                approvedAt: new Date(),
-              },
-            },
-            { upsert: true, new: true }
-          );
-        }
-      }
-      if (subCategory) {
-        vendor.subCategory = subCategory;
-      }
-      if (Array.isArray(approvedSubcategories)) {
-        vendor.approvedSubcategories = approvedSubcategories;
-        vendor.subCategories = approvedSubcategories;
-      }
-      await vendor.save();
-
-      // Synchronize with User account
-      try {
-        const userDoc = await User.findById(userId);
-        if (userDoc) {
-          (userDoc as any).categories = catList.length > 0 ? catList : [primaryCategory].filter(Boolean);
-          (userDoc as any).primaryCategory = primaryCategory || catList[0] || '';
-          (userDoc as any).allowedCategories = allowedCategoryIds;
-          if (userDoc.sellerProfile) {
-            (userDoc.sellerProfile as any).categories = catList.length > 0 ? catList : [primaryCategory].filter(Boolean);
-            (userDoc.sellerProfile as any).primaryCategory = primaryCategory || catList[0] || '';
-            (userDoc.sellerProfile as any).allowedCategories = allowedCategoryIds;
-          }
-          await userDoc.save();
-        }
-      } catch (userErr) {
-        console.warn('Syncing User categories error:', userErr);
-      }
-    }
-
-    res.status(200).json({
-      success: true,
-      message: 'Vendor category governance updated successfully',
-      data: { primaryCategory, categories: catList, subCategory, approvedSubcategories }
+      return categoryFields;
     });
-  } catch (error: any) {
+    if (!data) { res.status(404).json({ success: false, message: 'Vendor account not found.' }); return; }
+    res.json({ success: true, message: 'Vendor category governance updated successfully', data });
+  } catch (error) {
+    if (error instanceof CategoryGovernanceInputError) {
+      res.status(400).json({ success: false, message: error.message });
+      return;
+    }
     console.error('Update vendor category governance error:', error);
-    res.status(500).json({ success: false, message: 'Failed to update vendor category governance', error: error.message });
+    res.status(500).json({ success: false, message: 'Failed to update vendor category governance' });
+  } finally {
+    if (session) await session.endSession();
   }
 };
 

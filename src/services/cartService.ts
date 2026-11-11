@@ -13,14 +13,27 @@ export class CartService {
     size = 'default',
     preOrderDeliveryDate: string | null = null,
     preOrderTimeSlot = '',
-    preOrderCustomNote = ''
+    preOrderCustomNote = '',
+    extraData: {
+      variantId?: string;
+      variantName?: string;
+      selectedVariant?: any;
+      selectedAttributes?: any;
+      sku?: string;
+    } = {}
   ): Promise<any> {
+    const variantId = extraData.variantId || null;
+    const matchQuery: any = { productId, color, size, preOrderDeliveryDate };
+    if (variantId) {
+      matchQuery.variantId = variantId;
+    }
+
     // 1. Try to increment quantity of existing matching item atomically
     let cart = await Cart.findOneAndUpdate(
       {
         userId,
         items: {
-          $elemMatch: { productId, color, size, preOrderDeliveryDate },
+          $elemMatch: matchQuery,
         },
       },
       {
@@ -44,7 +57,7 @@ export class CartService {
           userId,
           items: {
             $not: {
-              $elemMatch: { productId, color, size, preOrderDeliveryDate },
+              $elemMatch: matchQuery,
             },
           },
         },
@@ -55,6 +68,11 @@ export class CartService {
               quantity,
               color,
               size,
+              variantId: extraData.variantId || null,
+              variantName: extraData.variantName || '',
+              selectedVariant: extraData.selectedVariant || null,
+              selectedAttributes: extraData.selectedAttributes || {},
+              sku: extraData.sku || '',
               preOrderDeliveryDate,
               preOrderTimeSlot,
               preOrderCustomNote,
@@ -70,7 +88,7 @@ export class CartService {
           {
             userId,
             items: {
-              $elemMatch: { productId, color, size },
+              $elemMatch: matchQuery,
             },
           },
           {

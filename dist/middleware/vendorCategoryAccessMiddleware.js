@@ -8,6 +8,7 @@ const Vendor_1 = require("../models/Vendor");
 const VendorCategoryAccess_1 = __importDefault(require("../models/VendorCategoryAccess"));
 const Category_1 = __importDefault(require("../models/Category"));
 const schemaResolutionService_1 = require("../services/devotional/schemaResolutionService");
+const vendorWorkspaceService_1 = require("../services/vendorWorkspaceService");
 const assertVendorCategoryAccess = async (req, res, next) => {
     try {
         if (!req.user) {
@@ -46,24 +47,39 @@ const assertVendorCategoryAccess = async (req, res, next) => {
         }
         // Find parent category ID (Level 1)
         let parentCatId = categoryDoc.parentId;
+        let selectedSubcategory = categoryDoc.level === 2 ? categoryDoc : null;
         if (categoryDoc.level === 3 && categoryDoc.parentId) {
             const parentSub = await Category_1.default.findById(categoryDoc.parentId);
-            if (parentSub)
+            if (parentSub) {
                 parentCatId = parentSub.parentId;
+                selectedSubcategory = parentSub;
+            }
         }
         if (!parentCatId && categoryDoc.level === 1) {
             parentCatId = categoryDoc._id;
         }
         // Query VendorCategoryAccess record
+        const parentCategory = categoryDoc.level === 1 ? categoryDoc : await Category_1.default.findById(parentCatId);
+        if ((categoryId && String(categoryId) !== String(parentCatId)) ||
+            (subCategoryId && String(subCategoryId) !== String(selectedSubcategory?._id))) {
+            res.status(400).json({ success: false, message: 'Choose a subcategory and child category from the same catalog branch.' });
+            return;
+        }
+        const devotional = parentCategory?.slug === 'devotional';
         let access = await VendorCategoryAccess_1.default.findOne({
             vendorId: vendor._id,
             parentCategoryId: parentCatId,
             status: { $in: ['approved', 'partially_approved'] },
         });
+        if (devotional && (!access || !selectedSubcategory || !categoryDoc.isActive ||
+            String(parentCategory._id) !== String(categoryId) || String(selectedSubcategory._id) !== String(subCategoryId) ||
+            !(0, vendorWorkspaceService_1.permittedSubcategories)(vendor, [parentCategory, selectedSubcategory], [access]).length)) {
+            res.status(403).json({ success: false, message: 'Admin approval for this Devotional subcategory is required.' });
+            return;
+        }
         if (!access) {
             // Auto-approve category vertical access for active, approved vendors
-            const parentCatDoc = categoryDoc.level === 1 ? categoryDoc : (parentCatId ? await Category_1.default.findById(parentCatId) : categoryDoc);
-            const parentIdToApprove = parentCatDoc?._id || categoryDoc._id;
+            const parentIdToApprove = parentCategory?._id || categoryDoc._id;
             access = await VendorCategoryAccess_1.default.findOneAndUpdate({ vendorId: vendor._id, parentCategoryId: parentIdToApprove }, {
                 $set: {
                     vendorId: vendor._id,
@@ -102,13 +118,20 @@ const assertVendorCategoryAccess = async (req, res, next) => {
             }
         }
         // Capability intersection check
-        const resolvedSchema = await (0, schemaResolutionService_1.resolveCategorySchema)(categoryDoc._id.toString()).catch(() => null);
+        const resolvedSchema = await (0, schemaResolutionService_1.resolveCategorySchema)(categoryDoc._id.toString()).catch(error => {
+            if (devotional)
+                throw error;
+            return null;
+        });
+        if (devotional && !resolvedSchema) {
+            res.status(403).json({ success: false, message: 'This Devotional listing category is unavailable.' });
+            return;
+        }
         if (resolvedSchema &&
             resolvedSchema.allowedVendorCapabilities &&
             resolvedSchema.allowedVendorCapabilities.length > 0 &&
-            access.approvedCapabilities &&
-            access.approvedCapabilities.length > 0) {
-            const hasCapabilityMatch = resolvedSchema.allowedVendorCapabilities.some((cap) => access.approvedCapabilities.includes(cap));
+            (devotional || access.approvedCapabilities?.length)) {
+            const hasCapabilityMatch = resolvedSchema.allowedVendorCapabilities.some((cap) => access.approvedCapabilities?.includes(cap));
             if (!hasCapabilityMatch) {
                 res.status(403).json({
                     success: false,

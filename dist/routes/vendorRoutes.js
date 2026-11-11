@@ -1,9 +1,14 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const auth_1 = require("../middleware/auth");
+const vendorWorkspaceRoutes_1 = __importDefault(require("./vendorWorkspaceRoutes"));
 const vendorController_1 = require("../controllers/vendorController");
 const router = (0, express_1.Router)();
+router.use('/workspace', vendorWorkspaceRoutes_1.default);
 // Public marketplace lookup routes (placed first to avoid wildcard conflicts)
 router.get('/nearby', vendorController_1.getNearbyVendors);
 router.get('/search', vendorController_1.searchVendors);

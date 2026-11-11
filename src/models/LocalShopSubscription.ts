@@ -9,10 +9,14 @@ export interface ILocalShopSubscription extends Document {
   quantity: number;
   unitPrice: number;
   frequency: string; // daily, alternate, weekly, monthly, custom
+  scheduleVersion?: number;
+  billingCycle?: 'weekly' | 'monthly';
+  portalType?: 'water' | 'dairy';
   customDays?: string[];
   deliverySlot: string;
-  status: 'active' | 'paused';
+  status: 'active' | 'paused' | 'cancelled' | 'expired';
   autoRenew: boolean;
+  currentPeriodEnd?: string;
   skippedDates: string[];
   completedDates?: string[];
   failedDates?: string[];
@@ -28,6 +32,7 @@ export interface ILocalShopSubscription extends Document {
   customerPhone?: string;
   address?: string;
   deliveryAddress?: string;
+  deliveryLocation?: { latitude: number; longitude: number };
   deliveryAgentId?: mongoose.Types.ObjectId | string | null;
   deliveryAgentType?: string;
   deliveryAgentName?: string;
@@ -36,6 +41,7 @@ export interface ILocalShopSubscription extends Document {
 
 const LocalShopSubscriptionSchema = new Schema<ILocalShopSubscription>(
   {
+    deliveryLocation: { latitude: Number, longitude: Number },
     userId: {
       type: Schema.Types.Mixed, // Supports ObjectId or String ids (like mock-user-123)
       required: true,
@@ -80,19 +86,23 @@ const LocalShopSubscriptionSchema = new Schema<ILocalShopSubscription>(
       type: [String],
       default: []
     },
+    scheduleVersion: { type: Number, default: 1 },
+    portalType: { type: String, enum: ['water', 'dairy'] },
+    billingCycle: { type: String, enum: ['weekly', 'monthly'] },
     deliverySlot: {
       type: String,
       required: true
     },
     status: {
       type: String,
-      enum: ['active', 'paused'],
+      enum: ['active', 'paused', 'cancelled', 'expired'],
       default: 'active'
     },
     autoRenew: {
       type: Boolean,
       default: true
     },
+    currentPeriodEnd: String,
     skippedDates: {
       type: [String],
       default: []

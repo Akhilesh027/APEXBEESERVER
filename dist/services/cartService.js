@@ -10,12 +10,12 @@ class CartService {
      * Atomically adds an item to the user's cart or increments its quantity if it already exists.
      * Prevents logical duplicates under concurrency.
      */
-    static async addToCart(userId, productId, quantity, color = 'default', size = 'default') {
+    static async addToCart(userId, productId, quantity, color = 'default', size = 'default', preOrderDeliveryDate = null, preOrderTimeSlot = '', preOrderCustomNote = '') {
         // 1. Try to increment quantity of existing matching item atomically
         let cart = await Cart_1.default.findOneAndUpdate({
             userId,
             items: {
-                $elemMatch: { productId, color, size },
+                $elemMatch: { productId, color, size, preOrderDeliveryDate },
             },
         }, {
             $inc: { 'items.$.quantity': quantity },
@@ -29,12 +29,20 @@ class CartService {
                 userId,
                 items: {
                     $not: {
-                        $elemMatch: { productId, color, size },
+                        $elemMatch: { productId, color, size, preOrderDeliveryDate },
                     },
                 },
             }, {
                 $push: {
-                    items: { productId, quantity, color, size },
+                    items: {
+                        productId,
+                        quantity,
+                        color,
+                        size,
+                        preOrderDeliveryDate,
+                        preOrderTimeSlot,
+                        preOrderCustomNote,
+                    },
                 },
             }, { new: true });
             // If concurrent request pushed it in the split second, increment it instead

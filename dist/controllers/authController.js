@@ -883,11 +883,15 @@ const googleAuth = async (req, res) => {
             const userReferralCode = await generateReferralCode(name);
             const randomPassword = Math.random().toString(36).slice(-10) + Math.random().toString(36).slice(-10);
             const hashedPassword = await bcryptjs_1.default.hash(randomPassword, 10);
+            const requestedRole = (req.body.role || '').toString().toLowerCase();
+            const initialRole = (requestedRole.includes('business') || requestedRole === 'business_partner')
+                ? 'business_partner'
+                : 'customer';
             user = new User_1.User({
                 name,
                 email,
                 passwordHash: hashedPassword,
-                roles: ['customer'],
+                roles: [initialRole],
                 status: 'Active',
                 isVerified: true,
                 profileImage: picture,
@@ -898,14 +902,19 @@ const googleAuth = async (req, res) => {
                 if (referrer) {
                     user.referredBy = referrer._id;
                     user.referredByCode = referrer.referralCode;
-                    const refDoc = new Referral_1.Referral({
-                        referrerId: referrer._id,
-                        referredUserId: user._id,
-                        referralCode: referrer.referralCode,
-                        status: 'registered',
-                        reward: 50
-                    });
-                    await refDoc.save();
+                    try {
+                        const refDoc = new Referral_1.Referral({
+                            referrerUserId: referrer._id,
+                            referredUserId: user._id,
+                            referralCode: referrer.referralCode,
+                            status: 'registered',
+                            rewardAmount: 50
+                        });
+                        await refDoc.save();
+                    }
+                    catch (refErr) {
+                        console.warn('Failed to save Google signup referral record:', refErr);
+                    }
                 }
             }
             await user.save();

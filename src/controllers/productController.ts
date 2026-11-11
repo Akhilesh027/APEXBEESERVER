@@ -10,6 +10,28 @@ import CategoryExperienceConfig from '../models/CategoryExperienceConfig';
 import { Vendor } from '../models/Vendor';
 import Order from '../models/Order';
 import { uploadToCloudinary } from '../config/cloudinary';
+import { parseDairyProductDetails, validateDairyProductPricing } from '../services/dairyProductDetails';
+import { businessWorkspaceKind } from '../services/vendorWorkspaceService';
+import { stockUnit } from '../services/dailyNeedsProfile';
+
+async function dairyProductInput(body: any, categoryId: any, subCategoryId: any, existing?: any) {
+  if (!categoryId || !subCategoryId) {
+    if (body.dairyDetails !== undefined) throw new Error('Select Daily Needs and Milk and Dairy for dairy product details.');
+    return undefined;
+  }
+  const categories = await Category.find({ _id: { $in: [categoryId, subCategoryId] } }).select('_id name slug level parentId').lean();
+  const parent = categories.find(item => String(item._id) === String(categoryId));
+  const child = categories.find(item => String(item._id) === String(subCategoryId));
+  const isDairy = parent && child && String(child.parentId) === String(parent._id) && businessWorkspaceKind(parent, child) === 'dairy';
+  if (!isDairy) {
+    if (body.dairyDetails !== undefined) throw new Error('Dairy details are only available for Milk and Dairy products.');
+    if (existing?.dairyDetails?.dairyType) throw new Error('Keep this dairy product in Milk and Dairy.');
+    return undefined;
+  }
+  if (body.dairyDetails !== undefined || !existing) validateDairyProductPricing(body, existing);
+  if (existing && body.dairyDetails === undefined) return undefined;
+  return parseDairyProductDetails(body.dairyDetails);
+}
 
 const validateProductFields = (body: any, res: Response): boolean => {
   const protectedFields = [
@@ -317,6 +339,9 @@ export const createProduct = async (req: Request, res: Response) => {
     }
 
     let finalCategoryId = categoryId;
+    let dairyDetails;
+    try { dairyDetails = await dairyProductInput(req.body, categoryId, subCategoryId); }
+    catch (error) { res.status(400).json({ message: (error as Error).message }); return; }
     const sellerId = isAdmin ? (req.body.sellerId || authUser.id) : authUser.id;
 
     if (!sellerId) {
@@ -327,7 +352,15 @@ export const createProduct = async (req: Request, res: Response) => {
     }
 
     if (!isAdmin) {
-      const vendor = await Vendor.findOne({ $or: [{ userId: sellerId }, { _id: sellerId }] });
+      const isObj = mongoose.Types.ObjectId.isValid(sellerId);
+      const vendor = await Vendor.findOne({
+        $or: [
+          ...(isObj ? [{ userId: new mongoose.Types.ObjectId(sellerId) }] : []),
+          { userId: sellerId },
+          ...(authUser?.email ? [{ email: authUser.email.toLowerCase().trim() }] : []),
+          ...(isObj ? [{ _id: new mongoose.Types.ObjectId(sellerId) }] : [{ _id: sellerId }])
+        ]
+      });
       if (vendor) {
         try {
           const { EntitlementService } = await import('../modules/subscription/services/EntitlementService');
@@ -411,7 +444,15 @@ export const createProduct = async (req: Request, res: Response) => {
     }
 
     if (!finalCategoryId && sellerId) {
-      const vendor = await Vendor.findOne({ $or: [{ userId: sellerId }, { _id: sellerId }] });
+      const isObj = mongoose.Types.ObjectId.isValid(sellerId);
+      const vendor = await Vendor.findOne({
+        $or: [
+          ...(isObj ? [{ userId: new mongoose.Types.ObjectId(sellerId) }] : []),
+          { userId: sellerId },
+          ...(authUser?.email ? [{ email: authUser.email.toLowerCase().trim() }] : []),
+          ...(isObj ? [{ _id: new mongoose.Types.ObjectId(sellerId) }] : [{ _id: sellerId }])
+        ]
+      });
       if (vendor) {
         const catSearchStr = vendor.primaryCategory || (vendor.categories && vendor.categories[0]);
         if (catSearchStr) {
@@ -486,6 +527,7 @@ export const createProduct = async (req: Request, res: Response) => {
         images: uploaded.images,
 
         attributes: parsedAttributes,
+        ...(dairyDetails ? { dairyDetails, expiryDate: new Date(`${dairyDetails.expiryDate}T00:00:00.000Z`) } : {}),
         variants: parsedVariants,
 
         baseMrp: mrp,
@@ -519,6 +561,8 @@ export const createProduct = async (req: Request, res: Response) => {
         isSelfPickup: req.body.isSelfPickup === undefined ? true : (req.body.isSelfPickup === 'true' || req.body.isSelfPickup === true),
         deliveryScope: req.body.deliveryScope || (req.body.isPanIndia === 'true' || req.body.isPanIndia === true ? 'pan_india' : 'local'),
         isPanIndia: req.body.deliveryScope === 'pan_india' || req.body.isPanIndia === 'true' || req.body.isPanIndia === true,
+        gstRate: req.body.gstRate !== undefined ? normalizeNumber(req.body.gstRate) : 0,
+        gstPricingMode: req.body.gstPricingMode === 'exclusive' ? 'exclusive' : 'inclusive',
       });
 
       if (mongoose.Types.ObjectId.isValid(storeId)) {
@@ -890,6 +934,34 @@ export const getAllProducts = async (req: Request, res: Response) => {
       productObj.brand = shopNameVal || vendor?.businessName || productObj.brand || 'ApexBee Seller';
       productObj.vendorRating = 4.8;
 
+      const itemSellingPrice = Number(
+        productObj.adminPricing?.customerSellingAmount ??
+        productObj.adminPricing?.sellingPrice ??
+        productObj.baseSellingPrice ??
+        productObj.sellingPrice ??
+        productObj.price ??
+        0
+      );
+      const itemMrp = Number(
+        productObj.adminPricing?.mrp ??
+        productObj.baseMrp ??
+        productObj.userPrice ??
+        productObj.mrp ??
+        itemSellingPrice
+      );
+      const itemDiscount = productObj.discountPercent ?? (itemMrp > itemSellingPrice && itemMrp > 0 ? Math.round(((itemMrp - itemSellingPrice) / itemMrp) * 100) : 0);
+
+      productObj.sellingPrice = itemSellingPrice;
+      productObj.baseSellingPrice = itemSellingPrice;
+      productObj.price = itemSellingPrice;
+      productObj.afterDiscount = itemSellingPrice;
+      productObj.salesPrice = itemSellingPrice;
+      productObj.userPrice = itemMrp;
+      productObj.baseMrp = itemMrp;
+      productObj.mrp = itemMrp;
+      productObj.discountPercent = itemDiscount;
+      productObj.discount = itemDiscount;
+
       return productObj;
     });
 
@@ -997,8 +1069,47 @@ export const getProductById = async (req: Request, res: Response) => {
       district: vendor?.district || (typeof productObj.sellerId === 'object' ? productObj.sellerId?.district : '')
     };
 
+    // Canonical price synchronization across all field aliases
+    const activeSellingPrice = Number(
+      product.adminPricing?.customerSellingAmount ??
+      product.adminPricing?.sellingPrice ??
+      product.baseSellingPrice ??
+      (product as any).sellingPrice ??
+      (product as any).price ??
+      0
+    );
+
+    const activeMrp = Number(
+      product.adminPricing?.mrp ??
+      product.baseMrp ??
+      (product as any).mrp ??
+      (product as any).userPrice ??
+      activeSellingPrice
+    );
+
+    const activeDiscount = product.discountPercent ?? (activeMrp > activeSellingPrice && activeMrp > 0 ? Math.round(((activeMrp - activeSellingPrice) / activeMrp) * 100) : 0);
+
+    productObj.sellingPrice = activeSellingPrice;
+    productObj.baseSellingPrice = activeSellingPrice;
+    productObj.price = activeSellingPrice;
+    productObj.afterDiscount = activeSellingPrice;
+    productObj.salesPrice = activeSellingPrice;
+    productObj.userPrice = activeMrp;
+    productObj.baseMrp = activeMrp;
+    productObj.mrp = activeMrp;
+    productObj.discountPercent = activeDiscount;
+    productObj.discount = activeDiscount;
+
     if (!isOwner && !isAdmin) {
-      delete productObj.adminPricing;
+      if (productObj.adminPricing) {
+        productObj.adminPricing = {
+          mrp: activeMrp,
+          sellingPrice: activeSellingPrice,
+          customerSellingAmount: activeSellingPrice,
+          shippingCharge: productObj.adminPricing.shippingCharge || productObj.shippingCharge || 0,
+          packingCharge: productObj.adminPricing.packingCharge || productObj.packingCharge || 0,
+        };
+      }
       delete productObj.commissionShares;
       delete productObj.sellerNegotiations;
       delete productObj.purchasePrice;
@@ -1042,6 +1153,17 @@ export const updateProduct = async (req: Request, res: Response) => {
       return;
     }
     // Capture pre-edit snapshot for vendor edits so admin can compare changes
+    if (product.batchTrackingEnabled && req.body.stock !== undefined && normalizeNumber(req.body.stock) !== product.stock) {
+      res.status(400).json({ message: 'Adjust tracked stock through batch receipts and wastage records.' });
+      return;
+    }
+    if (product.stock > 0 && req.body.attributes !== undefined && stockUnit(product.attributes) !== stockUnit(parseJson(req.body.attributes, {}))) {
+      res.status(400).json({ message: 'Use a separate listing to change the sellable unit of stock already on hand.' });
+      return;
+    }
+    let dairyDetails;
+    try { dairyDetails = await dairyProductInput(req.body, req.body.categoryId || product.categoryId, req.body.subCategoryId === '' ? null : req.body.subCategoryId || product.subCategoryId, product); }
+    catch (error) { res.status(400).json({ message: (error as Error).message }); return; }
     if (!isAdmin) {
       product.preEditSnapshot = {
         name: product.name,
@@ -1053,6 +1175,8 @@ export const updateProduct = async (req: Request, res: Response) => {
         thumbnail: product.thumbnail,
         images: [...(product.images || [])],
         attributes: product.attributes ? JSON.parse(JSON.stringify(product.attributes)) : {},
+        dairyDetails: product.dairyDetails ? JSON.parse(JSON.stringify(product.dairyDetails)) : undefined,
+        expiryDate: product.expiryDate,
         minimumOrderQuantity: product.minimumOrderQuantity || 1,
         isStoreProduct: product.isStoreProduct,
         isSubscriptionAvailable: product.isSubscriptionAvailable,
@@ -1062,6 +1186,8 @@ export const updateProduct = async (req: Request, res: Response) => {
         preOrderLimit: product.preOrderLimit,
         deliveryScope: product.deliveryScope,
         brand: product.brand,
+        gstRate: product.gstRate,
+        gstPricingMode: product.gstPricingMode,
         snapshotAt: new Date(),
       };
     }
@@ -1128,6 +1254,10 @@ export const updateProduct = async (req: Request, res: Response) => {
 
     if (req.body.stock !== undefined) {
       product.stock = normalizeNumber(req.body.stock);
+    }
+    if (dairyDetails) {
+      product.dairyDetails = dairyDetails;
+      product.expiryDate = new Date(`${dairyDetails.expiryDate}T00:00:00.000Z`);
     }
 
     if (req.body.attributes !== undefined) {
@@ -1211,6 +1341,12 @@ export const updateProduct = async (req: Request, res: Response) => {
     if (req.body.isPanIndia !== undefined) {
       product.isPanIndia = req.body.isPanIndia === 'true' || req.body.isPanIndia === true;
     }
+    if (req.body.gstRate !== undefined) {
+      product.gstRate = normalizeNumber(req.body.gstRate);
+    }
+    if (req.body.gstPricingMode !== undefined) {
+      product.gstPricingMode = req.body.gstPricingMode === 'exclusive' ? 'exclusive' : 'inclusive';
+    }
 
     if (!isAdmin) {
       product.status = 'Vendor Edited';
@@ -1292,24 +1428,24 @@ export const deleteProduct = async (req: Request, res: Response) => {
             if (mongoose.models.FoodVariant) {
               await mongoose.models.FoodVariant.deleteMany({ menuItemId: foodMenuId });
             }
-          } catch (_) {}
+          } catch (_) { }
           try {
             if (mongoose.models.FoodMenuItemAddonGroup) {
               await mongoose.models.FoodMenuItemAddonGroup.deleteMany({ menuItemId: foodMenuId });
             }
-          } catch (_) {}
+          } catch (_) { }
         }
 
         // 3. Remove associated StoreProduct & Inventory
         try {
           const StoreProductModel = mongoose.model('StoreProduct');
           await StoreProductModel.deleteMany({ productId: prodId });
-        } catch (_) {}
+        } catch (_) { }
 
         try {
           const InventoryModel = mongoose.model('Inventory');
           await InventoryModel.deleteMany({ productId: prodId });
-        } catch (_) {}
+        } catch (_) { }
       }
 
       if (foodItem) {
@@ -1320,12 +1456,12 @@ export const deleteProduct = async (req: Request, res: Response) => {
           if (mongoose.models.FoodVariant) {
             await mongoose.models.FoodVariant.deleteMany({ menuItemId: fId });
           }
-        } catch (_) {}
+        } catch (_) { }
         try {
           if (mongoose.models.FoodMenuItemAddonGroup) {
             await mongoose.models.FoodMenuItemAddonGroup.deleteMany({ menuItemId: fId });
           }
-        } catch (_) {}
+        } catch (_) { }
       }
 
       res.json({ success: true, message: 'Product permanently deleted from database successfully' });
@@ -1345,7 +1481,7 @@ export const deleteProduct = async (req: Request, res: Response) => {
 
         await StoreProductModel.updateMany({ productId: product._id }, { $set: { isAvailableForDelivery: false, isAvailableForPickup: false } });
         await InventoryModel.updateMany({ productId: product._id }, { $set: { availableQuantity: 0 } });
-      } catch (_) {}
+      } catch (_) { }
     } else if (foodItem) {
       foodItem.status = 'ARCHIVED';
       await foodItem.save();
@@ -1666,11 +1802,7 @@ export const quickApproveVendorEdit = async (req: Request, res: Response) => {
       return;
     }
 
-    if (!product.isVendorEdit && product.status !== 'Vendor Edited') {
-      res.status(400).json({ message: 'Product is not a vendor edit' });
-      return;
-    }
-
+    const now = new Date();
     product.status = 'Live';
     product.isVendorEdit = false;
     product.preEditSnapshot = undefined;
@@ -1678,23 +1810,71 @@ export const quickApproveVendorEdit = async (req: Request, res: Response) => {
     product.isActive = true;
     product.adminPricingApproved = true;
     product.sellerPricingAccepted = true;
-    product.approvedByAdminAt = new Date();
-    product.sellerAcceptedAt = new Date();
-    product.liveAt = new Date();
+    product.approvedByAdminAt = now;
+    product.sellerAcceptedAt = now;
+    product.liveAt = now;
     product.moderationStatus = 'approved' as any;
 
+    // Sync or initialize adminPricing if not configured
+    const prodPrice = product.baseSellingPrice || (product as any).price || 0;
+    const prodMrp = product.baseMrp || prodPrice;
+    const pool = Math.round((prodPrice * 10) / 100);
+    const l1 = Math.round((pool * 10) / 100);
+    const l2 = Math.round((pool * 5) / 100);
+    const l3 = Math.round((pool * 2.5) / 100);
+    const avg = Math.round(((l1 + l2 + l3) / 3) * 100) / 100;
+
+    if (!product.adminPricing) {
+      product.adminPricing = {
+        mrp: prodMrp,
+        sellingPrice: prodPrice,
+        platformFeePercent: 25,
+        platformFeeAmount: pool,
+        vendorCommissionPercent: 0,
+        vendorCommissionAmount: 0,
+        distributedFrom: 'platform_fee',
+        distributionPool: pool,
+        finalSellerAmount: prodPrice,
+        shippingCharge: 0,
+        packingCharge: 0,
+        remarks: req.body?.remarks || 'Approved by Admin',
+        commissionShares: [],
+        referralEarnings: {
+          level1: l1,
+          level2: l2,
+          level3: l3,
+          average: avg,
+          total: l1 + l2 + l3,
+        },
+        averageReferralEarning: avg,
+        estimatedEarning: l1,
+      };
+    }
+
     await product.save();
+
+    if (product.foodMenuItemId) {
+      try {
+        await FoodMenuItem.findByIdAndUpdate(product.foodMenuItemId, {
+          approvalStatus: 'PUBLISHED_LIVE',
+          status: 'ACTIVE',
+          restaurantAcceptedAt: now,
+        });
+      } catch (e) {
+        console.warn('[quickApprove] FoodMenuItem sync warning:', e);
+      }
+    }
 
     const populatedProduct = await populateProduct(Product.findById(product._id));
 
     res.json({
       success: true,
-      message: 'Vendor edit approved. Product is now live.',
+      message: 'Product approved successfully. Product is now live.',
       product: populatedProduct,
     });
   } catch (error: any) {
     res.status(500).json({
-      message: 'Failed to approve vendor edit',
+      message: 'Failed to approve product',
       error: error.message,
     });
   }
@@ -1911,23 +2091,23 @@ export const bulkDeleteProducts = async (req: Request, res: Response) => {
       if (mongoose.models.FoodVariant) {
         await mongoose.models.FoodVariant.deleteMany({ menuItemId: { $in: allFoodIdsToDelete } });
       }
-    } catch (_) {}
+    } catch (_) { }
     try {
       if (mongoose.models.FoodMenuItemAddonGroup) {
         await mongoose.models.FoodMenuItemAddonGroup.deleteMany({ menuItemId: { $in: allFoodIdsToDelete } });
       }
-    } catch (_) {}
+    } catch (_) { }
 
     // 3. Remove associated StoreProduct & Inventory
     try {
       const StoreProductModel = mongoose.model('StoreProduct');
       await StoreProductModel.deleteMany({ productId: { $in: cleanIds } });
-    } catch (_) {}
+    } catch (_) { }
 
     try {
       const InventoryModel = mongoose.model('Inventory');
       await InventoryModel.deleteMany({ productId: { $in: cleanIds } });
-    } catch (_) {}
+    } catch (_) { }
 
     res.json({
       success: true,
@@ -1958,9 +2138,15 @@ export const bulkUpdateProducts = async (req: Request, res: Response) => {
     delete safeUpdateData.sellerId;
     delete safeUpdateData.slug;
     delete safeUpdateData.sku;
+    delete safeUpdateData.batchTrackingEnabled;
+    const filter = { _id: { $in: productIds } };
+    if (safeUpdateData.stock !== undefined && await Product.exists({ ...filter, batchTrackingEnabled: true })) {
+      res.status(400).json({ message: 'Adjust tracked stock through batch receipts and wastage records.' });
+      return;
+    }
 
     await Product.updateMany(
-      { _id: { $in: productIds } },
+      { ...filter, ...(safeUpdateData.stock !== undefined ? { batchTrackingEnabled: { $ne: true } } : {}) },
       { $set: safeUpdateData }
     );
 
@@ -2049,7 +2235,8 @@ export const getProductsByVendor = async (req: Request, res: Response): Promise<
       isActive: { $ne: false }
     })
       .populate('categoryId', 'name')
-      .populate('subCategoryId', 'name');
+      .populate('subCategoryId', 'name')
+      .populate('subcategoryId', 'name');
 
     const formattedProducts = products.map((p: any) => {
       const pObj = p.toObject ? p.toObject() : p;
@@ -2088,9 +2275,16 @@ export const getProductsByVendor = async (req: Request, res: Response): Promise<
           _id: pObj.categoryId._id || pObj.categoryId,
           name: pObj.categoryId.name || 'Category'
         } : undefined,
-        subcategory: pObj.subCategoryId?.name || pObj.subcategory || '',
+        subcategory: pObj.subCategoryId?.name || pObj.subcategoryId?.name || pObj.subcategory || '',
         status: pObj.status,
         isSubscriptionAvailable: !!pObj.isSubscriptionAvailable,
+        dairyDetails: pObj.dairyDetails || null,
+        ...(pObj.waterDetails ? {
+          waterDetails: {
+            volumeLitres: pObj.waterDetails.volumeLitres, returnable: pObj.waterDetails.returnable, depositAmount: pObj.waterDetails.depositAmount,
+          }
+        } : {}),
+        bundleComponents: pObj.bundleComponents || [],
         isPreOrder: !!pObj.isPreOrder,
         preOrderReleaseDate: pObj.preOrderReleaseDate || null,
         preOrderMessage: pObj.preOrderMessage || '',

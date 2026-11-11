@@ -34,16 +34,17 @@ import { assertVendorCategoryAccess, validateCategoryProductPayload } from '../m
 
 const router = express.Router();
 
+router.post('/seed-all-categories', protect, restrictTo('admin'), seedProductsForAllCategories);
+
 // Public routes & specific endpoints
-router.all('/seed-all-categories', seedProductsForAllCategories);
 router.get('/', getAllProducts);
 router.get('/buy-again', getBuyAgainProducts);
 router.get('/my-products', protect, getMyProducts);
 router.get('/vendor/:vendorId', getProductsByVendor);
 router.get('/inventory/movements', protect, getInventoryMovements);
 router.post('/inventory/movements', protect, createInventoryMovement);
-router.post('/bulk-update', protect, restrictTo('vendor', 'wholesaler', 'manufacturer', 'admin'), bulkUpdateProducts);
-router.post('/ai-generator', protect, restrictTo('vendor', 'wholesaler', 'manufacturer', 'admin'), getAiProductSuggestions);
+router.post('/bulk-update', protect, restrictTo('vendor', 'wholesaler', 'manufacturer', 'business_partner', 'food_partner', 'entrepreneur', 'admin'), bulkUpdateProducts);
+router.post('/ai-generator', protect, restrictTo('vendor', 'wholesaler', 'manufacturer', 'business_partner', 'food_partner', 'entrepreneur', 'admin'), getAiProductSuggestions);
 router.get('/sku/:sku', getProductBySku);
 router.get('/:id/share-preview', getProductSocialSharePreview);
 router.get('/:id/og', getProductSocialSharePreview);
@@ -56,14 +57,14 @@ router.get('/:id', (req, res, next) => {
 });
 
 // Seller/Admin only routes for product creation & edit
-router.post('/', protect, restrictTo('vendor', 'wholesaler', 'manufacturer', 'admin'), productUpload, assertVendorCategoryAccess, validateCategoryProductPayload, createProduct);
-router.put('/:id', protect, restrictTo('vendor', 'wholesaler', 'manufacturer', 'admin'), productUpload, assertVendorCategoryAccess, validateCategoryProductPayload, updateProduct);
-router.post('/:id/duplicate', protect, restrictTo('vendor', 'wholesaler', 'manufacturer', 'admin'), assertVendorCategoryAccess, duplicateProduct);
+router.post('/', protect, restrictTo('vendor', 'wholesaler', 'manufacturer', 'business_partner', 'food_partner', 'entrepreneur', 'admin'), productUpload, assertVendorCategoryAccess, validateCategoryProductPayload, createProduct);
+router.put('/:id', protect, restrictTo('vendor', 'wholesaler', 'manufacturer', 'business_partner', 'food_partner', 'entrepreneur', 'admin'), productUpload, assertVendorCategoryAccess, validateCategoryProductPayload, updateProduct);
+router.post('/:id/duplicate', protect, restrictTo('vendor', 'wholesaler', 'manufacturer', 'business_partner', 'food_partner', 'entrepreneur', 'admin'), assertVendorCategoryAccess, duplicateProduct);
 
-router.patch('/:id/toggle-status', protect, restrictTo('vendor', 'wholesaler', 'manufacturer', 'admin'), toggleProductStatus);
-router.patch('/:id/archive', protect, restrictTo('vendor', 'wholesaler', 'manufacturer', 'admin'), archiveProduct);
-router.delete('/:id', protect, restrictTo('vendor', 'wholesaler', 'manufacturer', 'admin'), deleteProduct);
-router.post('/bulk-update', protect, restrictTo('vendor', 'wholesaler', 'manufacturer', 'admin'), bulkUpdateProducts);
+router.patch('/:id/toggle-status', protect, restrictTo('vendor', 'wholesaler', 'manufacturer', 'business_partner', 'food_partner', 'entrepreneur', 'admin'), toggleProductStatus);
+router.patch('/:id/archive', protect, restrictTo('vendor', 'wholesaler', 'manufacturer', 'business_partner', 'food_partner', 'entrepreneur', 'admin'), archiveProduct);
+router.delete('/:id', protect, restrictTo('vendor', 'wholesaler', 'manufacturer', 'business_partner', 'food_partner', 'entrepreneur', 'admin'), deleteProduct);
+router.post('/bulk-update', protect, restrictTo('vendor', 'wholesaler', 'manufacturer', 'business_partner', 'food_partner', 'entrepreneur', 'admin'), bulkUpdateProducts);
 router.get('/inventory/movements', protect, getInventoryMovements);
 router.post('/inventory/movements', protect, createInventoryMovement);
 
@@ -73,10 +74,14 @@ router.post('/admin/bulk-reject', protect, restrictTo('admin'), bulkRejectProduc
 router.post('/admin/bulk-delete', protect, restrictTo('admin'), bulkDeleteProducts);
 router.patch('/:id/admin-pricing', protect, restrictTo('admin'), configureAdminPricing);
 router.patch('/:id/quick-approve-edit', protect, restrictTo('admin'), quickApproveVendorEdit);
+router.patch('/:id/quick-approve', protect, restrictTo('admin'), quickApproveVendorEdit);
+router.patch('/:id/approve', protect, restrictTo('admin'), quickApproveVendorEdit);
+router.put('/:id/approve', protect, restrictTo('admin'), quickApproveVendorEdit);
+router.post('/:id/approve', protect, restrictTo('admin'), quickApproveVendorEdit);
 router.patch('/:id/reject', protect, restrictTo('admin'), rejectProduct);
 
 // Seller-specific pricing acceptance/negotiation
-router.patch('/:id/seller-accept-pricing', protect, restrictTo('vendor', 'wholesaler', 'manufacturer'), sellerAcceptPricing);
-router.patch('/:id/seller-negotiate-pricing', protect, restrictTo('vendor', 'wholesaler', 'manufacturer'), sellerNegotiatePricing);
+router.patch('/:id/seller-accept-pricing', protect, restrictTo('vendor', 'wholesaler', 'manufacturer', 'business_partner', 'food_partner', 'entrepreneur'), sellerAcceptPricing);
+router.patch('/:id/seller-negotiate-pricing', protect, restrictTo('vendor', 'wholesaler', 'manufacturer', 'business_partner', 'food_partner', 'entrepreneur'), sellerNegotiatePricing);
 
 export default router;

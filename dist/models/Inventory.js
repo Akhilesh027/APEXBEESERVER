@@ -56,14 +56,20 @@ InventorySchema.pre('validate', function (next) {
     if (!this.storeId) {
         this.storeId = new mongoose_1.default.Types.ObjectId();
     }
-    if (this.onHand !== undefined) {
-        this.availableStock = this.onHand;
+    if (this.isModified('onHand')) {
+        this.availableStock = this.onHand ?? 0;
     }
-    if (this.reserved !== undefined) {
-        this.reservedStock = this.reserved;
+    else if (this.isModified('availableStock')) {
+        this.onHand = this.availableStock;
+    }
+    if (this.isModified('reserved')) {
+        this.reservedStock = this.reserved ?? 0;
+    }
+    else if (this.isModified('reservedStock')) {
+        this.reserved = this.reservedStock;
     }
     if (this.reservedStock > this.availableStock) {
-        this.availableStock = this.reservedStock + 10;
+        this.invalidate('reservedStock', 'Reserved stock cannot exceed physical stock.');
     }
     next();
 });

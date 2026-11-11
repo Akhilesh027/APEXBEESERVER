@@ -4,6 +4,7 @@ export interface INotification extends Document {
   recipientId: mongoose.Types.ObjectId;
   recipientType: 'User' | 'Franchise' | 'Vendor' | 'Wholesaler' | 'Manufacturer' | 'ServiceProvider' | 'DeliveryPartner';
   eventCode: string;
+  dedupeKey?: string;
   status: 'unread' | 'read' | 'archived' | 'deleted';
   entityType?: 'order' | 'product' | 'vendor' | 'application' | 'wallet' | 'subscription' | 'ticket' | 'lead';
   entityId?: mongoose.Types.ObjectId;
@@ -42,6 +43,7 @@ const NotificationSchema = new Schema<INotification>(
       default: 'User'
     },
     eventCode: { type: String, required: true, index: true },
+    dedupeKey: { type: String, unique: true, sparse: true },
     status: {
       type: String,
       required: true,

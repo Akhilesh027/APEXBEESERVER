@@ -61,6 +61,16 @@ const VendorSchema = new mongoose_1.Schema({
     mandalId: { type: mongoose_1.Schema.Types.ObjectId, ref: "MandalMaster", default: null },
     address: { type: String, required: true },
     pincode: { type: String, required: true },
+    hasGst: { type: Boolean, default: false },
+    gstPricingMode: {
+        type: String,
+        enum: ['inclusive', 'exclusive'],
+        default: 'inclusive'
+    },
+    categoryParameters: {
+        type: mongoose_1.Schema.Types.Mixed,
+        default: {}
+    },
     gstNumber: { type: String, default: "" },
     panNumber: { type: String, default: "" },
     status: { type: String, default: "active" },

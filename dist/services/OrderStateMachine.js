@@ -12,6 +12,9 @@ const SettlementEngine_1 = require("./SettlementEngine");
 const WalletEngine_1 = require("./WalletEngine");
 const PaymentAttempt_1 = require("../models/PaymentAttempt");
 const TransactionalOutbox_1 = require("./TransactionalOutbox");
+const BusinessOperations_1 = require("../models/BusinessOperations");
+const wholesaleOrderLifecycle_1 = require("./wholesaleOrderLifecycle");
+const waterOrderLifecycle_1 = require("./waterOrderLifecycle");
 class OrderStateMachine {
     // Allow all status updates, but enforce correct side effects based on transitions.
     // To avoid breaking existing flows (e.g. testing direct jumps by admin), we allow all status
@@ -404,6 +407,8 @@ class OrderStateMachine {
             if (!this.isValidTransition(fromStatus, toStatus)) {
                 throw new Error(`Invalid order status transition from ${fromStatus} to ${toStatus}`);
             }
+            await (0, wholesaleOrderLifecycle_1.updateWholesaleOrderLifecycle)(order, String(toStatus), sessionToUse);
+            await (0, waterOrderLifecycle_1.recordWaterOrderDelivery)(order, String(toStatus), meta.userId, sessionToUse);
             // 1. EXECUTE INVENTORY & COUPON & SETTLEMENT SIDE EFFECTS
             if (['Delivered', 'Confirmed', 'Payment Verified'].includes(toStatus)) {
                 // Commit stock and coupon
@@ -428,7 +433,7 @@ class OrderStateMachine {
                 }
             }
             // If transition to Refunded, process wallet refund
-            if (toStatus === 'Refunded') {
+            if (toStatus === 'Refunded' && order.paymentStatus !== 'Refunded') {
                 const refundAmount = order.orderSummary?.grandTotal || order.totalAmount;
                 await WalletEngine_1.WalletEngine.credit(order.customerId, refundAmount, {
                     category: 'Refund',
@@ -440,6 +445,13 @@ class OrderStateMachine {
                 order.paymentStatus = 'Refunded';
             }
             // 2. SET NEW STATUS AND TIMELINES
+            if (order.businessInquiryId) {
+                const status = String(toStatus).toLowerCase();
+                if (['delivered', 'completed', 'served'].includes(status))
+                    await BusinessOperations_1.BusinessInquiry.updateOne({ _id: order.businessInquiryId, orderId: order._id }, { $set: { status: 'completed' } }, { session: sessionToUse });
+                if (['cancelled', 'returned', 'refunded'].includes(status))
+                    await BusinessOperations_1.BusinessInquiry.updateOne({ _id: order.businessInquiryId, orderId: order._id }, { $set: { status: 'declined' } }, { session: sessionToUse });
+            }
             order.orderStatus = toStatus;
             const nowStr = new Date().toISOString();
             if (!order.orderStatusObj) {

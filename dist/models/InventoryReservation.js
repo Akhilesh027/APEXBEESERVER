@@ -42,6 +42,7 @@ const InventoryReservationSchema = new mongoose_1.Schema({
         unique: true,
         index: true,
     },
+    batchAllocations: [{ batchId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'StockBatch' }, quantity: Number }],
     orderId: {
         type: mongoose_1.Schema.Types.ObjectId,
         ref: 'Order',
@@ -67,7 +68,7 @@ const InventoryReservationSchema = new mongoose_1.Schema({
     quantity: {
         type: Number,
         required: true,
-        min: [1, 'quantity must be at least 1'],
+        min: [0.001, 'quantity must be at least 0.001 sellable units'],
     },
     status: {
         type: String,

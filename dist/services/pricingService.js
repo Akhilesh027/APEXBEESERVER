@@ -8,11 +8,12 @@ const mongoose_1 = __importDefault(require("mongoose"));
 const Product_1 = __importDefault(require("../models/Product"));
 const FoodMenuItem_1 = __importDefault(require("../models/FoodMenuItem"));
 const Coupon_1 = require("../models/Coupon");
+const dairyOrderRules_1 = require("./dairyOrderRules");
 class PricingService {
     /**
      * Recalculates order items, pricing totals, and validates coupon applicability.
      */
-    static async calculateCheckoutPricing(items, couponCode) {
+    static async calculateCheckoutPricing(items, couponCode, session, enforceRetailDairyRules = false) {
         if (!items || items.length === 0) {
             throw new Error('Checkout items list cannot be empty.');
         }
@@ -23,7 +24,10 @@ class PricingService {
         let platformFee = 0;
         let discount = 0;
         const uniqueProductIds = Array.from(new Set(items.map((i) => i.productId)));
-        const products = await Product_1.default.find({ _id: { $in: uniqueProductIds } });
+        const productQuery = Product_1.default.find({ _id: { $in: uniqueProductIds } });
+        const products = await (session ? productQuery.session(session) : productQuery);
+        if (enforceRetailDairyRules)
+            await (0, dairyOrderRules_1.enforceOneTimeDairyOrder)(products, session);
         const productsMap = new Map(products.map((p) => [p._id.toString(), p]));
         let firstSellerId = '';
         const orderItems = [];
@@ -83,6 +87,8 @@ class PricingService {
                     platformFeeAmount: itemPlatformFee,
                     distributedFrom: distFrom,
                     vendorCommissionPercent: foodItem.vendorCommissionPercent || 0,
+                    gstRate: 5,
+                    gstPricingMode: 'inclusive',
                 });
                 continue;
             }
@@ -145,9 +151,12 @@ class PricingService {
             shippingFee += itemShipping * item.quantity;
             packingFee += itemPacking * item.quantity;
             platformFee += itemPlatformFee * item.quantity;
+            if (product.waterDetails && !Number.isSafeInteger(item.quantity))
+                throw new Error('Water cans and bottles require a whole quantity.');
             orderItems.push({
                 productId: product._id.toString(),
                 name: product.name,
+                ...(product.waterDetails ? { waterDetails: product.waterDetails } : {}),
                 price: unitSelling,
                 originalPrice: resolvedMrp,
                 image: product.thumbnail || product.images?.[0] || '/placeholder.png',
@@ -158,9 +167,12 @@ class PricingService {
                 itemTotal,
                 deliveryFee: itemShipping,
                 sku: matchedVariant?.sku || product.sku || 'SKU-GEN',
+                variantId: matchedVariant?._id?.toString() || null,
                 categoryId: product.categoryId || null,
                 categoryName: product.categoryName || product.category || '',
                 orderType: 'RETAIL',
+                gstRate: product.gstRate !== undefined ? Number(product.gstRate) : 0,
+                gstPricingMode: product.gstPricingMode || 'inclusive',
             });
         }
         // Coupon Validation Logic
@@ -206,9 +218,36 @@ class PricingService {
         }
         const mrpDiscount = Math.max(0, totalMrp - subtotal);
         const discountedPrice = Math.max(0, subtotal - discount);
-        const taxableAmount = discountedPrice + packingFee + shippingFee + platformFee;
-        const tax = Math.round(taxableAmount * 0.05);
-        const grandTotal = taxableAmount + tax;
+        let totalExclusiveCgst = 0;
+        let totalExclusiveSgst = 0;
+        let totalInclusiveCgst = 0;
+        let totalInclusiveSgst = 0;
+        for (const oi of orderItems) {
+            const rate = Number(oi.gstRate || 0);
+            const mode = oi.gstPricingMode || 'inclusive';
+            const itemTot = oi.price * oi.quantity;
+            if (rate > 0) {
+                if (mode === 'exclusive') {
+                    const itemTax = (itemTot * rate) / 100;
+                    const half = Math.round((itemTax / 2) * 100) / 100;
+                    totalExclusiveCgst += half;
+                    totalExclusiveSgst += half;
+                }
+                else {
+                    const base = itemTot / (1 + rate / 100);
+                    const itemTax = itemTot - base;
+                    const half = Math.round((itemTax / 2) * 100) / 100;
+                    totalInclusiveCgst += half;
+                    totalInclusiveSgst += half;
+                }
+            }
+        }
+        const exclusiveTax = totalExclusiveCgst + totalExclusiveSgst;
+        const inclusiveTax = totalInclusiveCgst + totalInclusiveSgst;
+        const tax = exclusiveTax + inclusiveTax;
+        const cgst = totalExclusiveCgst + totalInclusiveCgst;
+        const sgst = totalExclusiveSgst + totalInclusiveSgst;
+        const grandTotal = Math.max(0, discountedPrice + packingFee + shippingFee + platformFee + exclusiveTax);
         return {
             orderItems,
             orderSummary: {
@@ -224,6 +263,8 @@ class PricingService {
                 discount,
                 couponDiscount: discount,
                 tax,
+                cgst,
+                sgst,
                 total: grandTotal,
                 grandTotal,
             },

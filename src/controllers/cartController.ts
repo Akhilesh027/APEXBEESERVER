@@ -122,8 +122,12 @@ export const getCart = async (req: Request, res: Response) => {
               isPanIndia: false,
               categoryName: 'Food & Dining',
               returnPolicy: 'Non-returnable Food Item',
+              isSelfPickup: true,
               allowPickup: true,
               pickupAvailable: true,
+              storePickup: true,
+              gstRate: Number(linkedProduct?.gstRate ?? 5),
+              gstPricingMode: linkedProduct?.gstPricingMode || 'inclusive',
               isPreOrder: foodItem.isPreOrder ?? linkedProduct?.isPreOrder ?? false,
               preOrder: foodItem.isPreOrder ?? linkedProduct?.isPreOrder ?? false,
               preOrderType: foodItem.preOrderType || linkedProduct?.preOrderType || 'ADVANCE_NOTICE',
@@ -172,12 +176,22 @@ export const getCart = async (req: Request, res: Response) => {
         const packingCharge = product.adminPricing?.packingCharge ?? 0;
 
         // Variant prices if found, else base product pricing
+        const matchedVariant =
+          variant ||
+          (product.variants && (item.variantId || item.sku)
+            ? product.variants.find(
+                (v: any) =>
+                  (item.variantId && String(v._id || v.id) === String(item.variantId)) ||
+                  (item.sku && String(v.sku).toLowerCase() === String(item.sku).toLowerCase())
+              )
+            : null);
+
         let originalPrice = product.adminPricing?.mrp ?? product.baseMrp ?? 0;
         let sellingPrice = product.adminPricing?.sellingPrice ?? product.baseSellingPrice ?? 0;
 
-        if (variant) {
-          originalPrice = variant.mrp ?? originalPrice;
-          sellingPrice = variant.sellingPrice ?? sellingPrice;
+        if (matchedVariant) {
+          originalPrice = matchedVariant.mrp ?? originalPrice;
+          sellingPrice = matchedVariant.sellingPrice ?? sellingPrice;
         }
 
         const price = sellingPrice;
@@ -186,11 +200,15 @@ export const getCart = async (req: Request, res: Response) => {
           _id: item._id,
           productId: product._id,
           quantity: item.quantity,
+          variantId: item.variantId || matchedVariant?._id || matchedVariant?.id || null,
+          variantName: item.variantName || matchedVariant?.name || matchedVariant?.title || '',
+          selectedVariant: item.selectedVariant || matchedVariant || null,
+          sku: item.sku || matchedVariant?.sku || product.sku || '',
           color: item.color,
           size: item.size,
           selectedColor: item.color,
           selectedSize: item.size,
-          selectedAttributes: item.selectedAttributes || {
+          selectedAttributes: item.selectedAttributes || matchedVariant?.attributes || {
             ...(item.color && item.color !== 'default' ? { color: item.color } : {}),
             ...(item.size && item.size !== 'default' ? { size: item.size } : {}),
           },
@@ -224,8 +242,12 @@ export const getCart = async (req: Request, res: Response) => {
           sellerId: product.sellerId,
           categoryName: categoryName,
           returnPolicy: '7-day Easy Return',
-          allowPickup: product.attributes?.allowPickup ?? false,
-          pickupAvailable: product.attributes?.allowPickup ?? false,
+          isSelfPickup: Boolean(product.isSelfPickup ?? product.sellerId?.isSelfPickup ?? true),
+          allowPickup: Boolean(product.isSelfPickup ?? product.sellerId?.isSelfPickup ?? product.attributes?.allowPickup ?? true),
+          pickupAvailable: Boolean(product.isSelfPickup ?? product.sellerId?.isSelfPickup ?? product.attributes?.allowPickup ?? true),
+          storePickup: Boolean(product.isSelfPickup ?? product.sellerId?.isSelfPickup ?? product.attributes?.allowPickup ?? true),
+          gstRate: Number(product.gstRate ?? 0),
+          gstPricingMode: product.gstPricingMode || 'inclusive',
           isPreOrder: product.isPreOrder ?? product.attributes?.isPreOrder ?? false,
           preOrder: product.isPreOrder ?? product.attributes?.isPreOrder ?? false,
           preOrderType: product.preOrderType || product.attributes?.preOrderType || 'ADVANCE_NOTICE',
@@ -264,6 +286,12 @@ export const addToCart = async (req: Request, res: Response) => {
       size,
       selectedColor,
       selectedSize,
+      variantId,
+      variantName,
+      selectedVariant,
+      selectedAttributes,
+      attributes,
+      sku,
       preOrderDeliveryDate,
       preOrderTimeSlot,
       preOrderCustomNote,
@@ -295,7 +323,14 @@ export const addToCart = async (req: Request, res: Response) => {
       resolvedSize,
       preOrderDeliveryDate || null,
       preOrderTimeSlot || '',
-      preOrderCustomNote || ''
+      preOrderCustomNote || '',
+      {
+        variantId,
+        variantName,
+        selectedVariant,
+        selectedAttributes: selectedAttributes || attributes || {},
+        sku,
+      }
     );
     res.status(200).json({ success: true, message: 'Added to cart successfully', cart });
   } catch (error: any) {

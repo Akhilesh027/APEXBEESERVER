@@ -6,6 +6,7 @@ const Inventory_1 = require("../models/Inventory");
 const Vendor_1 = require("../models/Vendor");
 const Coupon_1 = require("../models/Coupon");
 const Wallet_1 = require("../models/Wallet");
+const dairyOrderRules_1 = require("../services/dairyOrderRules");
 const getCheckoutQuote = async (req, res) => {
     try {
         const { items, lat, lng, couponCode, useWallet, deliverySlotId, } = req.body;
@@ -23,6 +24,12 @@ const getCheckoutQuote = async (req, res) => {
             const storeProduct = await StoreProduct_1.StoreProduct.findById(item.storeProductId).populate('productId');
             if (!storeProduct) {
                 return res.status(404).json({ success: false, message: `Product listing not found: ${item.storeProductId}` });
+            }
+            try {
+                await (0, dairyOrderRules_1.enforceOneTimeDairyOrder)([storeProduct.productId]);
+            }
+            catch (error) {
+                return res.status(409).json({ success: false, message: error.message });
             }
             if (!primaryStoreId) {
                 primaryStoreId = storeProduct.storeId.toString();

@@ -146,42 +146,94 @@ const getAllMenuItemsForAdmin = async (req, res) => {
             filter.approvalStatus = approvalStatus;
         if (search)
             filter.name = { $regex: String(search), $options: 'i' };
+        const defaultShares = [
+            { type: 'state', label: 'State Franchise', percent: 2.5, isActive: true },
+            { type: 'district', label: 'District Franchise', percent: 5, isActive: true },
+            { type: 'mandal', label: 'Mandal Franchise', percent: 10, isActive: true },
+            { type: 'level1', label: 'Level 1 Referral', percent: 10, isActive: true },
+            { type: 'level2', label: 'Level 2 Referral', percent: 5, isActive: true },
+            { type: 'level3', label: 'Level 3 Referral', percent: 2.5, isActive: true },
+            { type: 'firstPurchase', label: 'First Purchase Reward', percent: 5, isActive: true },
+            { type: 'wishlink', label: 'WishLink Reward', percent: 5, isActive: true },
+        ];
         const items = await FoodMenuItem_1.FoodMenuItem.find(filter)
             .populate('restaurantId', 'restaurantName name city')
             .populate('categoryId', 'name')
-            .sort({ createdAt: -1 });
-        for (const item of items) {
-            try {
-                const exists = await Product_1.default.exists({ foodMenuItemId: item._id });
-                if (!exists) {
-                    const prod = new Product_1.default({
-                        name: item.name,
-                        slug: item.slug || item.name.toLowerCase().replace(/[^a-z0-9]/g, '-'),
-                        description: item.description || '',
-                        sellerId: item.restaurantId,
-                        sellerType: 'RestaurantProfile',
-                        itemType: 'FOOD',
-                        foodMenuItemId: item._id,
-                        baseMrp: item.basePrice,
-                        baseSellingPrice: item.offerPrice || item.basePrice,
-                        thumbnail: item.image || '',
-                        images: item.image ? [item.image] : [],
-                        moderationStatus: item.approvalStatus === 'PUBLISHED_LIVE' ? 'approved' : 'pending',
-                        status: item.approvalStatus === 'PUBLISHED_LIVE' ? 'Live' : 'Pending Review',
-                        isActive: item.status === 'ACTIVE',
-                        stock: 9999,
-                        sku: `FOOD-${item._id.toString().slice(-6).toUpperCase()}`,
-                        adminPricingApproved: item.approvalStatus === 'PUBLISHED_LIVE',
-                        sellerPricingAccepted: item.approvalStatus === 'PUBLISHED_LIVE',
-                    });
-                    await prod.save();
-                }
-            }
-            catch (e) {
-                console.warn('[getAllMenuItemsForAdmin] Product auto-sync warning:', e);
-            }
-        }
-        res.status(200).json({ success: true, items });
+            .sort({ createdAt: -1 })
+            .lean();
+        const foodItemIds = items.map((i) => i._id);
+        const syncedProducts = await Product_1.default.find({ foodMenuItemId: { $in: foodItemIds } }).lean();
+        const productByFoodId = new Map(syncedProducts.map((p) => [String(p.foodMenuItemId), p]));
+        const enrichedItems = items.map((item) => {
+            const prod = productByFoodId.get(String(item._id));
+            const adminPricing = prod?.adminPricing || item.adminPricing || {};
+            const rawShares = adminPricing.commissionShares?.length
+                ? adminPricing.commissionShares
+                : (item.commissionShares?.length ? item.commissionShares : defaultShares);
+            const shares = defaultShares.map((def) => {
+                const found = rawShares.find((s) => s && s.type === def.type);
+                return {
+                    ...def,
+                    percent: found?.percent !== undefined && found?.percent !== null && found?.percent !== '' ? Number(found.percent) : def.percent,
+                    amount: found?.amount !== undefined ? Number(found.amount) : 0,
+                    isActive: found?.isActive !== false,
+                };
+            });
+            const shipCharge = Number(adminPricing.shippingCharge ??
+                prod?.shippingCharge ??
+                item.shippingCharge ??
+                item.deliveryFee ??
+                0);
+            const packCharge = Number(adminPricing.packingCharge ??
+                prod?.packingCharge ??
+                item.packingCharge ??
+                item.packagingCharge ??
+                0);
+            const mrp = Number(adminPricing.mrp || item.basePrice || 0);
+            const sellingPrice = Number(adminPricing.sellingPrice || item.offerPrice || item.basePrice || 0);
+            const platformFeePercent = Number(adminPricing.platformFeePercent ?? item.platformCommissionPercent ?? 5);
+            const platformFeeAmount = adminPricing.platformFeeAmount !== undefined
+                ? Number(adminPricing.platformFeeAmount)
+                : Math.round(((sellingPrice * platformFeePercent) / 100) * 100) / 100;
+            const vendorCommissionPercent = Number(adminPricing.vendorCommissionPercent ?? item.vendorCommissionPercent ?? 0);
+            const vendorCommissionAmount = adminPricing.vendorCommissionAmount !== undefined
+                ? Number(adminPricing.vendorCommissionAmount)
+                : Math.round(((sellingPrice * vendorCommissionPercent) / 100) * 100) / 100;
+            const distributedFrom = adminPricing.distributedFrom || item.distributedFrom || 'platform_fee';
+            const finalSellerAmount = adminPricing.finalSellerAmount !== undefined
+                ? Number(adminPricing.finalSellerAmount)
+                : (item.vendorPayoutAmount !== undefined && Number(item.vendorPayoutAmount) > 0 ? Number(item.vendorPayoutAmount) : sellingPrice);
+            const refCommission = prod?.referralCommission || item.referralCommission || { level1: 10, level2: 5, level3: 2.5 };
+            const refEarnings = adminPricing.referralEarnings || item.referralEarnings || {};
+            return {
+                ...item,
+                productId: prod?._id,
+                shippingCharge: shipCharge,
+                packingCharge: packCharge,
+                deliveryFee: shipCharge,
+                packagingCharge: packCharge,
+                commissionShares: shares,
+                referralCommission: refCommission,
+                adminPricing: {
+                    ...adminPricing,
+                    mrp,
+                    sellingPrice,
+                    platformFeePercent,
+                    platformFeeAmount,
+                    vendorCommissionPercent,
+                    vendorCommissionAmount,
+                    distributedFrom,
+                    finalSellerAmount,
+                    shippingCharge: shipCharge,
+                    packingCharge: packCharge,
+                    commissionShares: shares,
+                    referralCommission: refCommission,
+                    referralEarnings: refEarnings,
+                    remarks: item.adminPricingNotes || adminPricing.remarks || '',
+                },
+            };
+        });
+        res.status(200).json({ success: true, items: enrichedItems });
     }
     catch (error) {
         res.status(500).json({ success: false, message: 'Failed to fetch admin menu items', error: error.message });
@@ -191,13 +243,63 @@ exports.getAllMenuItemsForAdmin = getAllMenuItemsForAdmin;
 const createMenuItem = async (req, res) => {
     try {
         const restaurantId = req.foodPartnerContext?.restaurantId;
-        const { categoryId, name, description, foodType, cuisine, image, basePrice, offerPrice, packagingCharge, preparationTimeMinutes, isBestseller, isRecommended, isSpicy, isCustomisable, availabilitySchedule, } = req.body;
+        const { categoryId, name, description, foodType, cuisine, image, basePrice, offerPrice, packagingCharge, shippingCharge, preparationTimeMinutes, isBestseller, isRecommended, isSpicy, isCustomisable, availabilitySchedule, } = req.body;
         const price = Number(basePrice) || 0;
         const offPrice = Number(offerPrice) || 0;
         const sellingPrice = (offPrice > 0) ? offPrice : price;
         const initialPlatformFeePercent = 5;
         const platformShare = Math.round(((sellingPrice * initialPlatformFeePercent) / 100) * 100) / 100;
         const vendorPayout = sellingPrice; // By default under platform fee pool, vendor gets 100% of selling price!
+        const packCharge = Number(packagingCharge ?? req.body.packingCharge ?? 0);
+        const shipCharge = Number(shippingCharge ?? req.body.deliveryFee ?? 0);
+        const defaultShares = [
+            { type: 'state', label: 'State Franchise', percent: 2.5, isActive: true },
+            { type: 'district', label: 'District Franchise', percent: 5, isActive: true },
+            { type: 'mandal', label: 'Mandal Franchise', percent: 10, isActive: true },
+            { type: 'level1', label: 'Level 1 Referral', percent: 10, isActive: true },
+            { type: 'level2', label: 'Level 2 Referral', percent: 5, isActive: true },
+            { type: 'level3', label: 'Level 3 Referral', percent: 2.5, isActive: true },
+            { type: 'firstPurchase', label: 'First Purchase Reward', percent: 5, isActive: true },
+            { type: 'wishlink', label: 'WishLink Reward', percent: 5, isActive: true },
+        ];
+        const distributionPool = platformShare;
+        const sharesWithAmounts = defaultShares.map(s => ({
+            ...s,
+            amount: Math.round(((distributionPool * s.percent) / 100) * 100) / 100,
+        }));
+        const totalCommAmt = Math.round(sharesWithAmounts.reduce((sum, s) => sum + s.amount, 0) * 100) / 100;
+        const l1Amt = sharesWithAmounts.find(s => s.type === 'level1')?.amount || 0;
+        const l2Amt = sharesWithAmounts.find(s => s.type === 'level2')?.amount || 0;
+        const l3Amt = sharesWithAmounts.find(s => s.type === 'level3')?.amount || 0;
+        const avgReferral = Math.round(((l1Amt + l2Amt + l3Amt) / 3) * 100) / 100;
+        const totalReferral = Math.round((l1Amt + l2Amt + l3Amt) * 100) / 100;
+        const initialAdminPricing = {
+            mrp: price,
+            sellingPrice: sellingPrice,
+            platformFeePercent: initialPlatformFeePercent,
+            platformFeeAmount: platformShare,
+            vendorCommissionPercent: 0,
+            vendorCommissionAmount: 0,
+            distributedFrom: 'platform_fee',
+            distributionPool: distributionPool,
+            shippingCharge: shipCharge,
+            packingCharge: packCharge,
+            commissionShares: sharesWithAmounts,
+            totalCommissionAmount: totalCommAmt,
+            finalSellerAmount: vendorPayout,
+            customerSellingAmount: sellingPrice + shipCharge + packCharge,
+            platformNetProfit: Math.round((platformShare - totalCommAmt) * 100) / 100,
+            referralEarnings: {
+                level1: l1Amt,
+                level2: l2Amt,
+                level3: l3Amt,
+                average: avgReferral,
+                total: totalReferral,
+            },
+            averageReferralEarning: avgReferral,
+            estimatedEarning: avgReferral,
+            remarks: 'Initial upload from Food Partner Portal',
+        };
         const itemImage = image || req.body.imageUrl || '';
         const slug = name.toLowerCase().replace(/[^a-z0-9]/g, '-') + '-' + Math.floor(100 + Math.random() * 900);
         const item = new FoodMenuItem_1.FoodMenuItem({
@@ -211,7 +313,10 @@ const createMenuItem = async (req, res) => {
             image: itemImage,
             basePrice: price,
             offerPrice: offerPrice || 0,
-            packagingCharge: packagingCharge || 0,
+            packagingCharge: packCharge,
+            packingCharge: packCharge,
+            shippingCharge: shipCharge,
+            deliveryFee: shipCharge,
             preparationTimeMinutes: preparationTimeMinutes || 20,
             isBestseller: Boolean(isBestseller),
             isRecommended: Boolean(isRecommended),
@@ -223,10 +328,25 @@ const createMenuItem = async (req, res) => {
             platformShareAmount: platformShare,
             vendorPayoutAmount: vendorPayout,
             soldOut: false,
+            adminPricing: initialAdminPricing,
+            commissionShares: sharesWithAmounts,
+            referralCommission: { level1: 10, level2: 5, level3: 2.5 },
+            referralEarnings: initialAdminPricing.referralEarnings,
             availabilitySchedule,
+            isPreOrder: Boolean(req.body.isPreOrder),
+            preOrderType: req.body.preOrderType || 'ADVANCE_NOTICE',
+            preOrderLeadTimeDays: req.body.preOrderLeadTimeDays !== undefined ? Number(req.body.preOrderLeadTimeDays) : 2,
+            preOrderLeadTimeHours: req.body.preOrderLeadTimeHours !== undefined ? Number(req.body.preOrderLeadTimeHours) : 0,
+            preOrderDailyCutoffTime: req.body.preOrderDailyCutoffTime || '18:00',
+            preOrderAllowTimeSlot: req.body.preOrderAllowTimeSlot !== undefined ? Boolean(req.body.preOrderAllowTimeSlot) : true,
+            preOrderAllowCustomMessage: req.body.preOrderAllowCustomMessage !== undefined ? Boolean(req.body.preOrderAllowCustomMessage) : false,
+            preOrderCustomMessageLabel: req.body.preOrderCustomMessageLabel || 'Message on Cake / Custom Inscription',
+            preOrderReleaseDate: req.body.preOrderReleaseDate ? new Date(req.body.preOrderReleaseDate) : null,
+            preOrderMessage: req.body.preOrderMessage || '',
+            preOrderLimit: req.body.preOrderLimit ? Number(req.body.preOrderLimit) : 0,
         });
         await item.save();
-        // ALSO create/upsert entry in main Product table so adminPricing & commission engine is applicable!
+        // ALSO create/upsert entry in main Product table with full commission engine data!
         try {
             const prod = new Product_1.default({
                 name,
@@ -238,6 +358,13 @@ const createMenuItem = async (req, res) => {
                 foodMenuItemId: item._id,
                 baseMrp: price,
                 baseSellingPrice: offerPrice || price,
+                shippingCharge: shipCharge,
+                packingCharge: packCharge,
+                deliveryFee: shipCharge,
+                packagingCharge: packCharge,
+                packageCharge: packCharge,
+                adminPricing: initialAdminPricing,
+                referralCommission: { level1: 10, level2: 5, level3: 2.5 },
                 thumbnail: itemImage,
                 images: itemImage ? [itemImage] : [],
                 moderationStatus: 'pending',
@@ -247,6 +374,17 @@ const createMenuItem = async (req, res) => {
                 sku: `FOOD-${item._id.toString().slice(-6).toUpperCase()}`,
                 adminPricingApproved: false,
                 sellerPricingAccepted: false,
+                isPreOrder: Boolean(req.body.isPreOrder),
+                preOrderType: req.body.preOrderType || 'ADVANCE_NOTICE',
+                preOrderLeadTimeDays: req.body.preOrderLeadTimeDays !== undefined ? Number(req.body.preOrderLeadTimeDays) : 2,
+                preOrderLeadTimeHours: req.body.preOrderLeadTimeHours !== undefined ? Number(req.body.preOrderLeadTimeHours) : 0,
+                preOrderDailyCutoffTime: req.body.preOrderDailyCutoffTime || '18:00',
+                preOrderAllowTimeSlot: req.body.preOrderAllowTimeSlot !== undefined ? Boolean(req.body.preOrderAllowTimeSlot) : true,
+                preOrderAllowCustomMessage: req.body.preOrderAllowCustomMessage !== undefined ? Boolean(req.body.preOrderAllowCustomMessage) : false,
+                preOrderCustomMessageLabel: req.body.preOrderCustomMessageLabel || 'Message on Cake / Custom Inscription',
+                preOrderReleaseDate: req.body.preOrderReleaseDate ? new Date(req.body.preOrderReleaseDate) : null,
+                preOrderMessage: req.body.preOrderMessage || '',
+                preOrderLimit: req.body.preOrderLimit ? Number(req.body.preOrderLimit) : 0,
             });
             await prod.save();
         }
@@ -316,12 +454,58 @@ exports.respondToCommissionOffer = respondToCommissionOffer;
 const adminReviewMenuItem = async (req, res) => {
     try {
         const { id } = req.params;
-        const { platformCommissionPercent, vendorCommissionPercent, distributedFrom, adminPricingNotes, vendorPayoutAmount, action } = req.body; // action: 'APPROVE_COMMISSION' | 'REJECT'
+        const { platformCommissionPercent, vendorCommissionPercent, distributedFrom, adminPricingNotes, vendorPayoutAmount, action, shippingCharge, packingCharge, packagingCharge, commissionShares, referralCommission, referralEarnings, customEstimatedEarning, estimatedEarning, } = req.body; // action: 'APPROVE_COMMISSION' | 'REJECT'
         const item = await FoodMenuItem_1.FoodMenuItem.findById(id);
         if (!item) {
             res.status(404).json({ success: false, message: 'Menu item not found' });
             return;
         }
+        const defaultShares = [
+            { type: 'state', label: 'State Franchise', percent: 2.5, isActive: true },
+            { type: 'district', label: 'District Franchise', percent: 5, isActive: true },
+            { type: 'mandal', label: 'Mandal Franchise', percent: 10, isActive: true },
+            { type: 'level1', label: 'Level 1 Referral', percent: 10, isActive: true },
+            { type: 'level2', label: 'Level 2 Referral', percent: 5, isActive: true },
+            { type: 'level3', label: 'Level 3 Referral', percent: 2.5, isActive: true },
+            { type: 'firstPurchase', label: 'First Purchase Reward', percent: 5, isActive: true },
+            { type: 'wishlink', label: 'WishLink Reward', percent: 5, isActive: true },
+        ];
+        const existingProduct = await Product_1.default.findOne({ foodMenuItemId: item._id });
+        const currentAdminPricing = existingProduct?.adminPricing || item.adminPricing || {};
+        const resolvedShip = shippingCharge !== undefined
+            ? Number(shippingCharge)
+            : (currentAdminPricing.shippingCharge ?? existingProduct?.shippingCharge ?? item.shippingCharge ?? item.deliveryFee ?? 0);
+        const resolvedPack = packingCharge !== undefined
+            ? Number(packingCharge)
+            : (packagingCharge !== undefined
+                ? Number(packagingCharge)
+                : (currentAdminPricing.packingCharge ?? existingProduct?.packingCharge ?? item.packingCharge ?? item.packagingCharge ?? 0));
+        // Resolve commission shares
+        const incomingShares = Array.isArray(commissionShares) && commissionShares.length > 0
+            ? commissionShares
+            : (currentAdminPricing.commissionShares?.length ? currentAdminPricing.commissionShares : (item.commissionShares?.length ? item.commissionShares : defaultShares));
+        const resolvedShares = defaultShares.map((def) => {
+            const found = incomingShares.find((s) => s && s.type === def.type);
+            return {
+                ...def,
+                percent: found?.percent !== undefined && found?.percent !== null && found?.percent !== '' ? Number(found.percent) : def.percent,
+                amount: found?.amount !== undefined ? Number(found.amount) : 0,
+                isActive: found?.isActive !== false,
+            };
+        });
+        const resolvedReferralCommission = referralCommission ||
+            currentAdminPricing.referralCommission ||
+            item.referralCommission ||
+            existingProduct?.referralCommission ||
+            { level1: 10, level2: 5, level3: 2.5 };
+        const resolvedReferralEarnings = referralEarnings ||
+            currentAdminPricing.referralEarnings ||
+            item.referralEarnings || {};
+        const resolvedEstEarn = customEstimatedEarning !== undefined && customEstimatedEarning !== null
+            ? Number(customEstimatedEarning)
+            : (estimatedEarning !== undefined && estimatedEarning !== null
+                ? Number(estimatedEarning)
+                : (currentAdminPricing.estimatedEarning || currentAdminPricing.averageReferralEarning || 0));
         if (action === 'REJECT') {
             item.approvalStatus = 'REJECTED_BY_ADMIN';
             item.status = 'INACTIVE';
@@ -344,7 +528,7 @@ const adminReviewMenuItem = async (req, res) => {
                 ? customPayout
                 : hasApexBeeComm
                     ? Math.max(0, Math.round((sellingPrice - vCommAmount) * 100) / 100)
-                    : sellingPrice; // When distributed from platform fee pool, vendor gets 100% of selling price!
+                    : sellingPrice;
             item.platformCommissionPercent = commPercent;
             item.platformShareAmount = platformShare;
             item.vendorCommissionPercent = vCommPercent;
@@ -352,6 +536,32 @@ const adminReviewMenuItem = async (req, res) => {
             item.distributedFrom = poolMode;
             item.vendorPayoutAmount = vendorPayout;
             item.adminPricingNotes = adminPricingNotes || '';
+            item.shippingCharge = resolvedShip;
+            item.deliveryFee = resolvedShip;
+            item.packingCharge = resolvedPack;
+            item.packagingCharge = resolvedPack;
+            item.commissionShares = resolvedShares;
+            item.referralCommission = resolvedReferralCommission;
+            item.referralEarnings = resolvedReferralEarnings;
+            item.adminPricing = {
+                ...currentAdminPricing,
+                mrp: item.basePrice,
+                sellingPrice: sellingPrice,
+                platformFeePercent: commPercent,
+                platformFeeAmount: platformShare,
+                vendorCommissionPercent: vCommPercent,
+                vendorCommissionAmount: vCommAmount,
+                distributedFrom: poolMode,
+                finalSellerAmount: vendorPayout,
+                shippingCharge: resolvedShip,
+                packingCharge: resolvedPack,
+                commissionShares: resolvedShares,
+                referralCommission: resolvedReferralCommission,
+                referralEarnings: resolvedReferralEarnings,
+                estimatedEarning: resolvedEstEarn,
+                averageReferralEarning: resolvedEstEarn,
+                remarks: adminPricingNotes || '',
+            };
             item.approvalStatus = 'PENDING_RESTAURANT_ACCEPTANCE';
             item.adminApprovedAt = new Date();
         }
@@ -361,7 +571,14 @@ const adminReviewMenuItem = async (req, res) => {
             await Product_1.default.findOneAndUpdate({ foodMenuItemId: item._id }, {
                 baseMrp: item.basePrice,
                 baseSellingPrice: sellingPrice,
+                shippingCharge: resolvedShip,
+                packingCharge: resolvedPack,
+                deliveryFee: resolvedShip,
+                packagingCharge: resolvedPack,
+                packageCharge: resolvedPack,
+                referralCommission: resolvedReferralCommission,
                 adminPricing: {
+                    ...currentAdminPricing,
                     mrp: item.basePrice,
                     sellingPrice: sellingPrice,
                     platformFeePercent: item.platformCommissionPercent,
@@ -370,6 +587,13 @@ const adminReviewMenuItem = async (req, res) => {
                     vendorCommissionAmount: item.vendorCommissionAmount,
                     distributedFrom: item.distributedFrom,
                     finalSellerAmount: item.vendorPayoutAmount,
+                    shippingCharge: resolvedShip,
+                    packingCharge: resolvedPack,
+                    commissionShares: resolvedShares,
+                    referralCommission: resolvedReferralCommission,
+                    referralEarnings: resolvedReferralEarnings,
+                    estimatedEarning: resolvedEstEarn,
+                    averageReferralEarning: resolvedEstEarn,
                     remarks: item.adminPricingNotes,
                 },
                 status: action === 'REJECT' ? 'Rejected' : 'Awaiting Seller Approval',
@@ -402,19 +626,72 @@ const updateMenuItem = async (req, res) => {
             updateData.image = itemImage;
             updateData.imageUrl = itemImage;
         }
+        if (updateData.packagingCharge !== undefined) {
+            updateData.packingCharge = Number(updateData.packagingCharge);
+        }
+        if (updateData.shippingCharge !== undefined) {
+            updateData.deliveryFee = Number(updateData.shippingCharge);
+        }
         const item = await FoodMenuItem_1.FoodMenuItem.findOneAndUpdate({ _id: id, restaurantId }, updateData, { new: true });
         if (!item) {
             res.status(404).json({ success: false, message: 'Menu item not found' });
             return;
         }
-        // Sync image to Product model if present
-        if (itemImage) {
-            try {
-                await Product_1.default.findOneAndUpdate({ foodMenuItemId: item._id }, { thumbnail: itemImage, images: [itemImage] });
+        // Sync image, pricing, charges & pre-order settings to Product model if present
+        try {
+            const prodSync = {};
+            if (itemImage) {
+                prodSync.thumbnail = itemImage;
+                prodSync.images = [itemImage];
             }
-            catch (e) {
-                console.warn('[updateMenuItem] Product thumbnail sync warning:', e);
+            if (updateData.name)
+                prodSync.name = updateData.name;
+            if (updateData.description !== undefined)
+                prodSync.description = updateData.description;
+            if (updateData.basePrice !== undefined)
+                prodSync.baseMrp = Number(updateData.basePrice);
+            if (updateData.offerPrice !== undefined || updateData.basePrice !== undefined) {
+                prodSync.baseSellingPrice = Number(updateData.offerPrice && updateData.offerPrice > 0 ? updateData.offerPrice : (updateData.basePrice || item.basePrice));
             }
+            if (updateData.packagingCharge !== undefined || updateData.packingCharge !== undefined) {
+                const pCharge = Number(updateData.packagingCharge ?? updateData.packingCharge);
+                prodSync.packingCharge = pCharge;
+                prodSync.packagingCharge = pCharge;
+                prodSync.packageCharge = pCharge;
+            }
+            if (updateData.shippingCharge !== undefined || updateData.deliveryFee !== undefined) {
+                const sCharge = Number(updateData.shippingCharge ?? updateData.deliveryFee);
+                prodSync.shippingCharge = sCharge;
+                prodSync.deliveryFee = sCharge;
+            }
+            if (updateData.isPreOrder !== undefined)
+                prodSync.isPreOrder = Boolean(updateData.isPreOrder);
+            if (updateData.preOrderType !== undefined)
+                prodSync.preOrderType = updateData.preOrderType;
+            if (updateData.preOrderLeadTimeDays !== undefined)
+                prodSync.preOrderLeadTimeDays = Number(updateData.preOrderLeadTimeDays);
+            if (updateData.preOrderLeadTimeHours !== undefined)
+                prodSync.preOrderLeadTimeHours = Number(updateData.preOrderLeadTimeHours);
+            if (updateData.preOrderDailyCutoffTime !== undefined)
+                prodSync.preOrderDailyCutoffTime = updateData.preOrderDailyCutoffTime;
+            if (updateData.preOrderAllowTimeSlot !== undefined)
+                prodSync.preOrderAllowTimeSlot = Boolean(updateData.preOrderAllowTimeSlot);
+            if (updateData.preOrderAllowCustomMessage !== undefined)
+                prodSync.preOrderAllowCustomMessage = Boolean(updateData.preOrderAllowCustomMessage);
+            if (updateData.preOrderCustomMessageLabel !== undefined)
+                prodSync.preOrderCustomMessageLabel = updateData.preOrderCustomMessageLabel;
+            if (updateData.preOrderReleaseDate !== undefined)
+                prodSync.preOrderReleaseDate = updateData.preOrderReleaseDate ? new Date(updateData.preOrderReleaseDate) : null;
+            if (updateData.preOrderMessage !== undefined)
+                prodSync.preOrderMessage = updateData.preOrderMessage;
+            if (updateData.preOrderLimit !== undefined)
+                prodSync.preOrderLimit = Number(updateData.preOrderLimit);
+            if (Object.keys(prodSync).length > 0) {
+                await Product_1.default.findOneAndUpdate({ foodMenuItemId: item._id }, prodSync);
+            }
+        }
+        catch (e) {
+            console.warn('[updateMenuItem] Product preOrder/thumbnail sync warning:', e);
         }
         const doc = item.toObject();
         doc.imageUrl = item.image || item.imageUrl || '';

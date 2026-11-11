@@ -8,11 +8,14 @@ const mongoose_1 = __importDefault(require("mongoose"));
 const BusinessApplication_1 = require("../models/BusinessApplication");
 const notificationEmitter_1 = require("../modules/notifications/events/notificationEmitter");
 const Vendor_1 = require("../models/Vendor");
+const RestaurantProfile_1 = require("../models/RestaurantProfile");
 const User_1 = require("../models/User");
 const Territory_1 = require("../models/Territory");
 const Referral_1 = require("../models/Referral");
 const Franchise_1 = require("../models/Franchise");
 const notificationHelper_1 = require("../services/notificationHelper");
+const applicationCategorySelection_1 = require("../services/applicationCategorySelection");
+const applicationBusinessDetails_1 = require("../services/applicationBusinessDetails");
 const mapApplicationTypeToRole = (appType) => {
     const type = appType.toLowerCase().trim();
     if (type === "vendor" || type.includes("vendor"))
@@ -44,6 +47,10 @@ const mapApplicationTypeToRole = (appType) => {
 const createApplication = async (req, res) => {
     try {
         const userId = req.body.userId;
+        if (String(req.user?.id) !== String(userId)) {
+            res.status(403).json({ success: false, message: 'You can only submit your own application.' });
+            return;
+        }
         const roleId = req.body.roleId ||
             req.body.applicationType ||
             req.body.role ||
@@ -78,6 +85,24 @@ const createApplication = async (req, res) => {
             return;
         }
         const targetRole = mapApplicationTypeToRole(roleId);
+        let requestedSelection;
+        let businessOperations;
+        if (targetRole === 'vendor' && req.body.onboardingVersion === 2) {
+            try {
+                requestedSelection = await (0, applicationCategorySelection_1.resolveCategorySelections)(req.body.categorySelections);
+                if (req.body.businessInformation)
+                    businessOperations = (0, applicationBusinessDetails_1.parseApplicationBusinessDetails)(req.body);
+                const dairy = req.body.businessDetails?.dairy;
+                if (requestedSelection.subcategoryNames.includes('Milk and Dairy') &&
+                    (!dairy?.businessType || (!String(dairy.morningDelivery || '').trim() && !String(dairy.eveningDelivery || '').trim()))) {
+                    throw new Error('Dairy business type and at least one delivery timing are required.');
+                }
+            }
+            catch (error) {
+                res.status(400).json({ success: false, message: error instanceof Error ? error.message : 'Invalid category selection.' });
+                return;
+            }
+        }
         const user = await User_1.User.findById(userId);
         if (!user) {
             res.status(404).json({
@@ -86,7 +111,20 @@ const createApplication = async (req, res) => {
             });
             return;
         }
-        if (user.roles?.includes(targetRole)) {
+        const additionalVendor = user.roles?.includes('vendor') && targetRole === 'vendor' && !!requestedSelection;
+        if (additionalVendor) {
+            const currentVendor = await Vendor_1.Vendor.findOne({ userId });
+            if (!currentVendor || currentVendor.status !== 'active' || currentVendor.marketplaceStatus !== 'Approved') {
+                res.status(403).json({ success: false, message: 'An active approved vendor is required for additional categories.' });
+                return;
+            }
+            const alreadyApproved = new Set((currentVendor.approvedSubcategories || []).map(name => name.toLowerCase()));
+            if (requestedSelection.subcategoryNames.some(name => alreadyApproved.has(name.toLowerCase()))) {
+                res.status(400).json({ success: false, message: 'Select only new subcategories. Your existing approved businesses remain available in the portal.' });
+                return;
+            }
+        }
+        if (user.roles?.includes(targetRole) && !additionalVendor) {
             res.status(400).json({
                 success: false,
                 message: `You are already an approved ${targetRole}.`,
@@ -96,7 +134,7 @@ const createApplication = async (req, res) => {
         const existingApplication = await BusinessApplication_1.BusinessApplication.findOne({
             userId,
             applicationType: roleId,
-            status: { $in: ["pending", "under_review", "approved"] },
+            status: { $in: additionalVendor ? ["pending", "pending_approval", "under_review", "pre_approved", "kyc_submitted", "changes_requested"] : ["pending", "under_review", "approved", "pre_approved", "kyc_submitted", "changes_requested", "verified"] },
         });
         if (existingApplication) {
             res.status(400).json({
@@ -155,7 +193,7 @@ const createApplication = async (req, res) => {
                 return;
             }
         }
-        const application = await BusinessApplication_1.BusinessApplication.create({
+        const applicationData = {
             userId,
             applicationType,
             roleId,
@@ -234,14 +272,105 @@ const createApplication = async (req, res) => {
             })(),
             requestedCapabilities: req.body.requestedCapabilities || [],
             restaurantName: req.body.restaurantName || businessName,
-            foodBusinessType: req.body.foodBusinessType || "RESTAURANT",
+            foodBusinessType: req.body.foodBusinessType || "Restaurants",
             fssaiNumber: req.body.fssaiNumber || "",
             cuisines: req.body.cuisines || [],
             foodPreference: req.body.foodPreference || "Both",
             isWaitlisted: Boolean(req.body.isWaitlisted),
             waitlistTerritoryFtid: req.body.waitlistTerritoryFtid || "",
             status: req.body.isWaitlisted ? "waitlist" : "pending",
-        });
+        };
+        Object.assign(applicationData, requestedSelection ? {
+            onboardingVersion: 2,
+            isAdditionalCategoryApplication: !!additionalVendor,
+            categorySelections: requestedSelection.selections,
+            categories: requestedSelection.names,
+            category: requestedSelection.names.join(', '),
+            primaryCategory: requestedSelection.names[0],
+            requestedSubcategories: requestedSelection.subcategoryNames,
+            subCategory: requestedSelection.subcategoryNames[0],
+            approvedSubcategories: [],
+            businessDetails: requestedSelection.subcategoryNames.includes('Milk and Dairy') ? { dairy: req.body.businessDetails?.dairy } : {},
+        } : { requestedSubcategories: req.body.requestedSubcategories || [] });
+        if (businessOperations)
+            Object.assign(applicationData, businessOperations);
+        const application = await BusinessApplication_1.BusinessApplication.create(applicationData);
+        if (targetRole === 'food_partner' || applicationType === 'food_partner') {
+            try {
+                if (!user.roles.includes('food_partner')) {
+                    user.roles.push('food_partner');
+                    await user.save();
+                }
+                let vendor = await Vendor_1.Vendor.findOne({ userId: user._id });
+                if (!vendor) {
+                    vendor = new Vendor_1.Vendor({
+                        userId: user._id,
+                        businessName: application.restaurantName || application.businessName || `${user.name} Kitchen`,
+                        ownerName: application.ownerName || user.name,
+                        mobile: application.mobile || user.phone,
+                        email: application.email || user.email,
+                        address: application.address || 'Address Pending',
+                        pincode: application.pincode || user?.pincode || '',
+                        storeType: 'restaurant',
+                        categories: ['Food & Dining'],
+                        primaryCategory: 'Food & Dining',
+                        category: 'Food & Dining',
+                        subCategory: application.foodBusinessType || application.subCategory || 'Restaurants',
+                        approvedSubcategories: [application.foodBusinessType || application.subCategory || 'Restaurants'],
+                        subCategories: [application.foodBusinessType || application.subCategory || 'Restaurants'],
+                        marketplaceStatus: 'Pending Review',
+                    });
+                    await vendor.save();
+                }
+                let restaurant = await RestaurantProfile_1.RestaurantProfile.findOne({ userId: user._id });
+                if (!restaurant) {
+                    const slugName = (application.restaurantName || application.businessName || user.name || 'restaurant')
+                        .toLowerCase()
+                        .replace(/[^a-z0-9]/g, '-')
+                        .replace(/-+/g, '-') + '-' + Math.floor(1000 + Math.random() * 9000);
+                    const normalizeBt = (bt) => {
+                        const raw = String(bt || '').toUpperCase().trim();
+                        if (raw.includes('CAFE') || raw.includes('BAKERY') || raw.includes('BEVERAGE'))
+                            return 'CAFE_BAKERY_BEVERAGES';
+                        if (raw.includes('STREET') || raw.includes('CHAAT') || raw.includes('FAST FOOD') || raw.includes('SNACK') || raw.includes('TIFFIN'))
+                            return 'STREET_FOOD';
+                        if (raw.includes('SWEET') || raw.includes('DESSERT') || raw.includes('ICE CREAM'))
+                            return 'SWEETS_DESSERTS';
+                        if (['RESTAURANT', 'STREET_FOOD', 'CAFE_BAKERY_BEVERAGES', 'SWEETS_DESSERTS'].includes(raw))
+                            return raw;
+                        return 'RESTAURANT';
+                    };
+                    restaurant = new RestaurantProfile_1.RestaurantProfile({
+                        userId: user._id,
+                        vendorId: vendor._id,
+                        storeId: vendor._id,
+                        restaurantName: application.restaurantName || application.businessName || `${user.name} Kitchen`,
+                        slug: slugName,
+                        businessType: normalizeBt(application.foodBusinessType),
+                        legalBusinessName: application.businessName || user.name,
+                        phone: application.mobile || user.phone,
+                        email: application.email || user.email,
+                        fssaiNumber: application.fssaiNumber || '',
+                        cuisines: application.cuisines || [],
+                        foodPreference: (application.foodPreference === 'Veg' ? 'VEG' : application.foodPreference === 'Non-Veg' ? 'NON_VEG' : 'BOTH'),
+                        address: application.address || 'Address Pending',
+                        locality: application.mandal || 'Locality Pending',
+                        city: application.district || 'Hyderabad',
+                        state: application.state || 'Telangana',
+                        pincode: application.pincode || user?.pincode || '',
+                        location: { type: 'Point', coordinates: [78.4867, 17.385] },
+                        verificationStatus: 'PENDING',
+                        accountStatus: 'ACTIVE',
+                        onboardingStep: 1,
+                        isOnboardingCompleted: false,
+                    });
+                    await restaurant.save();
+                }
+            }
+            catch (provisionErr) {
+                console.error('Error auto-provisioning food partner profile:', provisionErr);
+            }
+        }
         // Link application to Referral
         await Referral_1.Referral.findOneAndUpdate({ referredUserId: userId, status: "registered" }, {
             status: "applied",
@@ -277,9 +406,14 @@ const createApplication = async (req, res) => {
 exports.createApplication = createApplication;
 const getUserApplications = async (req, res) => {
     try {
-        const { userId } = req.params;
-        const queryEmail = req.query.email?.trim();
-        const queryPhone = (req.query.phone || req.query.mobile)?.trim();
+        const account = req.user;
+        if (!account) {
+            res.status(401).json({ message: 'Sign in to view your applications.' });
+            return;
+        }
+        const userId = account.roles.includes('admin') ? req.params.userId : account.id;
+        const queryEmail = account.roles.includes('admin') ? req.query.email?.trim() : undefined;
+        const queryPhone = account.roles.includes('admin') ? (req.query.phone || req.query.mobile)?.trim() : undefined;
         const queryFilters = [];
         // Helper to register an email filter and lookup matching user
         const addEmailFilter = async (em) => {
@@ -347,6 +481,8 @@ const getUserApplications = async (req, res) => {
                 queryFilters.push({ mobile: authedUser.phone.trim() });
         }
         let applications = [];
+        if (!account.roles.includes('admin'))
+            queryFilters.splice(0, queryFilters.length, { userId: account.id });
         if (queryFilters.length > 0) {
             applications = await BusinessApplication_1.BusinessApplication.find({ $or: queryFilters }).sort({
                 createdAt: -1,
@@ -409,6 +545,23 @@ const getUserApplications = async (req, res) => {
             pincode: app.pincode,
             primaryCategory: app.primaryCategory || app.category || "",
             category: app.category || app.primaryCategory || "",
+            categories: app.categories || [],
+            requestedSubcategories: app.requestedSubcategories || [],
+            subcategoryDecisions: app.subcategoryDecisions || [],
+            approvedSubcategories: app.approvedSubcategories || [],
+            onboardingVersion: app.onboardingVersion,
+            businessDetails: app.businessDetails,
+            businessInformation: app.businessInformation,
+            bankDetails: app.bankDetails,
+            location: app.location,
+            categorySelections: app.categorySelections,
+            panNumber: app.panNumber,
+            gstNumber: app.gstNumber,
+            aadhaarNumber: app.aadhaarNumber,
+            experience: app.experience,
+            remarks: app.remarks,
+            correctionStage: app.correctionStage,
+            correctionReason: app.correctionReason,
             subCategory: app.subCategory || "",
             restaurantName: app.restaurantName || app.businessName,
             foodBusinessType: app.foodBusinessType || "RESTAURANT",
@@ -438,7 +591,7 @@ const updateApplicationKyc = async (req, res) => {
     try {
         const { id } = req.params;
         const { documents } = req.body;
-        if (!documents || typeof documents !== "object") {
+        if (!documents || typeof documents !== "object" || Array.isArray(documents)) {
             res.status(400).json({
                 success: false,
                 message: "Documents are required",
@@ -453,11 +606,39 @@ const updateApplicationKyc = async (req, res) => {
             });
             return;
         }
+        if (String(req.user?.id) !== String(application.userId)) {
+            res.status(403).json({ success: false, message: 'You can only upload documents for your own application.' });
+            return;
+        }
+        if (application.onboardingVersion === 2 && !(['pre_approved', 'under_review', 'kyc_submitted'].includes(application.status) ||
+            (application.status === 'changes_requested' && application.correctionStage === 'documents'))) {
+            res.status(400).json({ success: false, message: 'Document submission is available after initial admin approval.' });
+            return;
+        }
+        const documentKeys = ['aadhaar', 'pan', 'gst', 'license'];
+        if (Object.keys(documents).some(key => !documentKeys.includes(key) || typeof documents[key] !== 'string' || !documents[key].trim() || !/^(https?:\/\/|\/uploads\/)/i.test(documents[key]))) {
+            res.status(400).json({ success: false, message: 'Upload valid Aadhaar, PAN, GST, or licence documents.' });
+            return;
+        }
+        if (application.status === 'changes_requested' && application.correctionStage === 'documents' &&
+            !Object.keys(documents).some(key => documents[key] !== application.documents?.[key])) {
+            res.status(400).json({ success: false, message: 'Upload at least one corrected document before resubmitting.' });
+            return;
+        }
+        application.kycStatus = 'pending';
+        if (application.onboardingVersion === 2 && ['aadhaar', 'pan'].some(key => {
+            const value = documents[key] || application.documents?.[key];
+            return typeof value !== 'string' || !value.trim();
+        })) {
+            res.status(400).json({ success: false, message: 'Aadhaar and PAN documents are required for verification.' });
+            return;
+        }
         application.documents = {
             ...(application.documents || {}),
             ...documents,
         };
         application.status = "under_review";
+        application.correctionStage = undefined;
         const updatedApp = await application.save();
         const vendor = await Vendor_1.Vendor.findOne({ userId: application.userId });
         if (vendor) {

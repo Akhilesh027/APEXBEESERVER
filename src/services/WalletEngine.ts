@@ -21,17 +21,27 @@ export class WalletEngine {
     if (session) {
       return await fn(session);
     }
-    const localSession = await mongoose.startSession();
-    localSession.startTransaction();
+    let localSession: ClientSession | null = null;
     try {
-      const result = await fn(localSession);
-      await localSession.commitTransaction();
-      return result;
-    } catch (err) {
-      await localSession.abortTransaction();
-      throw err;
-    } finally {
-      await localSession.endSession();
+      localSession = await mongoose.startSession();
+      localSession.startTransaction();
+    } catch (sessErr: any) {
+      localSession = null;
+    }
+
+    if (localSession) {
+      try {
+        const result = await fn(localSession);
+        await localSession.commitTransaction();
+        return result;
+      } catch (err) {
+        await localSession.abortTransaction();
+        throw err;
+      } finally {
+        await localSession.endSession();
+      }
+    } else {
+      return await fn(undefined as any);
     }
   }
 

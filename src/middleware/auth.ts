@@ -1,6 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-import { RoleType } from '../models/User';
+import mongoose from 'mongoose';
+import { User, RoleType } from '../models/User';
+import { Vendor } from '../models/Vendor';
+import { BusinessApplication } from '../models/BusinessApplication';
 
 export interface AuthRequest extends Request {
   user?: {
@@ -32,7 +35,7 @@ export const protect = async (req: AuthRequest, res: Response, next: NextFunctio
     req.user = {
       id: decoded.id,
       email: decoded.email,
-      roles: decoded.roles
+      roles: Array.isArray(decoded.roles) ? decoded.roles : []
     };
 
     next();
@@ -42,24 +45,94 @@ export const protect = async (req: AuthRequest, res: Response, next: NextFunctio
 };
 
 export const restrictTo = (...allowedRoles: RoleType[]) => {
-  return (req: AuthRequest, res: Response, next: NextFunction): void => {
+  return async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     if (!req.user) {
       res.status(401).json({ message: 'Not authenticated' });
       return;
     }
 
+    const currentRoles: RoleType[] = Array.isArray(req.user.roles) ? [...req.user.roles] : [];
+
     // Admin bypass: if user has the 'admin' role, allow everything
-    if (req.user.roles.includes('admin')) {
+    if (currentRoles.includes('admin')) {
       return next();
     }
 
-    const hasPermission = req.user.roles.some(role => allowedRoles.includes(role));
-    if (!hasPermission) {
-      res.status(403).json({ message: 'Forbidden: You do not have permissions for this action' });
-      return;
+    // Fast path: matches decoded token roles directly
+    if (currentRoles.some(role => allowedRoles.includes(role))) {
+      return next();
     }
 
-    next();
+    // If token roles do not match, check DB to see if user has been granted roles,
+    // has a vendor profile, or approved business application
+    try {
+      const isObjId = mongoose.Types.ObjectId.isValid(req.user.id);
+      const userDoc = isObjId ? await User.findById(req.user.id) : await User.findOne({ email: req.user.email?.toLowerCase().trim() });
+      if (userDoc) {
+        const dbRoles = Array.isArray(userDoc.roles) ? userDoc.roles : [];
+
+        if (dbRoles.includes('admin')) {
+          req.user.roles = dbRoles;
+          return next();
+        }
+
+        if (dbRoles.some(role => allowedRoles.includes(role))) {
+          req.user.roles = dbRoles;
+          return next();
+        }
+
+        // If 'vendor' is an allowed role, check seller synonyms or vendor profiles
+        if (allowedRoles.includes('vendor')) {
+          const sellerSynonyms: RoleType[] = ['business_partner', 'food_partner', 'wholesaler', 'manufacturer', 'entrepreneur'];
+          if (dbRoles.some(r => sellerSynonyms.includes(r))) {
+            req.user.roles = [...new Set([...dbRoles, 'vendor' as RoleType])];
+            return next();
+          }
+
+          // Check if Vendor profile exists
+          const vendorDoc = await Vendor.findOne({
+            $or: [
+              ...(isObjId ? [{ userId: new mongoose.Types.ObjectId(req.user.id) }] : []),
+              { userId: req.user.id },
+              ...(req.user.email ? [{ email: req.user.email.toLowerCase().trim() }] : []),
+              ...(isObjId ? [{ _id: new mongoose.Types.ObjectId(req.user.id) }] : [])
+            ]
+          });
+
+          if (vendorDoc) {
+            if (!userDoc.roles.includes('vendor')) {
+              userDoc.roles.push('vendor');
+              await userDoc.save().catch(() => {});
+            }
+            req.user.roles = [...new Set([...dbRoles, 'vendor' as RoleType])];
+            return next();
+          }
+
+          // Check if approved business application exists
+          const appDoc = await BusinessApplication.findOne({
+            $or: [
+              ...(isObjId ? [{ userId: new mongoose.Types.ObjectId(req.user.id) }] : []),
+              { userId: req.user.id },
+              ...(req.user.email ? [{ email: req.user.email.toLowerCase().trim() }] : [])
+            ],
+            status: { $in: ['approved', 'verified', 'active'] }
+          });
+
+          if (appDoc) {
+            if (!userDoc.roles.includes('vendor')) {
+              userDoc.roles.push('vendor');
+              await userDoc.save().catch(() => {});
+            }
+            req.user.roles = [...new Set([...dbRoles, 'vendor' as RoleType])];
+            return next();
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[restrictTo] Error checking database permissions:', err);
+    }
+
+    res.status(403).json({ message: 'Forbidden: You do not have permissions for this action' });
   };
 };
 

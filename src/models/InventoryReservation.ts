@@ -11,6 +11,7 @@ export interface IInventoryReservation extends Document {
   expiresAt: Date;
   createdAt: Date;
   updatedAt: Date;
+  batchAllocations?: Array<{ batchId: mongoose.Types.ObjectId; quantity: number }>;
 }
 
 const InventoryReservationSchema = new Schema<IInventoryReservation>(
@@ -21,6 +22,7 @@ const InventoryReservationSchema = new Schema<IInventoryReservation>(
       unique: true,
       index: true,
     },
+    batchAllocations: [{ batchId: { type: Schema.Types.ObjectId, ref: 'StockBatch' }, quantity: Number }],
     orderId: {
       type: Schema.Types.ObjectId,
       ref: 'Order',
@@ -46,7 +48,7 @@ const InventoryReservationSchema = new Schema<IInventoryReservation>(
     quantity: {
       type: Number,
       required: true,
-      min: [1, 'quantity must be at least 1'],
+      min: [0.001, 'quantity must be at least 0.001 sellable units'],
     },
     status: {
       type: String,

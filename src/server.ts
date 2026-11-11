@@ -56,6 +56,13 @@ import businessRoutes from './routes/businessRoutes';
 import deliveryRoutes from './routes/deliveryRoutes';
 import serviceBookingRoutes from './routes/serviceBookingRoutes';
 import localShopRoutes from './routes/localShopRoutes';
+import businessInquiryRoutes from './routes/businessInquiryRoutes';
+import { DairySummaryService } from './services/DairySummaryService';
+import { DairyBillingJob } from './services/dairyBillingJob';
+import { runDairyRenewals, sendDairyDelayNotices } from './services/dairySubscriptionLifecycle';
+import { SubscriptionSchedulerService } from './services/SubscriptionSchedulerService';
+import { indiaDate } from './services/vendorWorkspaceService';
+import { isDairySummaryTime } from './services/dairyOperationsService';
 import b2bRoutes from './routes/b2bRoutes';
 import searchRoutes from './routes/searchRoutes';
 import storesRoutes from './routes/storesRoutes';
@@ -180,6 +187,7 @@ app.use("/api/delivery", deliveryRoutes);
 app.use("/api/service", serviceBookingRoutes);
 app.use('/api/table-bookings', tableBookingRoutes);
 app.use('/api/local-shop', localShopRoutes);
+app.use('/api/business-inquiries', businessInquiryRoutes);
 app.use('/api/b2b', b2bRoutes);
 app.use('/api/v1/search', searchRoutes);
 app.use('/api/v1/stores', storesRoutes);
@@ -492,9 +500,38 @@ const startServer = async () => {
     initNotificationListeners(); // Registry listeners for events
 
     let reservationExpiryTimer: NodeJS.Timeout | null = null;
+    let dairySummaryTimer: NodeJS.Timeout | null = null;
+    let dairySummaryRunning = false;
+    let dairyTaskDate = '';
+    let dairyFundingDate = '';
+    let dairyBillingDate = '';
+    let dairyRenewalDate = '';
+    let dairyDelayCheck = -1;
     if (env.PROCESS_TYPE !== 'api') {
       console.log(`[NotificationQueue] Starting background worker loop... [PROCESS_TYPE=${env.PROCESS_TYPE}]`);
       notificationQueue.startWorker(); // Boot background worker processing loop
+      const runDairySummaries = async () => {
+        if (dairySummaryRunning) return;
+        dairySummaryRunning = true;
+        try {
+          const now = new Date(), date = indiaDate(now);
+          if (dairyRenewalDate !== date) { await runDairyRenewals(now); dairyRenewalDate = date; }
+          if (dairyTaskDate !== date) { await SubscriptionSchedulerService.runDailyScheduler(now); dairyTaskDate = date; }
+          if (dairyBillingDate !== date) {
+            try { const billing = await DairyBillingJob.run(now); if (!billing.failed) dairyBillingDate = date; if (billing.failed || billing.overlaps) console.warn('[DairyBilling] Periods need retry/reconciliation:', billing.errors); }
+            catch (error) { console.error('[DairyBilling] Automatic draft generation failed:', error); }
+          }
+          if (isDairySummaryTime(now)) {
+            await DairySummaryService.run(now);
+            if (dairyFundingDate !== date) { await SubscriptionSchedulerService.processWalletHoldsForTomorrow(now); dairyFundingDate = date; }
+          }
+          const delayCheck = Math.floor(now.getTime() / 300000);
+          if (dairyDelayCheck !== delayCheck) { await sendDairyDelayNotices(now); dairyDelayCheck = delayCheck; }
+        } catch (error) { console.error('[DairySummary] Background summary failed:', error); }
+        finally { dairySummaryRunning = false; }
+      };
+      dairySummaryTimer = setInterval(runDairySummaries, 60000);
+      void runDairySummaries();
 
       console.log('[InventoryService] Starting background reservation sweep loop...');
       reservationExpiryTimer = setInterval(async () => {
@@ -507,6 +544,16 @@ const startServer = async () => {
           console.error('[InventoryService] Error in background reservation sweep:', err.message);
         }
       }, 60000); // Check every 60 seconds
+
+      // Background Delivery Slot Expiry & Failed-to-Deliver audit loop (runs every 60s)
+      setInterval(async () => {
+        try {
+          const { runDeliverySlotAudit } = require('./services/deliverySlotService');
+          await runDeliverySlotAudit();
+        } catch (slotErr: any) {
+          console.error('[DeliverySlotAudit] Error in background check:', slotErr.message);
+        }
+      }, 60000);
     }
 
     const shutdown = async (signal: string) => {
@@ -522,6 +569,7 @@ const startServer = async () => {
               clearInterval(reservationExpiryTimer);
               console.log('[Shutdown] Background reservation sweep loop stopped.');
             }
+            if (dairySummaryTimer) clearInterval(dairySummaryTimer);
           }
 
           await mongoose.connection.close();

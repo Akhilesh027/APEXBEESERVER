@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import mongoose from "mongoose";
 import { Territory } from "../models/Territory";
 import { Franchise } from "../models/Franchise";
+import { User } from "../models/User";
 import { StateMaster } from "../models/StateMaster";
 import { DistrictMaster } from "../models/DistrictMaster";
 import { MandalMaster } from "../models/MandalMaster";
@@ -426,8 +427,20 @@ export const updateTerritory = async (req: Request, res: Response) => {
       existingTerritory.franchiseStatus = "ACTIVE";
       const fDoc = await Franchise.findById(newFranchiseId);
       if (fDoc) {
+        let masterUserId = fDoc.userId ? fDoc.userId.toString() : undefined;
+        if (!masterUserId && fDoc.email) {
+          const uDoc = await User.findOne({ email: { $regex: new RegExp(`^${fDoc.email.trim()}$`, "i") } });
+          if (uDoc) {
+            masterUserId = uDoc._id.toString();
+            if (!fDoc.userId) {
+              fDoc.userId = uDoc._id as any;
+              await fDoc.save();
+            }
+          }
+        }
         existingTerritory.currentFranchisee = {
           franchiseId: fDoc._id,
+          masterUserId,
           name: fDoc.businessName || fDoc.ownerName || "",
           phone: fDoc.mobile || "",
           email: fDoc.email || "",
@@ -540,10 +553,23 @@ export const assignTerritory = async (req: Request, res: Response) => {
       });
     }
 
+    let masterUserId = franchise.userId ? franchise.userId.toString() : undefined;
+    if (!masterUserId && franchise.email) {
+      const uDoc = await User.findOne({ email: { $regex: new RegExp(`^${franchise.email.trim()}$`, "i") } });
+      if (uDoc) {
+        masterUserId = uDoc._id.toString();
+        if (!franchise.userId) {
+          franchise.userId = uDoc._id as any;
+          await franchise.save();
+        }
+      }
+    }
+
     territory.franchiseId = franchise._id as any;
     territory.franchiseStatus = "ACTIVE";
     territory.currentFranchisee = {
       franchiseId: franchise._id,
+      masterUserId,
       name: franchise.businessName || franchise.ownerName || "",
       phone: franchise.mobile || "",
       email: franchise.email || "",

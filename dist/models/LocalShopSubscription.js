@@ -35,6 +35,7 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importStar(require("mongoose"));
 const LocalShopSubscriptionSchema = new mongoose_1.Schema({
+    deliveryLocation: { latitude: Number, longitude: Number },
     userId: {
         type: mongoose_1.Schema.Types.Mixed, // Supports ObjectId or String ids (like mock-user-123)
         required: true,
@@ -79,19 +80,23 @@ const LocalShopSubscriptionSchema = new mongoose_1.Schema({
         type: [String],
         default: []
     },
+    scheduleVersion: { type: Number, default: 1 },
+    portalType: { type: String, enum: ['water', 'dairy'] },
+    billingCycle: { type: String, enum: ['weekly', 'monthly'] },
     deliverySlot: {
         type: String,
         required: true
     },
     status: {
         type: String,
-        enum: ['active', 'paused'],
+        enum: ['active', 'paused', 'cancelled', 'expired'],
         default: 'active'
     },
     autoRenew: {
         type: Boolean,
         default: true
     },
+    currentPeriodEnd: String,
     skippedDates: {
         type: [String],
         default: []

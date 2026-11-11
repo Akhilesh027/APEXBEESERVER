@@ -411,6 +411,118 @@ export const DAILY_NEEDS_TAXONOMY: IDailyNeedsSubcategoryDef[] = [
   },
 ];
 
+async function seedChildCategories(subCategory: { _id: unknown }, subDef: IDailyNeedsSubcategoryDef, insertOnly = false) {
+  let childCount = 0;
+  let schemaCount = 0;
+  const now = new Date();
+  for (let cIdx = 0; cIdx < subDef.childCategories.length; cIdx++) {
+    const childDef = subDef.childCategories[cIdx];
+    const childSlug = childDef.slug || `${subDef.slug}-${makeSlug(childDef.name)}`;
+
+    // Merge base subcategory attributes with child-specific extra attributes
+    const combinedAttributes = [...subDef.attributes];
+    if (childDef.extraAttributes && childDef.extraAttributes.length > 0) {
+      childDef.extraAttributes.forEach(extra => {
+        const exists = combinedAttributes.some(a => a.key === extra.key);
+        if (!exists) {
+          combinedAttributes.push(extra);
+        }
+      });
+    }
+
+    const childCategory = await Category.findOneAndUpdate(
+      insertOnly ? { slug: childSlug, parentId: subCategory._id, level: 3 } : { slug: childSlug },
+      {
+        [insertOnly ? '$setOnInsert' : '$set']: {
+          name: childDef.name,
+          slug: childSlug,
+          description: `${childDef.name} under ${subDef.name}`,
+          level: 3,
+          parentId: subCategory._id,
+          isActive: true,
+          supportedItemTypes: subDef.supportedItemTypes,
+          attributes: combinedAttributes as any,
+          displayOrder: cIdx + 1,
+          sortOrder: cIdx + 1,
+          ...(insertOnly ? { createdAt: now, updatedAt: now } : {}),
+        },
+      },
+      { upsert: true, new: true, timestamps: !insertOnly }
+    );
+    childCount++;
+
+    const effectiveProductMode = childDef.productMode || subDef.productMode;
+    const effectiveInventoryMode = childDef.inventoryMode || subDef.inventoryMode;
+
+    // Upsert Child Category Override Schema
+    await CategoryProductSchema.findOneAndUpdate(
+      { categoryId: childCategory._id },
+      {
+        [insertOnly ? '$setOnInsert' : '$set']: {
+          categoryId: childCategory._id,
+          subcategoryId: subCategory._id,
+          isChildOverride: true,
+          schemaVersion: 1,
+          productMode: effectiveProductMode,
+          allowedVendorCapabilities: subDef.allowedCapabilities,
+          allowedItemTypes: subDef.supportedItemTypes,
+          attributes: combinedAttributes as any,
+          variantAttributes: combinedAttributes.filter(a => a.isVariant).map(a => a.key),
+          inventoryPolicy: {
+            mode: effectiveInventoryMode,
+            requiresBatch: effectiveInventoryMode.includes('batch'),
+            requiresExpiry: effectiveInventoryMode.includes('batch'),
+            supportsReservedStock: true,
+            supportsDamagedStock: true,
+            supportsRawMaterials: false,
+          },
+          deliveryPolicy: {
+            homeDelivery: true,
+            storePickup: true,
+            sameDay: effectiveProductMode === 'fresh',
+            scheduled: true,
+            fragile: childDef.name.toLowerCase().includes('water') || childDef.name.toLowerCase().includes('egg') || childDef.name.toLowerCase().includes('glass'),
+            mergedDelivery: true,
+            multiVendorDelivery: true,
+          },
+          compliancePolicy: {
+            requiredDocuments: subDef.name.includes('Milk') || subDef.name.includes('Meat') || subDef.name.includes('Organic') || subDef.name.includes('Grocery')
+              ? ['FSSAI License']
+              : [],
+            optionalDocuments: ['GST Certificate', 'Organic Certificate'],
+          },
+          isPublished: true,
+          ...(insertOnly ? { createdAt: now, updatedAt: now } : {}),
+        },
+      },
+      { upsert: true, new: true, timestamps: !insertOnly }
+    );
+    schemaCount++;
+  }
+  return { childCount, schemaCount };
+}
+
+async function seedMissingDailyNeedsChildren(expectedParentId?: string) {
+  const parent = await Category.findOne({ slug: 'daily-needs', level: 1, isActive: true });
+  if (!parent) throw new Error('An active Daily Needs parent category is required.');
+  if (expectedParentId && String(parent._id) !== expectedParentId) {
+    throw new Error('The connected database does not match the expected Daily Needs catalog.');
+  }
+
+  const available = await Category.find({ parentId: parent._id, level: 2, isActive: true });
+  const plans = DAILY_NEEDS_TAXONOMY.map(definition => {
+    const matches = available.filter(category => category.slug === definition.slug || category.name === definition.name);
+    if (matches.length !== 1) throw new Error(`Expected one active Daily Needs subcategory for ${definition.name}.`);
+    return { subcategory: matches[0], definition };
+  });
+  let checked = 0;
+  for (const { subcategory, definition } of plans) {
+    const result = await seedChildCategories(subcategory, definition, true);
+    checked += result.childCount;
+  }
+  console.log(`Checked ${checked} child categories under ${plans.length} Daily Needs subcategories.`);
+}
+
 export const seedDailyNeedsTaxonomy = async () => {
   console.log('[SeedDailyNeedsTaxonomy] Initializing Daily Needs taxonomy seeding...');
 
@@ -520,89 +632,9 @@ export const seedDailyNeedsTaxonomy = async () => {
       console.log(`[SeedDailyNeedsTaxonomy] Cleared ${obsoleteChildren.length} obsolete children under subcategory: ${subDef.name}`);
     }
 
-    // 3. Iterate through Child Categories (Level 3)
-    for (let cIdx = 0; cIdx < subDef.childCategories.length; cIdx++) {
-      const childDef = subDef.childCategories[cIdx];
-      const childSlug = childDef.slug || `${subDef.slug}-${makeSlug(childDef.name)}`;
-
-      // Merge base subcategory attributes with child-specific extra attributes
-      const combinedAttributes = [...subDef.attributes];
-      if (childDef.extraAttributes && childDef.extraAttributes.length > 0) {
-        childDef.extraAttributes.forEach(extra => {
-          const exists = combinedAttributes.some(a => a.key === extra.key);
-          if (!exists) {
-            combinedAttributes.push(extra);
-          }
-        });
-      }
-
-      const childCategory = await Category.findOneAndUpdate(
-        { slug: childSlug },
-        {
-          $set: {
-            name: childDef.name,
-            slug: childSlug,
-            description: `${childDef.name} under ${subDef.name}`,
-            level: 3,
-            parentId: subCategory._id,
-            isActive: true,
-            supportedItemTypes: subDef.supportedItemTypes,
-            attributes: combinedAttributes as any,
-            displayOrder: cIdx + 1,
-            sortOrder: cIdx + 1,
-          },
-        },
-        { upsert: true, new: true }
-      );
-      childCount++;
-
-      const effectiveProductMode = childDef.productMode || subDef.productMode;
-      const effectiveInventoryMode = childDef.inventoryMode || subDef.inventoryMode;
-
-      // Upsert Child Category Override Schema
-      await CategoryProductSchema.findOneAndUpdate(
-        { categoryId: childCategory._id },
-        {
-          $set: {
-            categoryId: childCategory._id,
-            subcategoryId: subCategory._id,
-            isChildOverride: true,
-            schemaVersion: 1,
-            productMode: effectiveProductMode,
-            allowedVendorCapabilities: subDef.allowedCapabilities,
-            allowedItemTypes: subDef.supportedItemTypes,
-            attributes: combinedAttributes as any,
-            variantAttributes: combinedAttributes.filter(a => a.isVariant).map(a => a.key),
-            inventoryPolicy: {
-              mode: effectiveInventoryMode,
-              requiresBatch: effectiveInventoryMode.includes('batch'),
-              requiresExpiry: effectiveInventoryMode.includes('batch'),
-              supportsReservedStock: true,
-              supportsDamagedStock: true,
-              supportsRawMaterials: false,
-            },
-            deliveryPolicy: {
-              homeDelivery: true,
-              storePickup: true,
-              sameDay: effectiveProductMode === 'fresh',
-              scheduled: true,
-              fragile: childDef.name.toLowerCase().includes('water') || childDef.name.toLowerCase().includes('egg') || childDef.name.toLowerCase().includes('glass'),
-              mergedDelivery: true,
-              multiVendorDelivery: true,
-            },
-            compliancePolicy: {
-              requiredDocuments: subDef.name.includes('Milk') || subDef.name.includes('Meat') || subDef.name.includes('Organic') || subDef.name.includes('Grocery')
-                ? ['FSSAI License']
-                : [],
-              optionalDocuments: ['GST Certificate', 'Organic Certificate'],
-            },
-            isPublished: true,
-          },
-        },
-        { upsert: true, new: true }
-      );
-      schemaCount++;
-    }
+    const seeded = await seedChildCategories(subCategory, subDef);
+    childCount += seeded.childCount;
+    schemaCount += seeded.schemaCount;
   }
 
   console.log(`[SeedDailyNeedsTaxonomy] Seeding completed successfully!`);
@@ -622,7 +654,10 @@ const runDirect = async () => {
       const mongoURI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/apexbee';
       await mongoose.connect(mongoURI);
       console.log('Connected to MongoDB. Running Daily Needs taxonomy seed...');
-      await seedDailyNeedsTaxonomy();
+      if (process.argv.includes('--children-only')) {
+        const expectedParentId = process.argv.find(arg => arg.startsWith('--expected-parent='))?.split('=')[1];
+        await seedMissingDailyNeedsChildren(expectedParentId);
+      } else await seedDailyNeedsTaxonomy();
       process.exit(0);
     } catch (err) {
       console.error('Daily Needs Seed execution error:', err);

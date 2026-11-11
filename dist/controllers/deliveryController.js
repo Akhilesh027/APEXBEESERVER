@@ -16,6 +16,11 @@ const RestaurantProfile_1 = require("../models/RestaurantProfile");
 const LocalShopSubscription_1 = __importDefault(require("../models/LocalShopSubscription"));
 const WalletEngine_1 = require("../services/WalletEngine");
 const smsService_1 = require("../services/smsService");
+const SubscriptionDeliveryTask_1 = require("../models/SubscriptionDeliveryTask");
+const dairyDeliveryService_1 = require("../services/dairyDeliveryService");
+const DairyOperations_1 = require("../models/DairyOperations");
+const vendorWorkspaceService_1 = require("../services/vendorWorkspaceService");
+const OrderStateMachine_1 = require("../services/OrderStateMachine");
 const generateToken = (id, email, roles) => {
     return jsonwebtoken_1.default.sign({ id, email, roles }, process.env.JWT_SECRET || 'supersecretjwtkeyforapexbeebusinessoperatingnetwork', { expiresIn: '30d' });
 };
@@ -346,6 +351,27 @@ const acceptOrder = async (req, res) => {
             deliveryPartnerIdObj = partnerIdObj;
         }
         if (order) {
+            const isSelfDeliveryOrder =
+                order.deliveryType === 'self_delivery' ||
+                order.deliveryType === 'store_delivery' ||
+                Boolean(order.isVendorSelfDelivery) ||
+                Boolean(order.isSelfDelivery);
+
+            let isVendorSelfDeliveryActive = false;
+            if (order.sellerId) {
+                const vDoc = await Vendor_1.Vendor.findOne({ $or: [{ _id: order.sellerId }, { userId: order.sellerId }] });
+                if (vDoc?.isSelfDelivery || vDoc?.deliveryMode === 'self_delivery') {
+                    isVendorSelfDeliveryActive = true;
+                }
+            }
+
+            if (isSelfDeliveryOrder || isVendorSelfDeliveryActive) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'The vendor has chosen Store Self-Delivery for this order. Platform delivery partners cannot accept or be assigned to this order.'
+                });
+            }
+
             const newStatus = ['ready_for_pickup', 'Ready', 'Packed'].includes(order.orderStatus)
                 ? order.orderStatus
                 : 'Accepted';
@@ -570,6 +596,11 @@ const deliverOrder = async (req, res) => {
         const { otp } = req.body;
         const { order, assignment } = await findOrderAndAssignment(id);
         if (order) {
+            const waterOrder = order.items?.some((item) => item.waterDetails?.returnable);
+            if (waterOrder && (!otp || !order.deliveryVerification?.otp || String(otp).trim() !== String(order.deliveryVerification.otp).trim())) {
+                res.status(400).json({ success: false, message: 'Enter the customer’s valid delivery OTP.' });
+                return;
+            }
             if (otp && order.deliveryVerification?.otp) {
                 const expected = String(order.deliveryVerification.otp).trim();
                 const received = String(otp).trim();
@@ -584,7 +615,10 @@ const deliverOrder = async (req, res) => {
             if (!order.paymentDetails)
                 order.paymentDetails = {};
             order.paymentDetails.status = 'completed';
-            addOrderTimelineStep(order, 'Delivered', 'Customer delivery OTP verified. Order delivered successfully to doorstep');
+            if (waterOrder)
+                await OrderStateMachine_1.OrderStateMachine.transition(order._id, 'Delivered', { userId: req.user?.id, notes: 'Customer delivery OTP verified.' });
+            else
+                addOrderTimelineStep(order, 'Delivered', 'Customer delivery OTP verified. Order delivered successfully to doorstep');
             await Order_1.Order.findByIdAndUpdate(order._id, {
                 orderStatus: 'Delivered',
                 paymentStatus: 'Paid',
@@ -592,8 +626,7 @@ const deliverOrder = async (req, res) => {
                 deliveredAt: new Date(),
                 deliveryVerification: order.deliveryVerification,
                 paymentDetails: order.paymentDetails,
-                timeline: order.timeline,
-                orderStatusObj: order.orderStatusObj
+                ...(!waterOrder ? { timeline: order.timeline, orderStatusObj: order.orderStatusObj } : {})
             });
         }
         if (assignment) {
@@ -1151,12 +1184,21 @@ const getSubscriptions = async (req, res) => {
             res.status(200).json({ success: true, subscriptions: [] });
             return;
         }
+        const calendarToday = (0, vendorWorkspaceService_1.indiaDate)();
+        const calendarStart = new Date(`${calendarToday}T00:00:00Z`);
+        calendarStart.setUTCDate(calendarStart.getUTCDate() - 3);
+        const calendarEnd = new Date(`${calendarToday}T00:00:00Z`);
+        calendarEnd.setUTCDate(calendarEnd.getUTCDate() + 3);
+        const assignedTasks = await SubscriptionDeliveryTask_1.SubscriptionDeliveryTask.find({ riderId: { $in: partnerIds }, date: { $gte: calendarStart.toISOString().slice(0, 10), $lte: calendarEnd.toISOString().slice(0, 10) } }).select('subscriptionId').lean();
         let dbSubscriptions = await LocalShopSubscription_1.default.find({
             $or: [
                 { deliveryAgentId: { $in: partnerIds } },
-                { assignedDeliveryAgent: { $in: partnerIds } }
+                { assignedDeliveryAgent: { $in: partnerIds } },
+                { _id: { $in: assignedTasks.map(task => task.subscriptionId) } }
             ]
         }).lean();
+        const canonicalTasks = await SubscriptionDeliveryTask_1.SubscriptionDeliveryTask.find({ subscriptionId: { $in: dbSubscriptions.map(sub => sub._id) }, date: { $gte: calendarStart.toISOString().slice(0, 10), $lte: calendarEnd.toISOString().slice(0, 10) } }).select('subscriptionId date status riderId').lean();
+        const routeStops = await DairyOperations_1.DairyRouteStop.find({ subscriptionId: { $in: dbSubscriptions.map(sub => sub._id) }, date: calendarToday }).select('subscriptionId name position').lean();
         const mappedDbSubs = [];
         for (const sub of dbSubscriptions) {
             let vendorObj = null;
@@ -1178,11 +1220,12 @@ const getSubscriptions = async (req, res) => {
                 ? `${vendorObj.address}, ${vendorObj.mandal || vendorObj.district || 'LB Nagar'}, ${vendorObj.state || 'Telangana'} - ${vendorObj.pincode || '500074'}`
                 : (sub.pickupAddress || 'Shop #14, Main Commercial Market Road, LB Nagar, Hyderabad - 500074');
             const storePhone = vendorObj?.mobile || vendorObj?.phone || sub.pickupPhone || '+91 98480 12345';
-            const custName = userObj?.name || sub.customerName || 'K. Ananya Reddy (Customer)';
-            const custPhone = userObj?.phone || userObj?.mobile || sub.customerPhone || '+91 95503 79505';
-            const custAddr = userObj?.address || sub.address || 'Flat 402, Sri Sai Nivas Apartments, Road No. 3, Vasavi Colony, LB Nagar, Hyderabad - 500074';
+            const custName = sub.customerName || userObj?.name || 'Customer';
+            const custPhone = sub.customerPhone || userObj?.phone || userObj?.mobile || '';
+            const custAddr = sub.deliveryAddress || sub.address || userObj?.address || '';
             mappedDbSubs.push({
                 ...sub,
+                canonicalDelivery: true,
                 id: sub._id,
                 productName: sub.productName || 'Fresh Organic Milk & Grocery Run',
                 customerName: custName,
@@ -1235,12 +1278,30 @@ const getSubscriptions = async (req, res) => {
             res.status(200).json({ success: true, subscriptions: [] });
             return;
         }
-        const todayObj = new Date();
-        const todayStr = todayObj.toISOString().split('T')[0];
+        const todayObj = new Date(`${calendarToday}T00:00:00Z`);
+        const todayStr = calendarToday;
         // Compute dynamic 7-day calendar history and date statuses based on frequency scheduling rules
         allSubs = allSubs.map((sub) => {
             const subId = sub._id?.toString() || sub.id || 'SUB-100';
             const history = [];
+            if (sub.canonicalDelivery) {
+                const labels = { pending: 'Pending', assigned: 'Assigned', started: 'Out for Delivery', delivered: 'Delivered', failed: 'Failed' };
+                for (let offset = -3; offset <= 3; offset++) {
+                    const day = new Date(todayObj);
+                    day.setUTCDate(day.getUTCDate() + offset);
+                    const date = day.toISOString().slice(0, 10);
+                    const task = canonicalTasks.find(item => String(item.subscriptionId) === subId && item.date === date);
+                    if (task?.riderId && !partnerIds.some(id => String(id) === String(task.riderId)))
+                        continue;
+                    if (task?.status === 'cancelled')
+                        continue;
+                    if (task && ((0, vendorWorkspaceService_1.isDeliveryDue)(sub, date) || ['started', 'delivered', 'failed'].includes(task.status)))
+                        history.push({ date, status: labels[task.status] || 'Pending' });
+                }
+                const todayStatus = history.find(item => item.date === todayStr)?.status || 'Not scheduled';
+                const routeStop = routeStops.find(stop => String(stop.subscriptionId) === subId);
+                return { ...sub, status: todayStatus, runStatus: todayStatus, calendarHistory: history, routeName: routeStop?.name || '', routeStopOrder: routeStop?.position || null };
+            }
             for (let i = -3; i <= 3; i++) {
                 const d = new Date(todayObj);
                 d.setDate(d.getDate() + i);
@@ -1287,6 +1348,23 @@ exports.getSubscriptions = getSubscriptions;
 const updateSubscriptionRun = async (req, res) => {
     try {
         const { subscriptionId } = req.params;
+        if (mongoose_1.default.isValidObjectId(subscriptionId) && await LocalShopSubscription_1.default.exists({ _id: subscriptionId })) {
+            const partner = await DeliveryPartner_1.DeliveryPartner.findOne({ userId: req.user?.id, status: 'active' });
+            if (!partner) {
+                res.status(403).json({ message: 'An active delivery partner account is required.' });
+                return;
+            }
+            const actions = { 'Out for Delivery': 'start', Started: 'start', Delivered: 'deliver', Failed: 'fail' };
+            const action = actions[req.body.status];
+            if (!action) {
+                res.status(400).json({ message: 'Choose Start Delivery Run, Delivered, or Failed.' });
+                return;
+            }
+            const task = await (0, dairyDeliveryService_1.updateDairyDelivery)({ subscriptionId, date: req.body.date || (0, vendorWorkspaceService_1.indiaDate)(), action, actorId: req.user.id,
+                riderUserId: String(partner.userId), riderPartnerId: String(partner._id), otp: req.body.otp, proofPhoto: req.body.proofPhoto, notes: req.body.notes });
+            res.json({ success: true, message: 'Delivery updated.', task, status: req.body.status, date: task.date });
+            return;
+        }
         const { status, notes, proofPhoto, date } = req.body;
         const targetDate = date || new Date().toISOString().split('T')[0];
         const storeKey = `${subscriptionId}:${targetDate}`;
@@ -1351,7 +1429,7 @@ const updateSubscriptionRun = async (req, res) => {
         });
     }
     catch (error) {
-        res.status(500).json({ message: 'Failed to update subscription status', error: error.message });
+        res.status(error instanceof dairyDeliveryService_1.DairyDeliveryError ? error.statusCode : 500).json({ message: error instanceof dairyDeliveryService_1.DairyDeliveryError ? error.message : 'Failed to update subscription status' });
     }
 };
 exports.updateSubscriptionRun = updateSubscriptionRun;

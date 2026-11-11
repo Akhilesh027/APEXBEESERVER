@@ -36,16 +36,43 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getProductSocialSharePreview = exports.removeSeededProducts = exports.seedProductsForAllCategories = exports.getBuyAgainProducts = exports.getProductBySku = exports.createInventoryMovement = exports.getInventoryMovements = exports.getAiProductSuggestions = exports.toggleProductStatus = exports.archiveProduct = exports.duplicateProduct = exports.getProductsByVendor = exports.bulkUpdateProducts = exports.bulkRejectProducts = exports.bulkApproveProducts = exports.quickApproveVendorEdit = exports.rejectProduct = exports.sellerNegotiatePricing = exports.sellerAcceptPricing = exports.configureAdminPricing = exports.deleteProduct = exports.updateProduct = exports.getProductById = exports.getMyProducts = exports.getAllProducts = exports.createProduct = void 0;
+exports.getProductSocialSharePreview = exports.removeSeededProducts = exports.seedProductsForAllCategories = exports.getBuyAgainProducts = exports.getProductBySku = exports.createInventoryMovement = exports.getInventoryMovements = exports.getAiProductSuggestions = exports.toggleProductStatus = exports.archiveProduct = exports.duplicateProduct = exports.getProductsByVendor = exports.bulkUpdateProducts = exports.bulkDeleteProducts = exports.bulkRejectProducts = exports.bulkApproveProducts = exports.quickApproveVendorEdit = exports.rejectProduct = exports.sellerNegotiatePricing = exports.sellerAcceptPricing = exports.configureAdminPricing = exports.deleteProduct = exports.updateProduct = exports.getProductById = exports.getMyProducts = exports.getAllProducts = exports.createProduct = void 0;
 const mongoose_1 = __importDefault(require("mongoose"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const Product_1 = __importDefault(require("../models/Product"));
 const FoodMenuItem_1 = require("../models/FoodMenuItem");
+const RestaurantProfile_1 = require("../models/RestaurantProfile");
 const Category_1 = __importDefault(require("../models/Category"));
 const CategoryExperienceConfig_1 = __importDefault(require("../models/CategoryExperienceConfig"));
 const Vendor_1 = require("../models/Vendor");
 const Order_1 = __importDefault(require("../models/Order"));
 const cloudinary_1 = require("../config/cloudinary");
+const dairyProductDetails_1 = require("../services/dairyProductDetails");
+const vendorWorkspaceService_1 = require("../services/vendorWorkspaceService");
+const dailyNeedsProfile_1 = require("../services/dailyNeedsProfile");
+async function dairyProductInput(body, categoryId, subCategoryId, existing) {
+    if (!categoryId || !subCategoryId) {
+        if (body.dairyDetails !== undefined)
+            throw new Error('Select Daily Needs and Milk and Dairy for dairy product details.');
+        return undefined;
+    }
+    const categories = await Category_1.default.find({ _id: { $in: [categoryId, subCategoryId] } }).select('_id name slug level parentId').lean();
+    const parent = categories.find(item => String(item._id) === String(categoryId));
+    const child = categories.find(item => String(item._id) === String(subCategoryId));
+    const isDairy = parent && child && String(child.parentId) === String(parent._id) && (0, vendorWorkspaceService_1.businessWorkspaceKind)(parent, child) === 'dairy';
+    if (!isDairy) {
+        if (body.dairyDetails !== undefined)
+            throw new Error('Dairy details are only available for Milk and Dairy products.');
+        if (existing?.dairyDetails?.dairyType)
+            throw new Error('Keep this dairy product in Milk and Dairy.');
+        return undefined;
+    }
+    if (body.dairyDetails !== undefined || !existing)
+        (0, dairyProductDetails_1.validateDairyProductPricing)(body, existing);
+    if (existing && body.dairyDetails === undefined)
+        return undefined;
+    return (0, dairyProductDetails_1.parseDairyProductDetails)(body.dairyDetails);
+}
 const validateProductFields = (body, res) => {
     const protectedFields = [
         'status', 'adminPricing', 'commissionShares', 'pricingStatus',
@@ -265,6 +292,14 @@ const createProduct = async (req, res) => {
             }
         }
         let finalCategoryId = categoryId;
+        let dairyDetails;
+        try {
+            dairyDetails = await dairyProductInput(req.body, categoryId, subCategoryId);
+        }
+        catch (error) {
+            res.status(400).json({ message: error.message });
+            return;
+        }
         const sellerId = isAdmin ? (req.body.sellerId || authUser.id) : authUser.id;
         if (!sellerId) {
             res.status(401).json({
@@ -414,6 +449,7 @@ const createProduct = async (req, res) => {
                 thumbnail: uploaded.thumbnail,
                 images: uploaded.images,
                 attributes: parsedAttributes,
+                ...(dairyDetails ? { dairyDetails, expiryDate: new Date(`${dairyDetails.expiryDate}T00:00:00.000Z`) } : {}),
                 variants: parsedVariants,
                 baseMrp: mrp,
                 discountPercent: discount,
@@ -430,10 +466,20 @@ const createProduct = async (req, res) => {
                 isStoreProduct: req.body.isStoreProduct === 'true' || req.body.isStoreProduct === true,
                 isSubscriptionAvailable: req.body.isSubscriptionAvailable === 'true' || req.body.isSubscriptionAvailable === true,
                 isPreOrder: req.body.isPreOrder === 'true' || req.body.isPreOrder === true,
+                preOrderType: req.body.preOrderType || 'ADVANCE_NOTICE',
+                preOrderLeadTimeDays: Number(req.body.preOrderLeadTimeDays) || 1,
+                preOrderLeadTimeHours: Number(req.body.preOrderLeadTimeHours) || 24,
+                preOrderDailyCutoffTime: req.body.preOrderDailyCutoffTime || '18:00',
+                preOrderAllowTimeSlot: req.body.preOrderAllowTimeSlot === undefined ? true : (req.body.preOrderAllowTimeSlot === 'true' || req.body.preOrderAllowTimeSlot === true),
+                preOrderAllowCustomMessage: req.body.preOrderAllowCustomMessage === 'true' || req.body.preOrderAllowCustomMessage === true,
+                preOrderCustomMessageLabel: req.body.preOrderCustomMessageLabel || 'Message on Cake / Custom Instructions',
+                preOrderAvailableDays: parseJson(req.body.preOrderAvailableDays, []),
                 preOrderReleaseDate: req.body.preOrderReleaseDate ? new Date(req.body.preOrderReleaseDate) : null,
                 preOrderMessage: req.body.preOrderMessage || '',
                 preOrderLimit: Number(req.body.preOrderLimit) || 0,
                 isSelfPickup: req.body.isSelfPickup === undefined ? true : (req.body.isSelfPickup === 'true' || req.body.isSelfPickup === true),
+                gstRate: req.body.gstRate !== undefined ? normalizeNumber(req.body.gstRate) : 0,
+                gstPricingMode: req.body.gstPricingMode === 'exclusive' ? 'exclusive' : 'inclusive',
                 deliveryScope: req.body.deliveryScope || (req.body.isPanIndia === 'true' || req.body.isPanIndia === true ? 'pan_india' : 'local'),
                 isPanIndia: req.body.deliveryScope === 'pan_india' || req.body.isPanIndia === 'true' || req.body.isPanIndia === true,
             });
@@ -922,6 +968,22 @@ const updateProduct = async (req, res) => {
             return;
         }
         // Capture pre-edit snapshot for vendor edits so admin can compare changes
+        if (product.batchTrackingEnabled && req.body.stock !== undefined && normalizeNumber(req.body.stock) !== product.stock) {
+            res.status(400).json({ message: 'Adjust tracked stock through batch receipts and wastage records.' });
+            return;
+        }
+        if (product.stock > 0 && req.body.attributes !== undefined && (0, dailyNeedsProfile_1.stockUnit)(product.attributes) !== (0, dailyNeedsProfile_1.stockUnit)(parseJson(req.body.attributes, {}))) {
+            res.status(400).json({ message: 'Use a separate listing to change the sellable unit of stock already on hand.' });
+            return;
+        }
+        let dairyDetails;
+        try {
+            dairyDetails = await dairyProductInput(req.body, req.body.categoryId || product.categoryId, req.body.subCategoryId === '' ? null : req.body.subCategoryId || product.subCategoryId, product);
+        }
+        catch (error) {
+            res.status(400).json({ message: error.message });
+            return;
+        }
         if (!isAdmin) {
             product.preEditSnapshot = {
                 name: product.name,
@@ -933,7 +995,11 @@ const updateProduct = async (req, res) => {
                 thumbnail: product.thumbnail,
                 images: [...(product.images || [])],
                 attributes: product.attributes ? JSON.parse(JSON.stringify(product.attributes)) : {},
+                dairyDetails: product.dairyDetails ? JSON.parse(JSON.stringify(product.dairyDetails)) : undefined,
+                expiryDate: product.expiryDate,
                 minimumOrderQuantity: product.minimumOrderQuantity || 1,
+                gstRate: product.gstRate,
+                gstPricingMode: product.gstPricingMode,
                 isStoreProduct: product.isStoreProduct,
                 isSubscriptionAvailable: product.isSubscriptionAvailable,
                 isPreOrder: product.isPreOrder,
@@ -993,6 +1059,10 @@ const updateProduct = async (req, res) => {
         if (req.body.stock !== undefined) {
             product.stock = normalizeNumber(req.body.stock);
         }
+        if (dairyDetails) {
+            product.dairyDetails = dairyDetails;
+            product.expiryDate = new Date(`${dairyDetails.expiryDate}T00:00:00.000Z`);
+        }
         if (req.body.attributes !== undefined) {
             product.attributes = parseJson(req.body.attributes, {});
         }
@@ -1026,6 +1096,30 @@ const updateProduct = async (req, res) => {
         if (req.body.isPreOrder !== undefined) {
             product.isPreOrder = req.body.isPreOrder === 'true' || req.body.isPreOrder === true;
         }
+        if (req.body.preOrderType !== undefined) {
+            product.preOrderType = req.body.preOrderType;
+        }
+        if (req.body.preOrderLeadTimeDays !== undefined) {
+            product.preOrderLeadTimeDays = Number(req.body.preOrderLeadTimeDays) || 1;
+        }
+        if (req.body.preOrderLeadTimeHours !== undefined) {
+            product.preOrderLeadTimeHours = Number(req.body.preOrderLeadTimeHours) || 24;
+        }
+        if (req.body.preOrderDailyCutoffTime !== undefined) {
+            product.preOrderDailyCutoffTime = req.body.preOrderDailyCutoffTime || '18:00';
+        }
+        if (req.body.preOrderAllowTimeSlot !== undefined) {
+            product.preOrderAllowTimeSlot = req.body.preOrderAllowTimeSlot === 'true' || req.body.preOrderAllowTimeSlot === true;
+        }
+        if (req.body.preOrderAllowCustomMessage !== undefined) {
+            product.preOrderAllowCustomMessage = req.body.preOrderAllowCustomMessage === 'true' || req.body.preOrderAllowCustomMessage === true;
+        }
+        if (req.body.preOrderCustomMessageLabel !== undefined) {
+            product.preOrderCustomMessageLabel = req.body.preOrderCustomMessageLabel || 'Message on Cake / Custom Instructions';
+        }
+        if (req.body.preOrderAvailableDays !== undefined) {
+            product.preOrderAvailableDays = parseJson(req.body.preOrderAvailableDays, []);
+        }
         if (req.body.preOrderReleaseDate !== undefined) {
             product.preOrderReleaseDate = req.body.preOrderReleaseDate ? new Date(req.body.preOrderReleaseDate) : null;
         }
@@ -1046,6 +1140,12 @@ const updateProduct = async (req, res) => {
         }
         if (req.body.isPanIndia !== undefined) {
             product.isPanIndia = req.body.isPanIndia === 'true' || req.body.isPanIndia === true;
+        }
+        if (req.body.gstRate !== undefined) {
+            product.gstRate = normalizeNumber(req.body.gstRate);
+        }
+        if (req.body.gstPricingMode !== undefined) {
+            product.gstPricingMode = req.body.gstPricingMode === 'exclusive' ? 'exclusive' : 'inclusive';
         }
         if (!isAdmin) {
             product.status = 'Vendor Edited';
@@ -1078,41 +1178,107 @@ const updateProduct = async (req, res) => {
 exports.updateProduct = updateProduct;
 const deleteProduct = async (req, res) => {
     try {
-        if (!mongoose_1.default.Types.ObjectId.isValid(req.params.id)) {
+        const rawId = req.params.id;
+        const cleanId = rawId ? String(rawId).replace(/^(prod_|food_)/, '') : '';
+        if (!mongoose_1.default.Types.ObjectId.isValid(cleanId)) {
             res.status(400).json({ success: false, message: 'Invalid ID format' });
             return;
         }
-        const product = await Product_1.default.findById(req.params.id);
-        if (!product) {
-            res.status(404).json({ message: 'Resource not found' });
-            return;
-        }
         const authUser = req.user;
-        const isOwner = authUser && (String(product.sellerId) === String(authUser.id) || String(product.createdBy) === String(authUser.id));
-        const isAdmin = authUser && authUser.roles?.includes('admin');
+        const isAdmin = authUser && (authUser.roles?.includes('admin') || authUser.role === 'admin');
+        const product = await Product_1.default.findById(cleanId);
+        let foodItem = null;
+        if (!product) {
+            foodItem = await FoodMenuItem_1.FoodMenuItem.findById(cleanId);
+            if (!foodItem) {
+                res.status(404).json({ success: false, message: 'Product or food item not found' });
+                return;
+            }
+        }
+        const isOwner = authUser && ((product && (String(product.sellerId) === String(authUser.id) || String(product.createdBy) === String(authUser.id))) ||
+            (foodItem && (String(foodItem.restaurantId) === String(authUser.id) || String(foodItem.sellerId) === String(authUser.id))));
         if (!isOwner && !isAdmin) {
             res.status(403).json({ success: false, message: 'Not authorized to delete this product' });
             return;
         }
-        // Soft-delete / Archive live products to protect order history integrity and prevent broken references
-        product.isArchived = true;
-        product.isActive = false;
-        product.status = 'Archived';
-        await product.save();
-        // Soft-deactivate associated StoreProduct & Inventory
-        try {
-            const StoreProductModel = mongoose_1.default.model('StoreProduct');
-            const InventoryModel = mongoose_1.default.model('Inventory');
-            await StoreProductModel.updateMany({ productId: product._id }, { $set: { isAvailableForDelivery: false, isAvailableForPickup: false } });
-            await InventoryModel.updateMany({ productId: product._id }, { $set: { availableQuantity: 0 } });
+        // Permanent delete from database for admin or when permanent=true query parameter is present
+        if (isAdmin || req.query.permanent === 'true') {
+            if (product) {
+                const prodId = product._id;
+                const foodMenuId = product.foodMenuItemId;
+                // 1. Permanently remove from Product collection
+                await Product_1.default.findByIdAndDelete(prodId);
+                // 2. If it was linked to a FoodMenuItem, delete that too
+                if (foodMenuId) {
+                    await FoodMenuItem_1.FoodMenuItem.findByIdAndDelete(foodMenuId);
+                    try {
+                        if (mongoose_1.default.models.FoodVariant) {
+                            await mongoose_1.default.models.FoodVariant.deleteMany({ menuItemId: foodMenuId });
+                        }
+                    }
+                    catch (_) { }
+                    try {
+                        if (mongoose_1.default.models.FoodMenuItemAddonGroup) {
+                            await mongoose_1.default.models.FoodMenuItemAddonGroup.deleteMany({ menuItemId: foodMenuId });
+                        }
+                    }
+                    catch (_) { }
+                }
+                // 3. Remove associated StoreProduct & Inventory
+                try {
+                    const StoreProductModel = mongoose_1.default.model('StoreProduct');
+                    await StoreProductModel.deleteMany({ productId: prodId });
+                }
+                catch (_) { }
+                try {
+                    const InventoryModel = mongoose_1.default.model('Inventory');
+                    await InventoryModel.deleteMany({ productId: prodId });
+                }
+                catch (_) { }
+            }
+            if (foodItem) {
+                const fId = foodItem._id;
+                await FoodMenuItem_1.FoodMenuItem.findByIdAndDelete(fId);
+                await Product_1.default.deleteMany({ foodMenuItemId: fId });
+                try {
+                    if (mongoose_1.default.models.FoodVariant) {
+                        await mongoose_1.default.models.FoodVariant.deleteMany({ menuItemId: fId });
+                    }
+                }
+                catch (_) { }
+                try {
+                    if (mongoose_1.default.models.FoodMenuItemAddonGroup) {
+                        await mongoose_1.default.models.FoodMenuItemAddonGroup.deleteMany({ menuItemId: fId });
+                    }
+                }
+                catch (_) { }
+            }
+            res.json({ success: true, message: 'Product permanently deleted from database successfully' });
+            return;
         }
-        catch (e) {
-            // Ignore model lookup errors if not loaded
+        // Soft-delete / Archive live products for non-admin seller requests
+        if (product) {
+            product.isArchived = true;
+            product.isActive = false;
+            product.status = 'Archived';
+            await product.save();
+            try {
+                const StoreProductModel = mongoose_1.default.model('StoreProduct');
+                const InventoryModel = mongoose_1.default.model('Inventory');
+                await StoreProductModel.updateMany({ productId: product._id }, { $set: { isAvailableForDelivery: false, isAvailableForPickup: false } });
+                await InventoryModel.updateMany({ productId: product._id }, { $set: { availableQuantity: 0 } });
+            }
+            catch (_) { }
         }
-        res.json({ message: 'Product archived and removed from storefront successfully' });
+        else if (foodItem) {
+            foodItem.status = 'ARCHIVED';
+            await foodItem.save();
+        }
+        res.json({ success: true, message: 'Product archived and removed from storefront successfully' });
     }
     catch (error) {
         res.status(500).json({
+            success: false,
             message: 'Failed to delete product',
             error: error.message,
         });
@@ -1167,6 +1333,12 @@ const configureAdminPricing = async (req, res) => {
             configuredBy: req.user?._id || req.user?.id || req.body.adminId,
             configuredAt: new Date(),
         };
+        // Explicitly persist shipping and packaging charges on root product document for fast querying & frontend rendering
+        product.shippingCharge = adminPricing.shippingCharge || 0;
+        product.packingCharge = adminPricing.packingCharge || 0;
+        product.deliveryFee = adminPricing.shippingCharge || 0;
+        product.packagingCharge = adminPricing.packingCharge || 0;
+        product.packageCharge = adminPricing.packingCharge || 0;
         if (req.body.referralCommission) {
             product.referralCommission = {
                 level1: normalizeNumber(req.body.referralCommission.level1),
@@ -1207,6 +1379,14 @@ const configureAdminPricing = async (req, res) => {
                     vendorCommissionAmount: product.adminPricing.vendorCommissionAmount,
                     distributedFrom: product.adminPricing.distributedFrom,
                     vendorPayoutAmount: product.adminPricing.finalSellerAmount,
+                    packagingCharge: adminPricing.packingCharge || 0,
+                    packingCharge: adminPricing.packingCharge || 0,
+                    shippingCharge: adminPricing.shippingCharge || 0,
+                    deliveryFee: adminPricing.shippingCharge || 0,
+                    adminPricing: product.adminPricing,
+                    commissionShares: product.adminPricing?.commissionShares,
+                    referralCommission: product.referralCommission,
+                    referralEarnings: product.adminPricing?.referralEarnings,
                     approvalStatus: 'PENDING_RESTAURANT_ACCEPTANCE',
                     adminApprovedAt: new Date(),
                 });
@@ -1553,6 +1733,74 @@ const bulkRejectProducts = async (req, res) => {
     }
 };
 exports.bulkRejectProducts = bulkRejectProducts;
+const bulkDeleteProducts = async (req, res) => {
+    try {
+        const { productIds } = req.body;
+        if (!productIds || !Array.isArray(productIds) || productIds.length === 0) {
+            res.status(400).json({ success: false, message: 'productIds array is required' });
+            return;
+        }
+        const cleanIds = productIds
+            .map((id) => (id ? String(id).replace(/^(prod_|food_)/, '') : ''))
+            .filter((id) => mongoose_1.default.Types.ObjectId.isValid(id));
+        if (cleanIds.length === 0) {
+            res.status(400).json({ success: false, message: 'No valid IDs provided' });
+            return;
+        }
+        // Find all products to identify any linked foodMenuItemIds
+        const products = await Product_1.default.find({ _id: { $in: cleanIds } });
+        const linkedFoodIds = products
+            .map((p) => p.foodMenuItemId)
+            .filter(Boolean)
+            .map((id) => String(id));
+        const allFoodIdsToDelete = Array.from(new Set([...cleanIds, ...linkedFoodIds]));
+        // 1. Delete from Product collection
+        await Product_1.default.deleteMany({
+            $or: [
+                { _id: { $in: cleanIds } },
+                { foodMenuItemId: { $in: allFoodIdsToDelete } }
+            ]
+        });
+        // 2. Delete from FoodMenuItem collection
+        await FoodMenuItem_1.FoodMenuItem.deleteMany({ _id: { $in: allFoodIdsToDelete } });
+        try {
+            if (mongoose_1.default.models.FoodVariant) {
+                await mongoose_1.default.models.FoodVariant.deleteMany({ menuItemId: { $in: allFoodIdsToDelete } });
+            }
+        }
+        catch (_) { }
+        try {
+            if (mongoose_1.default.models.FoodMenuItemAddonGroup) {
+                await mongoose_1.default.models.FoodMenuItemAddonGroup.deleteMany({ menuItemId: { $in: allFoodIdsToDelete } });
+            }
+        }
+        catch (_) { }
+        // 3. Remove associated StoreProduct & Inventory
+        try {
+            const StoreProductModel = mongoose_1.default.model('StoreProduct');
+            await StoreProductModel.deleteMany({ productId: { $in: cleanIds } });
+        }
+        catch (_) { }
+        try {
+            const InventoryModel = mongoose_1.default.model('Inventory');
+            await InventoryModel.deleteMany({ productId: { $in: cleanIds } });
+        }
+        catch (_) { }
+        res.json({
+            success: true,
+            message: `Successfully deleted ${cleanIds.length} products from the database permanently`,
+            count: cleanIds.length
+        });
+    }
+    catch (error) {
+        res.status(500).json({
+            success: false,
+            message: 'Failed to bulk delete products',
+            error: error.message
+        });
+    }
+};
+exports.bulkDeleteProducts = bulkDeleteProducts;
 const bulkUpdateProducts = async (req, res) => {
     try {
         const { productIds, updateData } = req.body;
@@ -1565,7 +1813,13 @@ const bulkUpdateProducts = async (req, res) => {
         delete safeUpdateData.sellerId;
         delete safeUpdateData.slug;
         delete safeUpdateData.sku;
-        await Product_1.default.updateMany({ _id: { $in: productIds } }, { $set: safeUpdateData });
+        delete safeUpdateData.batchTrackingEnabled;
+        const filter = { _id: { $in: productIds } };
+        if (safeUpdateData.stock !== undefined && await Product_1.default.exists({ ...filter, batchTrackingEnabled: true })) {
+            res.status(400).json({ message: 'Adjust tracked stock through batch receipts and wastage records.' });
+            return;
+        }
+        await Product_1.default.updateMany({ ...filter, ...(safeUpdateData.stock !== undefined ? { batchTrackingEnabled: { $ne: true } } : {}) }, { $set: safeUpdateData });
         res.json({
             message: 'Products updated successfully',
         });
@@ -1586,7 +1840,9 @@ const getProductsByVendor = async (req, res) => {
         if (mongoose_1.default.Types.ObjectId.isValid(vendorId)) {
             vendorObjectIds.push(new mongoose_1.default.Types.ObjectId(vendorId));
         }
-        const vendor = await Vendor_1.Vendor.findOne({ $or: [{ _id: vendorId }, { userId: vendorId }] });
+        const vendor = await Vendor_1.Vendor.findOne(mongoose_1.default.Types.ObjectId.isValid(vendorId)
+            ? { $or: [{ _id: vendorId }, { userId: vendorId }] }
+            : { userId: vendorId });
         if (vendor) {
             if (vendor._id && !vendorObjectIds.some(id => id.toString() === vendor._id.toString())) {
                 vendorObjectIds.push(vendor._id);
@@ -1595,43 +1851,164 @@ const getProductsByVendor = async (req, res) => {
                 vendorObjectIds.push(vendor.userId);
             }
         }
-        // Query all active and live/approved products belonging to this vendor
+        // Collect all possible restaurant IDs for this vendor / business ID
+        const restaurantObjectIds = [];
+        const restaurantQuery = [];
+        if (mongoose_1.default.Types.ObjectId.isValid(vendorId)) {
+            restaurantQuery.push({ _id: vendorId }, { userId: vendorId }, { vendorId: vendorId }, { storeId: vendorId });
+        }
+        for (const vId of vendorObjectIds) {
+            restaurantQuery.push({ _id: vId }, { userId: vId }, { vendorId: vId }, { storeId: vId });
+        }
+        const restaurants = await RestaurantProfile_1.RestaurantProfile.find({ $or: restaurantQuery });
+        for (const r of restaurants) {
+            if (r._id && !restaurantObjectIds.some(id => id.toString() === r._id.toString())) {
+                restaurantObjectIds.push(r._id);
+            }
+            if (r.userId && !vendorObjectIds.some(id => id.toString() === r.userId.toString())) {
+                vendorObjectIds.push(r.userId);
+            }
+            if (r.vendorId && !vendorObjectIds.some(id => id.toString() === r.vendorId.toString())) {
+                vendorObjectIds.push(r.vendorId);
+            }
+            if (r.storeId && !vendorObjectIds.some(id => id.toString() === r.storeId.toString())) {
+                vendorObjectIds.push(r.storeId);
+            }
+        }
+        if (mongoose_1.default.Types.ObjectId.isValid(vendorId) && !restaurantObjectIds.some(id => id.toString() === vendorId.toString())) {
+            restaurantObjectIds.push(new mongoose_1.default.Types.ObjectId(vendorId));
+        }
+        // Query standard products belonging to this vendor
         const products = await Product_1.default.find({
             $or: [
                 { sellerId: { $in: vendorObjectIds } },
-                { createdBy: { $in: vendorObjectIds } }
+                { createdBy: { $in: vendorObjectIds } },
+                { vendorId: { $in: vendorObjectIds } }
             ],
-            status: { $in: ['Live', 'Active', 'Approved', 'approved'] },
-            isActive: true
+            status: { $nin: ['archived', 'Archived', 'draft', 'Draft', 'rejected', 'Rejected'] },
+            isActive: { $ne: false }
         })
             .populate('categoryId', 'name')
-            .populate('subCategoryId', 'name');
+            .populate('subCategoryId', 'name')
+            .populate('subcategoryId', 'name');
         const formattedProducts = products.map((p) => {
             const pObj = p.toObject ? p.toObject() : p;
+            const shipCharge = pObj.adminPricing?.shippingCharge ?? pObj.shippingCharge ?? pObj.deliveryFee ?? 0;
+            const packCharge = pObj.adminPricing?.packingCharge ?? pObj.packingCharge ?? pObj.packagingCharge ?? 0;
             return {
                 _id: pObj._id,
-                vendorId: pObj.sellerId,
+                vendorId: pObj.sellerId || vendorId,
                 itemName: pObj.name,
+                name: pObj.name,
                 images: pObj.images && pObj.images.length > 0 ? pObj.images : [pObj.thumbnail].filter(Boolean),
                 afterDiscount: pObj.baseSellingPrice || pObj.baseMrp || 0,
                 userPrice: pObj.baseMrp || pObj.baseSellingPrice || 0,
+                baseSellingPrice: pObj.baseSellingPrice || pObj.baseMrp || 0,
+                baseMrp: pObj.baseMrp || pObj.baseSellingPrice || 0,
+                adminPricing: pObj.adminPricing ? {
+                    ...pObj.adminPricing,
+                    shippingCharge: shipCharge,
+                    packingCharge: packCharge,
+                    mrp: pObj.baseMrp || pObj.adminPricing.mrp || 0,
+                    sellingPrice: pObj.baseSellingPrice || pObj.adminPricing.sellingPrice || 0,
+                    commissionShares: pObj.adminPricing.commissionShares || [],
+                    referralCommission: pObj.referralCommission || pObj.adminPricing.referralCommission,
+                } : {
+                    shippingCharge: shipCharge,
+                    packingCharge: packCharge,
+                    mrp: pObj.baseMrp || 0,
+                    sellingPrice: pObj.baseSellingPrice || 0,
+                },
+                referralCommission: pObj.referralCommission,
+                shippingCharge: shipCharge,
+                packingCharge: packCharge,
+                deliveryFee: shipCharge,
+                packagingCharge: packCharge,
                 category: pObj.categoryId ? {
                     _id: pObj.categoryId._id || pObj.categoryId,
                     name: pObj.categoryId.name || 'Category'
                 } : undefined,
-                subcategory: pObj.subCategoryId?.name || pObj.subcategory || '',
+                subcategory: pObj.subCategoryId?.name || pObj.subcategoryId?.name || pObj.subcategory || '',
                 status: pObj.status,
                 isSubscriptionAvailable: !!pObj.isSubscriptionAvailable,
+                dairyDetails: pObj.dairyDetails || null,
+                ...(pObj.waterDetails ? { waterDetails: {
+                        volumeLitres: pObj.waterDetails.volumeLitres, returnable: pObj.waterDetails.returnable, depositAmount: pObj.waterDetails.depositAmount,
+                    } } : {}),
+                bundleComponents: pObj.bundleComponents || [],
                 isPreOrder: !!pObj.isPreOrder,
                 preOrderReleaseDate: pObj.preOrderReleaseDate || null,
                 preOrderMessage: pObj.preOrderMessage || '',
                 brand: pObj.brand || 'Fresh & Local',
-                deliveryFee: 0
             };
         });
+        // Also query FoodMenuItem if restaurant or food business exists
+        let formattedFoodItems = [];
+        if (restaurantObjectIds.length > 0 || vendorObjectIds.length > 0) {
+            const foodItems = await FoodMenuItem_1.FoodMenuItem.find({
+                $or: [
+                    { restaurantId: { $in: restaurantObjectIds } },
+                    { restaurantId: { $in: vendorObjectIds } }
+                ],
+                status: { $nin: ['ARCHIVED', 'DRAFT'] },
+                soldOut: { $ne: true }
+            }).populate('categoryId', 'name');
+            formattedFoodItems = foodItems.map((item) => {
+                const iObj = item.toObject ? item.toObject() : item;
+                const effectivePrice = iObj.offerPrice && iObj.offerPrice > 0 ? iObj.offerPrice : (iObj.basePrice || 0);
+                const itemImage = iObj.image || iObj.imageUrl || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=500&auto=format&fit=crop&q=60';
+                const packCharge = iObj.packagingCharge || iObj.packingCharge || 0;
+                const shipCharge = iObj.shippingCharge || iObj.deliveryFee || 0;
+                return {
+                    _id: iObj._id,
+                    vendorId: vendorId,
+                    itemName: iObj.name,
+                    name: iObj.name,
+                    images: [itemImage],
+                    thumbnail: itemImage,
+                    afterDiscount: effectivePrice,
+                    userPrice: iObj.basePrice || effectivePrice,
+                    baseSellingPrice: effectivePrice,
+                    baseMrp: iObj.basePrice || effectivePrice,
+                    adminPricing: {
+                        ...(iObj.adminPricing || {}),
+                        shippingCharge: shipCharge,
+                        packingCharge: packCharge,
+                        mrp: iObj.basePrice || effectivePrice,
+                        sellingPrice: effectivePrice,
+                        commissionShares: iObj.adminPricing?.commissionShares || iObj.commissionShares || [],
+                        referralCommission: iObj.adminPricing?.referralCommission || iObj.referralCommission,
+                        referralEarnings: iObj.adminPricing?.referralEarnings || iObj.referralEarnings,
+                        estimatedEarning: iObj.adminPricing?.estimatedEarning || iObj.estimatedEarning,
+                    },
+                    commissionShares: iObj.adminPricing?.commissionShares || iObj.commissionShares || [],
+                    referralCommission: iObj.adminPricing?.referralCommission || iObj.referralCommission,
+                    shippingCharge: shipCharge,
+                    packingCharge: packCharge,
+                    deliveryFee: shipCharge,
+                    packagingCharge: packCharge,
+                    category: {
+                        _id: iObj.categoryId?._id ? iObj.categoryId._id.toString() : (iObj.categoryId ? iObj.categoryId.toString() : 'food-cat'),
+                        name: iObj.categoryId?.name || iObj.cuisine || 'Food & Dining'
+                    },
+                    subcategory: iObj.cuisine || iObj.categoryId?.name || (iObj.foodType === 'VEG' ? 'Pure Veg' : 'Non-Veg'),
+                    status: iObj.status === 'ACTIVE' ? 'Live' : (iObj.status || 'Live'),
+                    isSubscriptionAvailable: false,
+                    isPreOrder: !!iObj.isPreOrder,
+                    preOrderReleaseDate: iObj.preOrderReleaseDate || null,
+                    preOrderMessage: iObj.preOrderMessage || '',
+                    brand: iObj.cuisine || 'Fresh & Hot',
+                    ratings: 4.8,
+                    rating: 4.8,
+                    foodType: iObj.foodType,
+                    isVeg: iObj.foodType === 'VEG',
+                    description: iObj.description || ''
+                };
+            });
+        }
         res.status(200).json({
             success: true,
-            data: formattedProducts
+            data: [...formattedProducts, ...formattedFoodItems]
         });
     }
     catch (error) {
@@ -2323,7 +2700,7 @@ const getProductSocialSharePreview = async (req, res) => {
         const isCrawler = /facebookexternalhit|WhatsApp|Twitterbot|TelegramBot|Slackbot|LinkedInBot|Pinterest|Discordbot|SkypeUriPreview|Googlebot|bingbot|crawler|spider|bot/i.test(userAgent);
         // Configurable base URLs
         const FRONTEND_URL = process.env.FRONTEND_URL || 'https://apexbee.in';
-        const SERVER_URL = process.env.SERVER_URL || 'https://server.apexbee.in';
+        const SERVER_URL = process.env.SERVER_URL || 'http://localhost:5500';
         const DEFAULT_LOGO = `${SERVER_URL}/uploads/logo.png`;
         // Query product
         let product = null;

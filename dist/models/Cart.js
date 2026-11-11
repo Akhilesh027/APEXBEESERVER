@@ -54,6 +54,18 @@ const CartItemSchema = new mongoose_1.Schema({
         type: String,
         default: 'default',
     },
+    preOrderDeliveryDate: {
+        type: String,
+        default: null,
+    },
+    preOrderTimeSlot: {
+        type: String,
+        default: '',
+    },
+    preOrderCustomNote: {
+        type: String,
+        default: '',
+    },
 }, { _id: true });
 const CartSchema = new mongoose_1.Schema({
     userId: {

@@ -78,6 +78,7 @@ export const getVendorProfile = async (req: Request, res: Response): Promise<voi
           phone: userDoc.phone || '9876543210',
           category: 'Devotional',
           primaryCategory: 'Devotional',
+          categories: ['Devotional'],
           businessType: 'Vendor',
           status: 'active',
           marketplaceStatus: 'Approved'
@@ -276,10 +277,20 @@ export const updateVendorProfile = async (req: Request, res: Response): Promise<
 
     if (updates.businessName !== undefined) vendor.businessName = updates.businessName;
     if (updates.ownerName !== undefined) vendor.ownerName = updates.ownerName;
-    if (updates.email !== undefined) vendor.email = updates.email;
+    if (updates.email !== undefined) {
+      // Lock email if vendor is verified
+      if (!vendor.verifiedBadge && (vendor as any).kycStatus !== 'Verified') {
+        vendor.email = updates.email;
+      }
+    }
     if (updates.mobile !== undefined) vendor.mobile = updates.mobile;
     if (updates.address !== undefined) vendor.address = updates.address;
     if (updates.pincode !== undefined) vendor.pincode = updates.pincode;
+    if (updates.hasGst !== undefined) (vendor as any).hasGst = !!updates.hasGst;
+    if (updates.gstPricingMode !== undefined) (vendor as any).gstPricingMode = updates.gstPricingMode;
+    if (updates.categoryParameters !== undefined) {
+      (vendor as any).categoryParameters = { ...((vendor as any).categoryParameters || {}), ...updates.categoryParameters };
+    }
     if (updates.gstNumber !== undefined) vendor.gstNumber = updates.gstNumber;
     if (updates.panNumber !== undefined) vendor.panNumber = updates.panNumber;
     if (updates.bankAccounts !== undefined) vendor.bankAccounts = updates.bankAccounts;
@@ -290,6 +301,8 @@ export const updateVendorProfile = async (req: Request, res: Response): Promise<
     // Geolocation, scheduling, and delivery updates
     if (updates.location !== undefined) vendor.location = updates.location;
     if (updates.deliveryMode !== undefined) vendor.deliveryMode = updates.deliveryMode;
+    if (updates.isSelfDelivery !== undefined) (vendor as any).isSelfDelivery = !!updates.isSelfDelivery;
+    if (updates.isSelfPickup !== undefined) (vendor as any).isSelfPickup = !!updates.isSelfPickup;
     if (updates.deliveryRadiusKm !== undefined) vendor.deliveryRadiusKm = Number(updates.deliveryRadiusKm);
     if (updates.categories !== undefined) vendor.categories = updates.categories;
     if (updates.estimatedDeliveryMinutes !== undefined) vendor.estimatedDeliveryMinutes = Number(updates.estimatedDeliveryMinutes);
@@ -539,13 +552,43 @@ export const getVendorDashboardStats = async (req: Request, res: Response): Prom
     const pendingBalance = wallet ? wallet.pendingBalance : 0;
     const withdrawnBalance = wallet ? wallet.withdrawnBalance : 0;
     
+    const vendorDoc = await Vendor.findOne({
+      $or: [
+        { userId },
+        ...(mongoose.Types.ObjectId.isValid(userId) ? [{ userId: new mongoose.Types.ObjectId(userId) }] : []),
+        ...(mongoose.Types.ObjectId.isValid(userId) ? [{ _id: new mongoose.Types.ObjectId(userId) }] : [{ _id: userId }])
+      ]
+    });
+
+    const sellerIds: any[] = [userId];
+    if (mongoose.Types.ObjectId.isValid(userId)) {
+      sellerIds.push(new mongoose.Types.ObjectId(userId));
+    }
+    if (vendorDoc) {
+      sellerIds.push(vendorDoc._id);
+      if (vendorDoc.userId) sellerIds.push(vendorDoc.userId);
+    }
+    const stringIds = sellerIds.map(s => s.toString());
+
+    const orderScope = {
+      $or: [
+        { sellerId: { $in: sellerIds } },
+        { 'items.vendorId': { $in: stringIds } },
+        { 'orderItems.vendorId': { $in: stringIds } }
+      ]
+    };
+
+    const productScope = {
+      sellerId: { $in: sellerIds }
+    };
+
     const [totalOrders, productsListed, activeProducts, pendingProducts, lowStockCount, returnRequestsCount] = await Promise.all([
-      Order.countDocuments({ sellerId: userId }),
-      Product.countDocuments({ sellerId: userId }),
-      Product.countDocuments({ sellerId: userId, status: 'Live' }),
-      Product.countDocuments({ sellerId: userId, status: 'Pending Review' }),
-      Product.countDocuments({ sellerId: userId, stock: { $lte: 5 } }),
-      Order.countDocuments({ sellerId: userId, refundStatus: 'Pending' })
+      Order.countDocuments(orderScope),
+      Product.countDocuments(productScope),
+      Product.countDocuments({ ...productScope, status: 'Live' }),
+      Product.countDocuments({ ...productScope, status: 'Pending Review' }),
+      Product.countDocuments({ ...productScope, stock: { $lte: 5 } }),
+      Order.countDocuments({ ...orderScope, refundStatus: 'Pending' })
     ]);
 
     res.status(200).json({
@@ -1301,7 +1344,8 @@ export const replyToVendorReview = async (req: Request, res: Response): Promise<
     }
 
     const review = await VendorReview.findById(reviewId);
-    if (!review) {
+    const vendor = review && await Vendor.findById(review.vendorId).select('userId');
+    if (!review || !vendor || !requireSelfOrAdmin(req, String(vendor.userId))) {
       res.status(404).json({ success: false, message: "Review not found" });
       return;
     }
@@ -1684,6 +1728,10 @@ export const getVendorReportsComparison = async (req: Request, res: Response): P
 export const getVendorDeliveryZones = async (req: Request, res: Response): Promise<void> => {
   try {
     const { userId } = req.params;
+    if (!requireSelfOrAdmin(req, userId)) {
+      res.status(404).json({ success: false, message: 'Resource not found' });
+      return;
+    }
     const resObj = await getProfileAndModel(userId);
     if (!resObj) {
       res.status(404).json({ success: false, message: 'Vendor not found' });
@@ -1782,6 +1830,10 @@ export const getCustomerNote = async (req: Request, res: Response): Promise<void
 export const getVendorMarketDemand = async (req: Request, res: Response): Promise<void> => {
   try {
     const { userId } = req.params;
+    if (!requireSelfOrAdmin(req, userId)) {
+      res.status(404).json({ success: false, message: 'Resource not found' });
+      return;
+    }
     const vendor = await Vendor.findOne({ $or: [{ userId }, { _id: userId }] });
     const vendorIdStr = vendor ? vendor._id.toString() : userId;
 

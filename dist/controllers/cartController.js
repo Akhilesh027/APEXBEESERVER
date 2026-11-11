@@ -108,12 +108,28 @@ const getCart = async (req, res) => {
                         isPanIndia: false,
                         categoryName: 'Food & Dining',
                         returnPolicy: 'Non-returnable Food Item',
+                        isSelfPickup: true,
                         allowPickup: true,
                         pickupAvailable: true,
-                        isPreOrder: false,
-                        preOrder: false,
-                        availableOn: null,
-                        preOrderDate: null,
+                        storePickup: true,
+                        gstRate: Number(linkedProduct?.gstRate ?? 5),
+                        gstPricingMode: linkedProduct?.gstPricingMode || 'inclusive',
+                        isPreOrder: foodItem.isPreOrder ?? linkedProduct?.isPreOrder ?? false,
+                        preOrder: foodItem.isPreOrder ?? linkedProduct?.isPreOrder ?? false,
+                        preOrderType: foodItem.preOrderType || linkedProduct?.preOrderType || 'ADVANCE_NOTICE',
+                        preOrderLeadTimeDays: foodItem.preOrderLeadTimeDays || linkedProduct?.preOrderLeadTimeDays || 1,
+                        preOrderLeadTimeHours: foodItem.preOrderLeadTimeHours || linkedProduct?.preOrderLeadTimeHours || 24,
+                        preOrderDailyCutoffTime: foodItem.preOrderDailyCutoffTime || linkedProduct?.preOrderDailyCutoffTime || '18:00',
+                        preOrderAllowTimeSlot: foodItem.preOrderAllowTimeSlot !== false && linkedProduct?.preOrderAllowTimeSlot !== false,
+                        preOrderAllowCustomMessage: Boolean(foodItem.preOrderAllowCustomMessage || linkedProduct?.preOrderAllowCustomMessage),
+                        preOrderCustomMessageLabel: foodItem.preOrderCustomMessageLabel || linkedProduct?.preOrderCustomMessageLabel || 'Message on Cake / Custom Instructions',
+                        availableOn: foodItem.preOrderReleaseDate || linkedProduct?.preOrderReleaseDate || null,
+                        preOrderDate: foodItem.preOrderReleaseDate || linkedProduct?.preOrderReleaseDate || null,
+                        preOrderReleaseDate: foodItem.preOrderReleaseDate || linkedProduct?.preOrderReleaseDate || null,
+                        preOrderMessage: foodItem.preOrderMessage || linkedProduct?.preOrderMessage || '',
+                        preOrderDeliveryDate: item.preOrderDeliveryDate || null,
+                        preOrderTimeSlot: item.preOrderTimeSlot || '',
+                        preOrderCustomNote: item.preOrderCustomNote || '',
                     };
                 }
                 return null;
@@ -191,12 +207,28 @@ const getCart = async (req, res) => {
                 sellerId: product.sellerId,
                 categoryName: categoryName,
                 returnPolicy: '7-day Easy Return',
-                allowPickup: product.attributes?.allowPickup ?? false,
-                pickupAvailable: product.attributes?.allowPickup ?? false,
-                isPreOrder: product.attributes?.isPreOrder ?? false,
-                preOrder: product.attributes?.isPreOrder ?? false,
-                availableOn: product.attributes?.availableOn ?? null,
-                preOrderDate: product.attributes?.availableOn ?? null,
+                isSelfPickup: Boolean(product.isSelfPickup ?? product.sellerId?.isSelfPickup ?? true),
+                allowPickup: Boolean(product.isSelfPickup ?? product.sellerId?.isSelfPickup ?? product.attributes?.allowPickup ?? true),
+                pickupAvailable: Boolean(product.isSelfPickup ?? product.sellerId?.isSelfPickup ?? product.attributes?.allowPickup ?? true),
+                storePickup: Boolean(product.isSelfPickup ?? product.sellerId?.isSelfPickup ?? product.attributes?.allowPickup ?? true),
+                gstRate: Number(product.gstRate ?? 0),
+                gstPricingMode: product.gstPricingMode || 'inclusive',
+                isPreOrder: product.isPreOrder ?? product.attributes?.isPreOrder ?? false,
+                preOrder: product.isPreOrder ?? product.attributes?.isPreOrder ?? false,
+                preOrderType: product.preOrderType || product.attributes?.preOrderType || 'ADVANCE_NOTICE',
+                preOrderLeadTimeDays: product.preOrderLeadTimeDays || product.attributes?.preOrderLeadTimeDays || 1,
+                preOrderLeadTimeHours: product.preOrderLeadTimeHours || product.attributes?.preOrderLeadTimeHours || 24,
+                preOrderDailyCutoffTime: product.preOrderDailyCutoffTime || product.attributes?.preOrderDailyCutoffTime || '18:00',
+                preOrderAllowTimeSlot: product.preOrderAllowTimeSlot !== false,
+                preOrderAllowCustomMessage: Boolean(product.preOrderAllowCustomMessage || product.attributes?.preOrderAllowCustomMessage),
+                preOrderCustomMessageLabel: product.preOrderCustomMessageLabel || product.attributes?.preOrderCustomMessageLabel || 'Message on Cake / Custom Instructions',
+                availableOn: product.preOrderReleaseDate || product.attributes?.availableOn || null,
+                preOrderDate: product.preOrderReleaseDate || product.attributes?.availableOn || null,
+                preOrderReleaseDate: product.preOrderReleaseDate || product.attributes?.availableOn || null,
+                preOrderMessage: product.preOrderMessage || product.attributes?.preOrderMessage || '',
+                preOrderDeliveryDate: item.preOrderDeliveryDate || null,
+                preOrderTimeSlot: item.preOrderTimeSlot || '',
+                preOrderCustomNote: item.preOrderCustomNote || '',
             };
         }));
         const filteredItems = mappedItems.filter(Boolean);
@@ -209,7 +241,7 @@ const getCart = async (req, res) => {
 exports.getCart = getCart;
 const addToCart = async (req, res) => {
     try {
-        const { userId: bodyUserId, productId, quantity, color, size, selectedColor, selectedSize } = req.body;
+        const { userId: bodyUserId, productId, quantity, color, size, selectedColor, selectedSize, preOrderDeliveryDate, preOrderTimeSlot, preOrderCustomNote, } = req.body;
         const customerId = req.user?.id || req.user?._id || bodyUserId;
         if (!customerId || !productId) {
             return res.status(400).json({ success: false, error: 'User ID and Product ID are required' });
@@ -225,7 +257,7 @@ const addToCart = async (req, res) => {
                 return res.status(404).json({ success: false, error: 'Product or Food Item not found' });
             }
         }
-        const cart = await cartService_1.CartService.addToCart(customerId, productId, resolvedQty, resolvedColor, resolvedSize);
+        const cart = await cartService_1.CartService.addToCart(customerId, productId, resolvedQty, resolvedColor, resolvedSize, preOrderDeliveryDate || null, preOrderTimeSlot || '', preOrderCustomNote || '');
         res.status(200).json({ success: true, message: 'Added to cart successfully', cart });
     }
     catch (error) {

@@ -28,24 +28,34 @@ class CheckoutService {
             quantity: Number(item.quantity) || 1,
             color: item.color,
             size: item.size,
-            variantId: item.variantId || item.productId,
-        })), input.couponCode);
+            variantId: item.variantId || undefined,
+        })), input.couponCode, session, true);
         const orderNumber = `AB-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
         const firstItem = pricing.orderItems[0] || {};
         const primaryCategoryId = firstItem.categoryId || null;
         const primaryCategoryName = firstItem.categoryName || '';
         const orderType = firstItem.orderType || 'RETAIL';
-        const items = pricing.orderItems.map((item) => ({
-            productId: new mongoose_1.default.Types.ObjectId(item.productId),
-            productName: item.name,
-            sku: item.sku || item.slug || `SKU-${item.productId}` || 'N/A',
-            quantity: item.quantity,
-            price: item.price,
-            categoryId: item.categoryId || primaryCategoryId,
-            categoryName: item.categoryName || primaryCategoryName,
-            isPreOrder: Boolean(item.isPreOrder),
-            preOrderReleaseDate: item.preOrderReleaseDate || item.availableOn || null,
-        }));
+        const items = pricing.orderItems.map((item, idx) => {
+            const origInputItem = (input.orderItems && input.orderItems[idx]) || {};
+            const targetDeliveryDate = origInputItem.preOrderDeliveryDate || item.preOrderDeliveryDate || null;
+            const targetTimeSlot = origInputItem.preOrderTimeSlot || item.preOrderTimeSlot || '';
+            const targetCustomNote = origInputItem.preOrderCustomNote || item.preOrderCustomNote || '';
+            return {
+                productId: new mongoose_1.default.Types.ObjectId(item.productId),
+                productName: item.name,
+                ...(item.waterDetails ? { waterDetails: item.waterDetails } : {}),
+                sku: item.sku || item.slug || `SKU-${item.productId}` || 'N/A',
+                quantity: item.quantity,
+                price: item.price,
+                categoryId: item.categoryId || primaryCategoryId,
+                categoryName: item.categoryName || primaryCategoryName,
+                isPreOrder: Boolean(item.isPreOrder || origInputItem.isPreOrder),
+                preOrderReleaseDate: item.preOrderReleaseDate || item.availableOn || origInputItem.preOrderReleaseDate || null,
+                preOrderDeliveryDate: targetDeliveryDate ? new Date(targetDeliveryDate) : null,
+                preOrderTimeSlot: targetTimeSlot,
+                preOrderCustomNote: targetCustomNote,
+            };
+        });
         const isPaidOnline = input.paymentDetails?.status === 'completed' || input.paymentDetails?.method === 'razorpay' || input.paymentDetails?.method === 'wallet';
         const resolvedPaymentMethod = input.paymentDetails?.method || 'cod';
         const timeline = [
@@ -112,6 +122,9 @@ class CheckoutService {
             preOrder: input.preOrder,
             isPreOrder: Boolean(input.isPreOrder || input.preOrder?.enabled || items.some((it) => it.isPreOrder)),
             preOrderReleaseDate: input.preOrderReleaseDate || input.preOrder?.availableFrom || null,
+            preOrderDeliveryDate: input.preOrderDeliveryDate || input.preOrder?.deliveryDate || items.find((it) => it.preOrderDeliveryDate)?.preOrderDeliveryDate || null,
+            preOrderTimeSlot: input.preOrderTimeSlot || input.preOrder?.timeSlot || items.find((it) => it.preOrderTimeSlot)?.preOrderTimeSlot || '',
+            preOrderCustomNote: input.preOrderCustomNote || input.preOrder?.customNote || items.find((it) => it.preOrderCustomNote)?.preOrderCustomNote || '',
             isScheduledSubscription: input.isScheduledSubscription || false,
             scheduleDetails: input.scheduleDetails,
             orderStatusObj,

@@ -634,13 +634,26 @@ export const updateReferralSettings = async (req: Request, res: Response): Promi
 // POST /api/referrals/admin/process-releases or /api/admin/settlements/release
 export const processReferralReleases = async (req: Request, res: Response): Promise<void> => {
   try {
-    const stats = await SettlementEngine.releaseEligibleSettlements();
+    const orderId = req.body?.orderId || req.query?.orderId;
+    const adminId = (req as any).user?._id || (req as any).user?.id;
+
+    const stats = await SettlementEngine.releaseEligibleSettlements(
+      undefined,
+      orderId,
+      adminId
+    );
+
+    const message = orderId
+      ? `Commissions for order distributed and released successfully (${stats.releasedTxs} referral bonuses, ${stats.releasedSettlements} vendor/franchise payouts credited).`
+      : `Referral settlements processed successfully (${stats.releasedTxs} referral bonuses, ${stats.releasedSettlements} vendor/franchise payouts credited).`;
+
     res.status(200).json({
       success: true,
-      message: "Referral settlements processed successfully",
+      message,
       stats
     });
   } catch (error: any) {
+    console.error('[processReferralReleases] Error:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 };

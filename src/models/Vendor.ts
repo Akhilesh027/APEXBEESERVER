@@ -88,6 +88,9 @@ export interface IVendor extends Document {
 
   address: string;
   pincode: string;
+  hasGst?: boolean;
+  gstPricingMode?: 'inclusive' | 'exclusive';
+  categoryParameters?: Record<string, any>;
   gstNumber?: string;
   panNumber?: string;
   status: string;
@@ -108,6 +111,8 @@ export interface IVendor extends Document {
     coordinates: number[]; // [longitude, latitude]
   };
   deliveryMode: "self_delivery" | "platform_delivery" | "pickup_only";
+  isSelfDelivery?: boolean;
+  isSelfPickup?: boolean;
   deliveryRadiusKm: number;
   storeType?: string;
   storeConfig?: IVendorStoreConfig;
@@ -171,6 +176,17 @@ const VendorSchema = new Schema<IVendor>(
 
     address: { type: String, required: true },
     pincode: { type: String, required: true },
+
+    hasGst: { type: Boolean, default: false },
+    gstPricingMode: {
+      type: String,
+      enum: ['inclusive', 'exclusive'],
+      default: 'inclusive'
+    },
+    categoryParameters: {
+      type: Schema.Types.Mixed,
+      default: {}
+    },
 
     gstNumber: { type: String, default: "" },
     panNumber: { type: String, default: "" },
@@ -275,6 +291,8 @@ const VendorSchema = new Schema<IVendor>(
       enum: ["self_delivery", "platform_delivery", "pickup_only"],
       default: "platform_delivery"
     },
+    isSelfDelivery: { type: Boolean, default: false },
+    isSelfPickup: { type: Boolean, default: false },
     deliveryRadiusKm: { type: Number, default: 5 },
     storeType: {
       type: String,

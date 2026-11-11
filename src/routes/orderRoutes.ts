@@ -16,7 +16,8 @@ import {
   getUserReturns,
   rateOrderExperience,
   getActiveCustomerOrder,
-  acceptOrderWithPrepTime
+  acceptOrderWithPrepTime,
+  extendOrderSlot
 } from "../controllers/orderController";
 import { uploadAnyDisk } from "../middleware/multer";
 import { protect, restrictTo } from "../middleware/auth";
@@ -24,9 +25,10 @@ import { protect, restrictTo } from "../middleware/auth";
 const router = Router();
 
 router.get("/active-order", protect, getActiveCustomerOrder);
+router.post("/:id/extend-slot", protect, extendOrderSlot);
 router.put("/:id/accept-prep", protect, acceptOrderWithPrepTime);
 router.post("/:orderId/rate", protect, rateOrderExperience);
-router.get("/", protect, restrictTo('admin', 'vendor', 'wholesaler', 'manufacturer', 'state_franchise', 'district_franchise', 'mandal_franchise', 'customer'), getOrders);
+router.get("/", protect, restrictTo('admin', 'vendor', 'wholesaler', 'manufacturer', 'business_partner', 'food_partner', 'entrepreneur', 'state_franchise', 'district_franchise', 'mandal_franchise', 'customer'), getOrders);
 router.get("/first-order/:userId", protect, getFirstOrderCheck);
 router.get("/user/:userId", protect, getOrdersByUserId);
 router.get("/:userId/count", protect, getOrderCountByUserId);

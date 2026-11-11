@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.SubscriptionReconciliationService = void 0;
 const SubscriptionStatement_1 = require("../models/SubscriptionStatement");
 const SubscriptionDeliveryTask_1 = require("../models/SubscriptionDeliveryTask");
+const subscriptionPlan_1 = require("./subscriptionPlan");
 class SubscriptionReconciliationService {
     /**
      * Performs statement audits comparing transaction logs to actual delivery logs
@@ -11,8 +12,7 @@ class SubscriptionReconciliationService {
         const statement = await SubscriptionStatement_1.SubscriptionStatement.findById(statementId);
         if (!statement)
             return false;
-        const startDate = `${statement.billingPeriod}-01`;
-        const endDate = `${statement.billingPeriod}-31`;
+        const { startDate, endDate } = (0, subscriptionPlan_1.statementDeliveryWindow)(statement);
         const tasks = await SubscriptionDeliveryTask_1.SubscriptionDeliveryTask.find({
             subscriptionId: statement.subscriptionId,
             date: { $gte: startDate, $lte: endDate }

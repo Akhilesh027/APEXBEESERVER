@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { requestApplicationChanges, reviewApplicationSubcategory } from '../controllers/applicationCorrectionController';
 import {
   getApplications,
   getApplicationById,
@@ -64,6 +65,8 @@ const router = Router();
 
 // Restrict all routes under admin to users with 'admin' role
 router.get('/applications', protect, restrictTo('admin'), getApplications);
+router.patch('/applications/:id/request-changes', protect, restrictTo('admin'), requestApplicationChanges);
+router.patch('/applications/:id/subcategory-decision', protect, restrictTo('admin'), reviewApplicationSubcategory);
 router.get('/applications/:id', protect, restrictTo('admin'), getApplicationById);
 router.put('/applications/:id', protect, restrictTo('admin'), updateApplicationDetails);
 router.patch('/applications/:id', protect, restrictTo('admin'), updateApplicationDetails);
@@ -126,6 +129,10 @@ router.put('/transactions/:id', protect, restrictTo('admin'), updateTransaction)
 router.delete('/transactions/:id', protect, restrictTo('admin'), deleteTransaction);
 
 router.post('/settlements/release', protect, restrictTo('admin'), processReferralReleases);
+router.post('/orders/:id/distribute-commission', protect, restrictTo('admin'), (req, res) => {
+  req.body = { ...req.body, orderId: req.params.id };
+  processReferralReleases(req, res);
+});
 router.post('/inventory/cleanup-expired-reservations', protect, restrictTo('admin'), cleanupExpiredReservations);
 router.get('/feature-flags', protect, restrictTo('admin'), getFeatureFlag);
 router.post('/feature-flags', protect, restrictTo('admin'), setFeatureFlag);

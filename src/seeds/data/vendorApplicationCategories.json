@@ -1,0 +1,235 @@
+[
+  {
+    "name": "Daily Needs",
+    "slug": "daily-needs",
+    "supportedItemTypes": [
+      "product"
+    ],
+    "subcategories": [
+      {
+        "name": "Fruits and Vegetables",
+        "slug": "fruits-and-vegetables"
+      },
+      {
+        "name": "Milk and Dairy",
+        "slug": "milk-and-dairy",
+        "aliases": [
+          "milk",
+          "milk-dairy"
+        ]
+      },
+      {
+        "name": "Grocery and Staples",
+        "slug": "grocery-and-staples"
+      },
+      {
+        "name": "Water and Hydration",
+        "slug": "water-and-hydration"
+      },
+      {
+        "name": "Organic and Healthy Foods",
+        "slug": "organic-and-healthy-foods"
+      },
+      {
+        "name": "Eggs, Meat and Seafood",
+        "slug": "eggs-meat-and-seafood"
+      }
+    ]
+  },
+  {
+    "name": "Devotional",
+    "slug": "devotional",
+    "supportedItemTypes": [
+      "product",
+      "service",
+      "event"
+    ],
+    "subcategories": [
+      {
+        "name": "Pooja Essentials",
+        "slug": "pooja-essentials"
+      },
+      {
+        "name": "Pooja Kits and Ritual Kits",
+        "slug": "pooja-kits-ritual-kits"
+      },
+      {
+        "name": "Festival Combos",
+        "slug": "festival-combos"
+      },
+      {
+        "name": "Flowers and Garlands",
+        "slug": "flowers-garlands"
+      },
+      {
+        "name": "Fruits and Coconuts",
+        "slug": "fruits-coconuts"
+      },
+      {
+        "name": "Sweets, Prasadam and Offerings",
+        "slug": "sweets-prasadam-offerings"
+      },
+      {
+        "name": "Idols, Frames and Spiritual Decor",
+        "slug": "idols-frames-spiritual-decor"
+      },
+      {
+        "name": "Brass, Copper and Pooja Accessories",
+        "slug": "brass-copper-pooja-accessories"
+      },
+      {
+        "name": "Spiritual Books, Astrology and Media",
+        "slug": "spiritual-books-astrology-media"
+      },
+      {
+        "name": "Temple, Priest and Devotional Services",
+        "slug": "temple-priest-devotional-services"
+      },
+      {
+        "name": "Devotional Wholesale Supplies",
+        "slug": "devotional-wholesale-supplies"
+      }
+    ]
+  },
+  {
+    "name": "Shopping",
+    "slug": "shopping",
+    "supportedItemTypes": [
+      "product",
+      "service"
+    ],
+    "subcategories": [
+      {
+        "name": "Fashion & Lifestyle",
+        "slug": "shopping-fashion-lifestyle"
+      },
+      {
+        "name": "Home & Living",
+        "slug": "shopping-home-living"
+      },
+      {
+        "name": "Agriculture & Garden",
+        "slug": "shopping-agriculture-garden"
+      }
+    ]
+  },
+  {
+    "name": "Food & Dining",
+    "slug": "restaurant",
+    "supportedItemTypes": [
+      "product",
+      "restaurant"
+    ],
+    "subcategories": [
+      {
+        "name": "Restaurants and Dining",
+        "slug": "restaurants-and-dining"
+      },
+      {
+        "name": "Cloud and Home Kitchens",
+        "slug": "cloud-and-home-kitchens"
+      },
+      {
+        "name": "Curry Points and Meal Providers",
+        "slug": "curry-points-and-meal-providers"
+      },
+      {
+        "name": "Tiffin and Breakfast Outlets",
+        "slug": "tiffin-and-breakfast-outlets"
+      },
+      {
+        "name": "Street Food and Mobile Vendors",
+        "slug": "street-food-and-mobile-vendors"
+      },
+      {
+        "name": "Cafes and Beverage Outlets",
+        "slug": "cafes-and-beverage-outlets"
+      },
+      {
+        "name": "Bakery and Cake Shops",
+        "slug": "bakery-and-cake-shops"
+      },
+      {
+        "name": "Sweets, Mithai and Desserts",
+        "slug": "sweets-mithai-and-desserts"
+      },
+      {
+        "name": "Fast Food and Snacks",
+        "slug": "fast-food-and-snacks"
+      },
+      {
+        "name": "Catering and Bulk Food Services",
+        "slug": "catering-and-bulk-food-services"
+      },
+      {
+        "name": "Meal Plans and Subscriptions",
+        "slug": "meal-plans-and-subscriptions"
+      },
+      {
+        "name": "Restaurant Raw Materials",
+        "slug": "restaurant-raw-materials"
+      },
+      {
+        "name": "Restaurant Supplies",
+        "slug": "restaurant-supplies"
+      }
+    ]
+  },
+  {
+    "name": "Services",
+    "slug": "services",
+    "supportedItemTypes": [
+      "service"
+    ],
+    "subcategories": [
+      {
+        "name": "Home Appliances Repair & Maintenance",
+        "slug": "services-home-appliances-repair-maintenance"
+      },
+      {
+        "name": "Home Cleaning & Housekeeping",
+        "slug": "services-home-cleaning-housekeeping"
+      },
+      {
+        "name": "Spa, Salon & Beauty",
+        "slug": "services-spa-salon-beauty"
+      },
+      {
+        "name": "Laundry & Garment Care",
+        "slug": "services-laundry-garment-care"
+      }
+    ]
+  },
+  {
+    "name": "ApexBee Academy",
+    "slug": "apexbee-academy",
+    "supportedItemTypes": [
+      "course"
+    ],
+    "subcategories": [
+      {
+        "name": "Become an Entrepreneur",
+        "slug": "become-an-entrepreneur"
+      },
+      {
+        "name": "Skill Development",
+        "slug": "skill-development"
+      }
+    ]
+  },
+  {
+    "name": "Business Hub",
+    "slug": "business-hub",
+    "supportedItemTypes": [
+      "product",
+      "service",
+      "finance"
+    ],
+    "subcategories": [
+      {
+        "name": "Raw Materials",
+        "slug": "raw-materials"
+      }
+    ]
+  }
+]

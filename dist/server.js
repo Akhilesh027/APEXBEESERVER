@@ -59,6 +59,13 @@ const businessRoutes_1 = __importDefault(require("./routes/businessRoutes"));
 const deliveryRoutes_1 = __importDefault(require("./routes/deliveryRoutes"));
 const serviceBookingRoutes_1 = __importDefault(require("./routes/serviceBookingRoutes"));
 const localShopRoutes_1 = __importDefault(require("./routes/localShopRoutes"));
+const businessInquiryRoutes_1 = __importDefault(require("./routes/businessInquiryRoutes"));
+const DairySummaryService_1 = require("./services/DairySummaryService");
+const dairyBillingJob_1 = require("./services/dairyBillingJob");
+const dairySubscriptionLifecycle_1 = require("./services/dairySubscriptionLifecycle");
+const SubscriptionSchedulerService_1 = require("./services/SubscriptionSchedulerService");
+const vendorWorkspaceService_1 = require("./services/vendorWorkspaceService");
+const dairyOperationsService_1 = require("./services/dairyOperationsService");
 const b2bRoutes_1 = __importDefault(require("./routes/b2bRoutes"));
 const searchRoutes_1 = __importDefault(require("./routes/searchRoutes"));
 const storesRoutes_1 = __importDefault(require("./routes/storesRoutes"));
@@ -168,6 +175,7 @@ app.use("/api/delivery", deliveryRoutes_1.default);
 app.use("/api/service", serviceBookingRoutes_1.default);
 app.use('/api/table-bookings', tableBookingRoutes_1.default);
 app.use('/api/local-shop', localShopRoutes_1.default);
+app.use('/api/business-inquiries', businessInquiryRoutes_1.default);
 app.use('/api/b2b', b2bRoutes_1.default);
 app.use('/api/v1/search', searchRoutes_1.default);
 app.use('/api/v1/stores', storesRoutes_1.default);
@@ -469,9 +477,64 @@ const startServer = async () => {
         }
         (0, notificationListeners_1.initNotificationListeners)(); // Registry listeners for events
         let reservationExpiryTimer = null;
+        let dairySummaryTimer = null;
+        let dairySummaryRunning = false;
+        let dairyTaskDate = '';
+        let dairyFundingDate = '';
+        let dairyBillingDate = '';
+        let dairyRenewalDate = '';
+        let dairyDelayCheck = -1;
         if (env_1.env.PROCESS_TYPE !== 'api') {
             console.log(`[NotificationQueue] Starting background worker loop... [PROCESS_TYPE=${env_1.env.PROCESS_TYPE}]`);
             notificationQueue_1.notificationQueue.startWorker(); // Boot background worker processing loop
+            const runDairySummaries = async () => {
+                if (dairySummaryRunning)
+                    return;
+                dairySummaryRunning = true;
+                try {
+                    const now = new Date(), date = (0, vendorWorkspaceService_1.indiaDate)(now);
+                    if (dairyRenewalDate !== date) {
+                        await (0, dairySubscriptionLifecycle_1.runDairyRenewals)(now);
+                        dairyRenewalDate = date;
+                    }
+                    if (dairyTaskDate !== date) {
+                        await SubscriptionSchedulerService_1.SubscriptionSchedulerService.runDailyScheduler(now);
+                        dairyTaskDate = date;
+                    }
+                    if (dairyBillingDate !== date) {
+                        try {
+                            const billing = await dairyBillingJob_1.DairyBillingJob.run(now);
+                            if (!billing.failed)
+                                dairyBillingDate = date;
+                            if (billing.failed || billing.overlaps)
+                                console.warn('[DairyBilling] Periods need retry/reconciliation:', billing.errors);
+                        }
+                        catch (error) {
+                            console.error('[DairyBilling] Automatic draft generation failed:', error);
+                        }
+                    }
+                    if ((0, dairyOperationsService_1.isDairySummaryTime)(now)) {
+                        await DairySummaryService_1.DairySummaryService.run(now);
+                        if (dairyFundingDate !== date) {
+                            await SubscriptionSchedulerService_1.SubscriptionSchedulerService.processWalletHoldsForTomorrow(now);
+                            dairyFundingDate = date;
+                        }
+                    }
+                    const delayCheck = Math.floor(now.getTime() / 300000);
+                    if (dairyDelayCheck !== delayCheck) {
+                        await (0, dairySubscriptionLifecycle_1.sendDairyDelayNotices)(now);
+                        dairyDelayCheck = delayCheck;
+                    }
+                }
+                catch (error) {
+                    console.error('[DairySummary] Background summary failed:', error);
+                }
+                finally {
+                    dairySummaryRunning = false;
+                }
+            };
+            dairySummaryTimer = setInterval(runDairySummaries, 60000);
+            void runDairySummaries();
             console.log('[InventoryService] Starting background reservation sweep loop...');
             reservationExpiryTimer = setInterval(async () => {
                 try {
@@ -496,6 +559,8 @@ const startServer = async () => {
                             clearInterval(reservationExpiryTimer);
                             console.log('[Shutdown] Background reservation sweep loop stopped.');
                         }
+                        if (dairySummaryTimer)
+                            clearInterval(dairySummaryTimer);
                     }
                     await mongoose_1.default.connection.close();
                     console.log('[Shutdown] MongoDB connection closed.');

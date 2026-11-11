@@ -9,6 +9,9 @@ export interface ISubscriptionDeliveryTask extends Document {
   notes?: string;
   otp?: string;
   otpVerified: boolean;
+  otpAttempts?: number;
+  updatedBy?: mongoose.Types.ObjectId;
+  confirmedAt?: Date;
   gpsCoordinates?: {
     latitude: number;
     longitude: number;
@@ -16,6 +19,18 @@ export interface ISubscriptionDeliveryTask extends Document {
   signature?: string;
   isPaidToVendor?: boolean;
   isDebitedFromUser?: boolean;
+  chargeAmount?: number;
+  fundingStatus?: 'reserved' | 'captured' | 'refunded';
+  fundingRevision?: number;
+  fundingReminderDate?: string;
+  batchAllocations?: Array<{ batchId: mongoose.Types.ObjectId; quantity: number }>;
+  reportingVersion?: number;
+  reportedComponents?: Array<{ productId: mongoose.Types.ObjectId; productName: string; packs: number; packSize: string; litres: number | null; warning?: string }>;
+  deliverySlot?: string;
+  slotExtended?: boolean;
+  slotExtendedUntil?: Date | null;
+  slotExtensionReason?: string;
+  failedReason?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -49,13 +64,28 @@ const SubscriptionDeliveryTaskSchema = new Schema<ISubscriptionDeliveryTask>(
     notes: { type: String, default: "" },
     otp: { type: String, default: "" },
     otpVerified: { type: Boolean, default: false },
+    otpAttempts: { type: Number, default: 0 },
+    updatedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+    confirmedAt: Date,
     gpsCoordinates: {
       latitude: { type: Number },
       longitude: { type: Number }
     },
     signature: { type: String, default: "" },
     isPaidToVendor: { type: Boolean, default: false },
-    isDebitedFromUser: { type: Boolean, default: false }
+    isDebitedFromUser: { type: Boolean, default: false },
+    chargeAmount: Number,
+    fundingStatus: { type: String, enum: ['reserved', 'captured', 'refunded'] },
+    fundingRevision: Number,
+    fundingReminderDate: String,
+    batchAllocations: [{ batchId: { type: Schema.Types.ObjectId, ref: 'StockBatch' }, quantity: Number }],
+    reportingVersion: Number,
+    reportedComponents: [{ productId: { type: Schema.Types.ObjectId, required: true }, productName: String, packs: Number, packSize: String, litres: { type: Number, default: null }, warning: String }],
+    deliverySlot: { type: String, default: '' },
+    slotExtended: { type: Boolean, default: false },
+    slotExtendedUntil: { type: Date, default: null },
+    slotExtensionReason: { type: String, default: '' },
+    failedReason: { type: String, default: '' },
   },
   { timestamps: true }
 );

@@ -18,6 +18,7 @@ import { DeliveryPartner } from "../models/DeliveryPartner";
 import { notificationEmitter } from "../modules/notifications/events/notificationEmitter";
 import { Franchise } from '../models/Franchise';
 import { Vendor } from '../models/Vendor';
+import { RestaurantProfile } from '../models/RestaurantProfile';
 import { CheckoutService } from "../services/checkoutService";
 import { InventoryService } from "../services/inventoryService";
 import { InsufficientStockError } from "../errors/InsufficientStockError";
@@ -25,6 +26,7 @@ import { IdempotencyService } from "../services/idempotencyService";
 import { CouponService } from "../services/couponService";
 import { PaymentAttempt } from "../models/PaymentAttempt";
 import { OrderStateMachine } from "../services/OrderStateMachine";
+import { auditOrders, extendOrderDeliverySlot } from "../services/deliverySlotService";
 
 const activeAssignmentTimeouts = new Map<string, NodeJS.Timeout>();
 
@@ -82,8 +84,36 @@ const getOrderTerritory = (order: any) => {
   };
 };
 
+const isStoreSelfDelivery = async (order: any): Promise<boolean> => {
+  if (!order) return false;
+  if (
+    order.deliveryType === 'self_delivery' ||
+    order.deliveryType === 'store_delivery' ||
+    Boolean(order.isVendorSelfDelivery) ||
+    Boolean(order.isSelfDelivery)
+  ) {
+    return true;
+  }
+  if (order.sellerId) {
+    try {
+      const vendorDoc = await Vendor.findOne({
+        $or: [{ _id: order.sellerId }, { userId: order.sellerId }]
+      });
+      if (vendorDoc?.isSelfDelivery || vendorDoc?.deliveryMode === 'self_delivery') {
+        return true;
+      }
+    } catch (_) {}
+  }
+  return false;
+};
+
 const autoAssignDeliveryPartner = async (order: any, excludedPartnerIds: string[] = []) => {
   try {
+    if (await isStoreSelfDelivery(order)) {
+      console.log(`[AutoAssign] Skipping platform assignment for order ${order.orderNumber} - Vendor has chosen Store Self-Delivery.`);
+      return;
+    }
+
     const orderTerritory = getOrderTerritory(order);
     console.log(`[AutoAssign] Matching territory for order ${order.orderNumber}: State=${orderTerritory.state}, District=${orderTerritory.district}, Mandal=${orderTerritory.mandal}`);
 
@@ -284,6 +314,130 @@ const autoAssignDeliveryPartner = async (order: any, excludedPartnerIds: string[
     }
   } catch (err) {
     console.error('[AutoAssign] Error:', err);
+  }
+};
+
+export const broadcastOrderToTerritoryRiders = async (order: any) => {
+  try {
+    if (await isStoreSelfDelivery(order)) {
+      console.log(`[TerritoryBroadcast] Skipping rider broadcast for order ${order.orderNumber} - Vendor has chosen Store Self-Delivery.`);
+      return;
+    }
+
+    const orderTerritory = getOrderTerritory(order);
+    console.log(`[TerritoryBroadcast] Broadcasting order ${order.orderNumber} to riders in Mandal: ${orderTerritory.mandal}, Pincode: ${orderTerritory.pincode}, District: ${orderTerritory.district}`);
+
+    // Generate Pickup and Delivery OTPs if missing
+    if (!order.deliveryVerification || !order.deliveryVerification.otp) {
+      order.deliveryVerification = {
+        otp: Math.floor(1000 + Math.random() * 9000).toString(),
+        otpExpires: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        verified: false,
+        verificationMethod: 'None'
+      };
+    }
+    if (!order.pickupVerification || !order.pickupVerification.otp) {
+      order.pickupVerification = {
+        otp: Math.floor(1000 + Math.random() * 9000).toString(),
+        verified: false
+      };
+    }
+    await order.save();
+
+    // Query active / online riders
+    const activePartners = await DeliveryPartner.find({
+      status: { $in: ['active', 'online'] }
+    }).populate('userId');
+
+    if (activePartners.length === 0) {
+      console.log(`[TerritoryBroadcast] No active partners found in system for order ${order.orderNumber}`);
+      return;
+    }
+
+    const getPartnerTerritory = (partner: any) => {
+      const pTerr = partner.territory || {};
+      const uTerr = (partner.userId && typeof partner.userId === 'object') ? (partner.userId as any).territory || {} : {};
+      const state = (pTerr.state || uTerr.state || '').trim().toLowerCase();
+      const district = (pTerr.district || uTerr.district || '').trim().toLowerCase();
+      const mandal = (pTerr.mandal || uTerr.mandal || partner.zone || '').trim().toLowerCase();
+      const pincode = (pTerr.pincode || uTerr.pincode || '').trim();
+      return { state, district, mandal, pincode };
+    };
+
+    const targetMandal = orderTerritory.mandal.toLowerCase();
+    const targetDistrict = orderTerritory.district.toLowerCase();
+    const targetPin = orderTerritory.pincode;
+
+    const matchedPartners = activePartners.filter(partner => {
+      const pTerr = getPartnerTerritory(partner);
+      const isMandal = targetMandal && (pTerr.mandal === targetMandal || pTerr.mandal.includes(targetMandal) || targetMandal.includes(pTerr.mandal));
+      const isPin = targetPin && pTerr.pincode === targetPin;
+      const isDistrict = targetDistrict && (pTerr.district === targetDistrict || pTerr.district.includes(targetDistrict) || targetDistrict.includes(pTerr.district));
+      return isMandal || isPin || isDistrict;
+    });
+
+    const targetPartners = matchedPartners.length > 0 ? matchedPartners : activePartners;
+    console.log(`[TerritoryBroadcast] Alerting ${targetPartners.length} rider(s) for order ${order.orderNumber}`);
+
+    // Create or update open DeliveryAssignment for the broadcast
+    let assignment = await DeliveryAssignment.findOne({ orderId: order._id });
+    if (!assignment) {
+      assignment = new DeliveryAssignment({
+        orderId: order._id,
+        vendorId: order.sellerId,
+        customerId: order.customerId,
+        status: 'Broadcast',
+        assignedAt: new Date(),
+        codCollection: {
+          expected: order.totalAmount || 0,
+          collected: 0
+        }
+      });
+      await assignment.save();
+    } else if (!assignment.deliveryPartnerId) {
+      assignment.status = 'Broadcast';
+      assignment.assignedAt = new Date();
+      await assignment.save();
+    }
+
+    // Resolve store name
+    let storeName = 'Local Merchant';
+    try {
+      const vendorDoc = await Vendor.findById(order.sellerId) || await Vendor.findOne({ userId: order.sellerId });
+      if (vendorDoc) storeName = vendorDoc.businessName || vendorDoc.ownerName || storeName;
+    } catch (_) {}
+
+    // Emit broadcast alerts to each target rider
+    for (const partner of targetPartners) {
+      const pUserId = (partner.userId && typeof partner.userId === 'object' && (partner.userId as any)._id)
+        ? (partner.userId as any)._id
+        : (partner.userId || partner._id);
+
+      try {
+        notificationEmitter.emitNotification(
+          'delivery.order_ready_for_pickup',
+          {
+            orderId: order.orderNumber,
+            orderNumber: order.orderNumber,
+            mandal: orderTerritory.mandal,
+            district: orderTerritory.district,
+            state: orderTerritory.state,
+            pincode: orderTerritory.pincode,
+            totalAmount: order.totalAmount,
+            storeName,
+            pickupOtp: order.pickupVerification?.otp || '',
+            entityType: 'order',
+            entityId: order._id,
+            isBroadcast: true
+          },
+          [{ userId: pUserId, role: 'delivery_partner' }]
+        );
+      } catch (e) {
+        console.warn(`[TerritoryBroadcast] Failed to notify rider ${partner.name}:`, e);
+      }
+    }
+  } catch (err) {
+    console.error('[TerritoryBroadcast] Error:', err);
   }
 };
 
@@ -656,32 +810,48 @@ export const getOrdersByUserId = async (req: Request, res: Response) => {
     const orders = await Order.find({ customerId: userId })
       .populate({
         path: 'items.productId',
-        select: 'name thumbnail images baseSellingPrice userPrice price attributes SKU sku'
+        select: 'name thumbnail images baseSellingPrice userPrice price attributes variants specifications SKU sku'
       })
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);
 
+    await auditOrders(orders);
+
     const mappedOrders = orders.map((order: any) => {
       const rawList = (order.orderItems && order.orderItems.length) ? order.orderItems : (order.items || []);
       const resolvedItems = rawList.map((it: any) => {
         const prod = (typeof it.productId === 'object' && it.productId) ? it.productId : null;
-        const prodName = it.name || it.itemName || it.productName || prod?.name || prod?.itemName || 'Product';
+        const prodName = it.productName || it.name || it.itemName || prod?.name || prod?.itemName || 'Product';
         const prodImg = it.image || it.thumbnail || prod?.thumbnail || prod?.images?.[0] || '/placeholder.svg';
         const prodPrice = Number(it.price ?? it.sellingPrice ?? prod?.baseSellingPrice ?? prod?.price ?? 0);
+        const matchedV = prod?.variants?.find((v: any) =>
+          (it.variantId && String(v._id) === String(it.variantId)) ||
+          (it.sku && String(v.sku) === String(it.sku)) ||
+          (it.variantName && (v.name === it.variantName || v.title === it.variantName))
+        );
+        const resolvedVName = it.variantName || it.selectedVariant?.name || it.selectedVariant?.title || it.selectedVariant?.label || matchedV?.name || matchedV?.title || matchedV?.label || '';
+        const resolvedAttrs = it.selectedAttributes || it.attributes || matchedV?.attributes || prod?.attributes || null;
+
         return {
           _id: it._id || prod?._id,
           productId: prod?._id || it.productId,
           name: prodName,
           itemName: prodName,
+          sku: it.sku || prod?.sku || '',
           price: prodPrice,
           originalPrice: Number(it.originalPrice || prod?.baseMrp || prodPrice),
           quantity: Number(it.quantity || 1),
-          itemTotal: prodPrice * Number(it.quantity || 1),
+          itemTotal: it.itemTotal || (prodPrice * Number(it.quantity || 1)),
           image: prodImg,
-          color: it.color || it.selectedColor || 'default',
-          size: it.size || it.selectedSize || 'default',
-          attributes: it.selectedAttributes || it.attributes || prod?.attributes
+          color: it.color || it.selectedColor || (resolvedAttrs?.color ? String(resolvedAttrs.color) : ''),
+          size: it.size || it.selectedSize || (resolvedAttrs?.size ? String(resolvedAttrs.size) : ''),
+          variantId: it.variantId || (matchedV?._id?.toString() || ''),
+          variantName: resolvedVName,
+          selectedVariant: it.selectedVariant || matchedV || null,
+          selectedAttributes: resolvedAttrs,
+          attributes: resolvedAttrs,
+          vendorId: it.vendorId || order.sellerId
         };
       });
 
@@ -976,7 +1146,16 @@ export const getOrders = async (req: Request, res: Response) => {
       : [user?.role].filter(Boolean);
 
     const isAdmin = roles.includes("admin");
-    const isSeller = roles.includes("vendor") || roles.includes("wholesaler") || roles.includes("manufacturer");
+    const vendorDoc = await Vendor.findOne({
+      $or: [
+        { userId: user.id },
+        ...(mongoose.Types.ObjectId.isValid(user.id) ? [{ userId: new mongoose.Types.ObjectId(user.id) }] : []),
+        ...(user.email ? [{ email: user.email.toLowerCase().trim() }] : []),
+        ...(mongoose.Types.ObjectId.isValid(user.id) ? [{ _id: new mongoose.Types.ObjectId(user.id) }] : [{ _id: user.id }])
+      ]
+    });
+
+    const isSeller = roles.includes("vendor") || roles.includes("wholesaler") || roles.includes("manufacturer") || roles.includes("business_partner") || roles.includes("food_partner") || Boolean(vendorDoc);
     const isDeliveryAgent = roles.includes("delivery_partner") || roles.includes("delivery_agent");
     const isFranchise = roles.includes("state_franchise") || roles.includes("district_franchise") || roles.includes("mandal_franchise");
     const isCustomer = roles.includes("customer");
@@ -997,9 +1176,36 @@ export const getOrders = async (req: Request, res: Response) => {
     if (isAdmin) {
       // Admins are allowed to query by customerId, sellerId, or other identity fields
       if (req.query.customerId) filters.customerId = req.query.customerId;
-      if (req.query.sellerId) filters.sellerId = req.query.sellerId;
+      if (req.query.sellerId) {
+        filters.$or = [
+          { sellerId: req.query.sellerId },
+          { 'items.vendorId': req.query.sellerId },
+          { 'orderItems.vendorId': req.query.sellerId }
+        ];
+      }
     } else if (isSeller) {
-      filters.sellerId = user.id;
+      const sellerIds: any[] = [user.id];
+      if (mongoose.Types.ObjectId.isValid(user.id)) {
+        sellerIds.push(new mongoose.Types.ObjectId(user.id));
+      }
+      if (vendorDoc) {
+        sellerIds.push(vendorDoc._id);
+        if (vendorDoc.userId) sellerIds.push(vendorDoc.userId);
+      }
+      try {
+        const restDoc = await RestaurantProfile.findOne({ $or: [{ userId: user.id }, { _id: user.id }] });
+        if (restDoc) {
+          sellerIds.push(restDoc._id);
+          if (restDoc.userId) sellerIds.push(restDoc.userId);
+        }
+      } catch (_) {}
+
+      const stringIds = sellerIds.map(s => s.toString());
+      filters.$or = [
+        { sellerId: { $in: sellerIds } },
+        { 'items.vendorId': { $in: stringIds } },
+        { 'orderItems.vendorId': { $in: stringIds } }
+      ];
     } else if (isDeliveryAgent) {
       filters.deliveryAgentId = user.id;
     } else if (isFranchise) {
@@ -1041,11 +1247,14 @@ export const getOrders = async (req: Request, res: Response) => {
 
     const total = await Order.countDocuments(filters);
     const orders = await Order.find(filters)
-      .populate("customerId", "name email")
-      .populate("sellerId", "name email")
+      .populate("customerId", "name email phone mobile")
+      .populate("sellerId", "name email businessName shopName phone")
+      .populate("items.productId", "name thumbnail images price baseSellingPrice attributes variants specifications sku SKU")
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);
+
+    await auditOrders(orders);
 
     return res.status(200).json({
       success: true,
@@ -1062,14 +1271,44 @@ export const getOrders = async (req: Request, res: Response) => {
   }
 };
 
+async function ownsSellerOrder(userId: string, sellerId: unknown, orderItems?: any[]): Promise<boolean> {
+  if (!userId) return false;
+  if (sellerId && String(sellerId) === String(userId)) return true;
+  if (sellerId) {
+    const isVendor = await Vendor.exists({ _id: sellerId, userId });
+    if (isVendor) return true;
+    try {
+      const isRest = await RestaurantProfile.exists({ _id: sellerId, userId });
+      if (isRest) return true;
+    } catch (_) {}
+  }
+  try {
+    const userVendors = await Vendor.find({ userId }).select('_id');
+    const vIds = userVendors.map(v => String(v._id));
+    if (sellerId && vIds.includes(String(sellerId))) return true;
+    if (orderItems && Array.isArray(orderItems)) {
+      if (orderItems.some((it: any) => vIds.includes(String(it.vendorId)) || String(it.vendorId) === String(userId))) {
+        return true;
+      }
+    }
+  } catch (_) {}
+  return false;
+}
+
 export const getOrderById = async (req: Request, res: Response) => {
   try {
     let order: any = null;
     if (mongoose.Types.ObjectId.isValid(req.params.id)) {
-      order = await Order.findById(req.params.id);
+      order = await Order.findById(req.params.id)
+        .populate("customerId", "name email phone mobile")
+        .populate("sellerId", "name email businessName shopName phone")
+        .populate("items.productId", "name thumbnail images price baseSellingPrice attributes variants specifications sku SKU");
     }
     if (!order) {
-      order = await Order.findOne({ orderNumber: req.params.id });
+      order = await Order.findOne({ orderNumber: req.params.id })
+        .populate("customerId", "name email phone mobile")
+        .populate("sellerId", "name email businessName shopName phone")
+        .populate("items.productId", "name thumbnail images price baseSellingPrice attributes variants specifications sku SKU");
     }
     if (!order) {
       return res.status(404).json({ success: false, message: "Resource not found" });
@@ -1078,21 +1317,13 @@ export const getOrderById = async (req: Request, res: Response) => {
     const user = (req as any).user;
     const isAdmin = user && user.roles?.includes('admin');
     const userRoles = Array.isArray(user?.roles) ? user.roles : [user?.role].filter(Boolean);
-    const isSellerRole = userRoles.some((r: string) => ['vendor', 'wholesaler', 'manufacturer'].includes(r));
+    const isSellerRole = userRoles.some((r: string) => ['vendor', 'wholesaler', 'manufacturer', 'business_partner', 'food_partner', 'entrepreneur'].includes(r));
     const isDriverRole = userRoles.some((r: string) => ['delivery_partner', 'delivery_agent'].includes(r));
 
-    let isSeller = isSellerRole && (String(order.sellerId) === String(user.id) || String(order.sellerId) === String((user as any)._id));
-    if (isSellerRole && !isSeller) {
-      const vendorProfile = await Vendor.findOne({ userId: user.id });
-      if (vendorProfile && String(vendorProfile._id) === String(order.sellerId)) {
-        isSeller = true;
-      } else {
-        isSeller = true; // Allow vendor user role to view order details
-      }
-    }
+    const isSeller = isSellerRole && await ownsSellerOrder(user.id, order.sellerId, order.items || order.orderItems);
 
     const isCustomer = user && user.roles?.includes('customer') && String(order.customerId) === String(user.id);
-    const isDriver = isDriverRole;
+    const isDriver = isDriverRole && String(order.deliveryAgentId) === String(user.id);
 
     let isFranchise = false;
     if (user && (user.roles?.includes('state_franchise') || user.roles?.includes('district_franchise') || user.roles?.includes('mandal_franchise'))) {
@@ -1125,12 +1356,12 @@ export const updateOrder = async (req: Request, res: Response) => {
     const user = (req as any).user;
     const isAdmin = user && user.roles?.includes('admin');
     const userRoles = Array.isArray(user?.roles) ? user.roles : [user?.role].filter(Boolean);
-    const isSellerRole = userRoles.some((r: string) => ['vendor', 'wholesaler', 'manufacturer'].includes(r));
+    const isSellerRole = userRoles.some((r: string) => ['vendor', 'wholesaler', 'manufacturer', 'business_partner', 'food_partner', 'entrepreneur'].includes(r));
     const isDriverRole = userRoles.some((r: string) => ['delivery_partner', 'delivery_agent'].includes(r));
 
-    let isSeller = isSellerRole;
+    const isSeller = isSellerRole && await ownsSellerOrder(user.id, currentOrder.sellerId, currentOrder.items || currentOrder.orderItems);
     const isCustomer = user && user.roles?.includes('customer') && String(currentOrder.customerId) === String(user.id);
-    const isDriver = isDriverRole;
+    const isDriver = isDriverRole && String(currentOrder.deliveryAgentId) === String(user.id);
 
     if (!isAdmin && !isSeller && !isCustomer && !isDriver) {
       return res.status(404).json({ success: false, message: "Resource not found" });
@@ -1167,6 +1398,15 @@ export const updateOrder = async (req: Request, res: Response) => {
         if (!editableFields.includes(key)) {
           delete req.body[key];
         }
+      }
+    }
+
+    if (req.body.deliveryAgentId) {
+      if (await isStoreSelfDelivery(currentOrder)) {
+        return res.status(400).json({
+          success: false,
+          message: "Store Self-Delivery is enabled for this vendor. Platform delivery agents cannot be assigned to this order."
+        });
       }
     }
 
@@ -1237,10 +1477,19 @@ export const updateOrder = async (req: Request, res: Response) => {
 
     // If status transition is requested, execute state machine
     if (orderStatus && currentOrder.orderStatus !== orderStatus) {
-      order = await OrderStateMachine.transition(currentOrder._id, orderStatus as any, {
-        userId: user.id || user._id,
-        notes: req.body.notes || `Order status updated to ${orderStatus}`
-      });
+      try {
+        order = await OrderStateMachine.transition(currentOrder._id, orderStatus as any, {
+          userId: user.id || user._id,
+          notes: req.body.notes || `Order status updated to ${orderStatus}`
+        });
+      } catch (smErr) {
+        console.warn(`[updateOrder] StateMachine transition notice for ${orderStatus}:`, smErr);
+        if (orderStatus === 'Delivered') {
+          await InventoryService.commitStock(currentOrder._id);
+        }
+      }
+    } else if (orderStatus === 'Delivered' || req.body.deliveryStatus === 'Delivered') {
+      await InventoryService.commitStock(currentOrder._id);
     }
 
     if (order) {
@@ -1276,8 +1525,15 @@ export const updateOrder = async (req: Request, res: Response) => {
         } catch (notifErr) {
           console.warn("Failed to trigger agent assignment event:", notifErr);
         }
-      } else if (['Confirmed', 'Placed', 'Packed', 'Shipped', 'Ready', 'ready_for_pickup'].includes(order.orderStatus) && !order.deliveryAgentId) {
-        await autoAssignDeliveryPartner(order);
+      } else if (['Packed', 'Ready', 'ready_for_pickup'].includes(order.orderStatus) && !order.deliveryAgentId) {
+        if (!(await isStoreSelfDelivery(order))) {
+          // Automated broadcast to all local territory riders for first-to-accept dispatch
+          await broadcastOrderToTerritoryRiders(order);
+        }
+      } else if (['Confirmed', 'Placed', 'Shipped'].includes(order.orderStatus) && !order.deliveryAgentId) {
+        if (!(await isStoreSelfDelivery(order))) {
+          await autoAssignDeliveryPartner(order);
+        }
       }
 
       if (req.body.orderStatus && req.body.orderStatus !== currentOrder.orderStatus) {
@@ -1432,13 +1688,50 @@ export const getOrderInvoicePDF = async (req: Request, res: Response) => {
     doc.moveTo(50, doc.y).lineTo(560, doc.y).stroke();
     doc.moveDown(0.5);
 
+    const oAny = order as any;
+    const summary = oAny.orderSummary || {};
+    const subtotal = Number(summary.subtotal) || Number(oAny.subtotal) || order.items.reduce((acc: number, it: any) => acc + (Number(it.price) || 0) * (Number(it.quantity) || 1), 0);
+    const tax = Number(summary.tax) || Number(oAny.tax) || 0;
+    const cgst = Number(summary.cgst) || (tax > 0 ? Math.round((tax / 2) * 100) / 100 : 0);
+    const sgst = Number(summary.sgst) || (tax > 0 ? Math.round((tax / 2) * 100) / 100 : 0);
+    const shipping = Number(summary.shippingFee ?? summary.shipping ?? oAny.shippingCharge ?? oAny.shippingFee ?? 0);
+    const packing = Number(summary.packingFee ?? summary.packageCharge ?? oAny.packingCharge ?? 0);
+    const discount = Number(summary.couponDiscount ?? summary.discount ?? 0);
+    const netPayable = Number(summary.grandTotal ?? summary.total ?? order.totalAmount ?? (subtotal + tax + shipping + packing - discount));
+
     doc.text('Subtotal:', 380, doc.y, { width: 100, align: 'right' });
-    doc.text(`₹${(Number(order.totalAmount) || 0).toFixed(2)}`, 490, doc.y, { width: 70, align: 'right' });
+    doc.text(`₹${subtotal.toFixed(2)}`, 490, doc.y, { width: 70, align: 'right' });
+
+    if (cgst > 0) {
+      doc.moveDown(0.3);
+      doc.text('CGST (Central Tax):', 380, doc.y, { width: 100, align: 'right' });
+      doc.text(`₹${cgst.toFixed(2)}`, 490, doc.y, { width: 70, align: 'right' });
+    }
+    if (sgst > 0) {
+      doc.moveDown(0.3);
+      doc.text('SGST (State Tax):', 380, doc.y, { width: 100, align: 'right' });
+      doc.text(`₹${sgst.toFixed(2)}`, 490, doc.y, { width: 70, align: 'right' });
+    }
+    if (shipping > 0) {
+      doc.moveDown(0.3);
+      doc.text('Shipping / Delivery:', 380, doc.y, { width: 100, align: 'right' });
+      doc.text(`₹${shipping.toFixed(2)}`, 490, doc.y, { width: 70, align: 'right' });
+    }
+    if (packing > 0) {
+      doc.moveDown(0.3);
+      doc.text('Packaging Charge:', 380, doc.y, { width: 100, align: 'right' });
+      doc.text(`₹${packing.toFixed(2)}`, 490, doc.y, { width: 70, align: 'right' });
+    }
+    if (discount > 0) {
+      doc.moveDown(0.3);
+      doc.text('Discount:', 380, doc.y, { width: 100, align: 'right' });
+      doc.text(`-₹${discount.toFixed(2)}`, 490, doc.y, { width: 70, align: 'right' });
+    }
 
     doc.moveDown(0.5);
     doc.font('Helvetica-Bold');
     doc.text('Net Payable:', 380, doc.y, { width: 100, align: 'right' });
-    doc.text(`₹${(Number(order.totalAmount) || 0).toFixed(2)}`, 490, doc.y, { width: 70, align: 'right' });
+    doc.text(`₹${netPayable.toFixed(2)}`, 490, doc.y, { width: 70, align: 'right' });
 
     doc.moveDown(2);
     doc.fontSize(8).font('Helvetica-Oblique').text('This is a computer generated document, no signature required.', { align: 'center' });
@@ -1630,3 +1923,23 @@ export const rateOrderExperience = async (req: Request, res: Response): Promise<
     res.status(500).json({ success: false, message: 'Failed to submit review', error: error.message });
   }
 };
+
+export const extendOrderSlot = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const { additionalMinutes, newSlot, reason } = req.body;
+    const authUser = (req as any).user;
+
+    const result = await extendOrderDeliverySlot(id, authUser?.id || authUser?._id, {
+      additionalMinutes: Number(additionalMinutes) || 60,
+      newSlot: newSlot ? String(newSlot).trim() : undefined,
+      reason: String(reason || 'Store delivery delayed due to operational requirements').trim()
+    });
+
+    res.status(200).json(result);
+  } catch (err: any) {
+    console.error('[extendOrderSlot] Error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+

@@ -1,4 +1,5 @@
 import mongoose, { Document, Schema } from "mongoose";
+import type { ApplicationBusinessInformation } from '../services/applicationBusinessDetails';
 
 export interface IBusinessApplication extends Document {
   userId: mongoose.Types.ObjectId;
@@ -51,15 +52,25 @@ export interface IBusinessApplication extends Document {
     bankName?: string;
     ifscCode?: string;
   };
+  businessInformation?: ApplicationBusinessInformation;
+  location?: { type: 'Point'; coordinates: number[] };
+  correctionStage?: 'application' | 'documents';
+  correctionReason?: string;
   category?: string;
   primaryCategory?: string;
   categories?: string[];
   subCategory?: string;
   approvedSubcategories?: string[];
+  requestedSubcategories?: string[];
+  subcategoryDecisions?: import('../services/applicationSubcategoryDecisions').SubcategoryDecision[];
+  onboardingVersion?: number;
+  isAdditionalCategoryApplication?: boolean;
+  categorySelections?: Array<{ categoryId: mongoose.Types.ObjectId; subcategoryIds: mongoose.Types.ObjectId[] }>;
+  businessDetails?: { dairy?: { businessType: string; morningDelivery?: string; eveningDelivery?: string; weeklyHoliday?: string; orderMode?: string; registrationNumber?: string } };
   requestedCapabilities?: string[];
   isWaitlisted?: boolean;
   waitlistTerritoryFtid?: string;
-  status: "pending" | "pending_approval" | "pre_approved" | "kyc_submitted" | "under_review" | "approved" | "verified" | "rejected" | "waitlist";
+  status: "pending" | "pending_approval" | "pre_approved" | "kyc_submitted" | "under_review" | "approved" | "verified" | "rejected" | "waitlist" | "changes_requested";
   remarks?: string;
   adminRemarks?: string;
   createdAt: Date;
@@ -78,7 +89,39 @@ const BusinessApplicationSchema = new Schema<IBusinessApplication>(
     categories: [{ type: String, trim: true }],
     subCategory: { type: String, default: "" },
     approvedSubcategories: [{ type: String, trim: true }],
+    requestedSubcategories: [{ type: String, trim: true }],
+    subcategoryDecisions: [{
+      _id: false,
+      subcategoryName: { type: String, required: true },
+      status: { type: String, enum: ['pending', 'approved', 'changes_requested', 'rejected'], required: true },
+      reason: { type: String, maxlength: 2000, default: '' },
+      reviewedAt: Date,
+    }],
+    onboardingVersion: { type: Number, default: 1 },
+    isAdditionalCategoryApplication: { type: Boolean, default: false },
+    categorySelections: [{
+      _id: false,
+      categoryId: { type: Schema.Types.ObjectId, ref: 'Category', required: true },
+      subcategoryIds: [{ type: Schema.Types.ObjectId, ref: 'Category' }],
+    }],
+    businessDetails: {
+      dairy: {
+        businessType: { type: String, enum: ['Local Milk Vendor', 'Dairy Farm', 'Milk Booth', 'Organic Dairy', 'Dairy Distributor', 'Milk Collection Center'] },
+        morningDelivery: { type: String, maxlength: 100 },
+        eveningDelivery: { type: String, maxlength: 100 },
+        weeklyHoliday: { type: String, enum: ['None', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'] },
+        orderMode: { type: String, enum: ['both', 'one_time', 'subscription'] },
+        registrationNumber: { type: String, maxlength: 100 },
+      },
+    },
     requestedCapabilities: [{ type: String, trim: true }],
+    businessInformation: {
+      openingTime: String, closingTime: String, serviceRadiusKm: Number, acceptsOrders: Boolean,
+      logoUrl: String, shopPhotos: [String],
+    },
+    location: { type: { type: String, enum: ['Point'] }, coordinates: [Number] },
+    correctionStage: { type: String, enum: ['application', 'documents'] },
+    correctionReason: { type: String, maxlength: 2000 },
 
     businessName: { type: String, required: true },
     ownerName: { type: String, required: true },
@@ -142,7 +185,7 @@ const BusinessApplicationSchema = new Schema<IBusinessApplication>(
 
     status: {
       type: String,
-      enum: ["pending", "pending_approval", "pre_approved", "kyc_submitted", "under_review", "approved", "verified", "rejected", "waitlist"],
+      enum: ["pending", "pending_approval", "pre_approved", "kyc_submitted", "under_review", "approved", "verified", "rejected", "waitlist", "changes_requested"],
       default: "pending",
     },
 

@@ -7,6 +7,7 @@ import { User } from "../models/User";
 import { Franchise } from "../models/Franchise";
 import { Vendor } from "../models/Vendor";
 import { RestaurantProfile } from "../models/RestaurantProfile";
+import { BusinessApplication } from "../models/BusinessApplication";
 import { AssignmentCommissionService } from "../services/AssignmentCommissionService";
 import { AuthRequest } from "../middleware/auth";
 import { RazorpayService } from "../services/razorpayService";
@@ -238,6 +239,10 @@ export const sendPaymentLink = async (req: AuthRequest, res: Response) => {
       customAmount,
       notes,
       dueDate,
+      state: bodyState,
+      district: bodyDistrict,
+      mandal: bodyMandal,
+      territoryInfo: bodyTerritoryInfo,
     } = req.body;
 
     if (!recipientUserId || !serviceKey) {
@@ -299,6 +304,15 @@ export const sendPaymentLink = async (req: AuthRequest, res: Response) => {
       fr = await Franchise.findOne({ $or: [{ userId: user._id }, { _id: user._id }] });
     }
 
+    // Also look up BusinessApplication for the applicant
+    const appDoc = await BusinessApplication.findOne({
+      $or: [
+        { userId: user._id },
+        ...(user.email ? [{ email: user.email.toLowerCase().trim() }] : []),
+        ...(user.phone ? [{ mobile: user.phone.trim() }] : [])
+      ]
+    }).sort({ createdAt: -1 });
+
     // Find catalog price
     const catalogItem = await PricingCatalog.findOne({ serviceKey });
     const baseAmount = customAmount !== undefined && Number(customAmount) > 0
@@ -311,31 +325,46 @@ export const sendPaymentLink = async (req: AuthRequest, res: Response) => {
 
     // Resolve territory info if available
     let territoryInfo: any = {};
-    if (rest) {
-      territoryInfo = {
-        state: rest.state || user.territory?.state || "",
-        district: rest.city || rest.district || user.territory?.district || "",
-        mandal: rest.locality || user.territory?.mandal || "",
-      };
-    } else if (fr) {
-      territoryInfo = {
-        state: fr.state || user.territory?.state || "",
-        district: fr.district || user.territory?.district || "",
-        mandal: fr.mandal || user.territory?.mandal || "",
-        franchiseLevel: fr.franchiseLevel || user.franchiseLevel || "",
-      };
-    } else if (vn) {
-      territoryInfo = {
-        state: vn.state || user.territory?.state || "",
-        district: vn.district || user.territory?.district || "",
-        mandal: vn.mandal || user.territory?.mandal || "",
-      };
-    } else if (user.territory) {
-      territoryInfo = {
-        state: user.territory.state || "",
-        district: user.territory.district || "",
-        mandal: user.territory.mandal || "",
-      };
+    if (bodyTerritoryInfo && typeof bodyTerritoryInfo === "object") {
+      territoryInfo = { ...bodyTerritoryInfo };
+    }
+    if (bodyState) territoryInfo.state = bodyState;
+    if (bodyDistrict) territoryInfo.district = bodyDistrict;
+    if (bodyMandal) territoryInfo.mandal = bodyMandal;
+
+    if (!territoryInfo.state || !territoryInfo.district || !territoryInfo.mandal) {
+      if (rest) {
+        territoryInfo = {
+          state: territoryInfo.state || rest.state || user.territory?.state || "",
+          district: territoryInfo.district || rest.city || rest.district || user.territory?.district || "",
+          mandal: territoryInfo.mandal || rest.locality || user.territory?.mandal || "",
+        };
+      } else if (fr) {
+        territoryInfo = {
+          state: territoryInfo.state || fr.state || user.territory?.state || "",
+          district: territoryInfo.district || fr.district || user.territory?.district || "",
+          mandal: territoryInfo.mandal || fr.mandal || user.territory?.mandal || "",
+          franchiseLevel: territoryInfo.franchiseLevel || fr.franchiseLevel || user.franchiseLevel || "",
+        };
+      } else if (vn) {
+        territoryInfo = {
+          state: territoryInfo.state || vn.state || user.territory?.state || "",
+          district: territoryInfo.district || vn.district || user.territory?.district || "",
+          mandal: territoryInfo.mandal || vn.mandal || user.territory?.mandal || "",
+        };
+      } else if (user.territory) {
+        territoryInfo = {
+          state: territoryInfo.state || user.territory.state || "",
+          district: territoryInfo.district || user.territory.district || "",
+          mandal: territoryInfo.mandal || user.territory.mandal || "",
+        };
+      }
+
+      if (appDoc) {
+        territoryInfo.state = territoryInfo.state || appDoc.state || "";
+        territoryInfo.district = territoryInfo.district || appDoc.district || "";
+        territoryInfo.mandal = territoryInfo.mandal || appDoc.mandal || "";
+      }
     }
 
     const businessName = rest?.restaurantName || vn?.businessName || user.sellerProfile?.businessName || fr?.franchiseName || user.name;
@@ -599,6 +628,27 @@ export const payInvoice = async (req: Request, res: Response) => {
     invoice.paymentGatewayOrderId = paymentGatewayOrderId || `PG_ORD_${Date.now()}`;
     invoice.paymentId = paymentId || `PAY_${Date.now()}`;
 
+    // Ensure territoryInfo is populated before processing commission
+    let territoryInfo: any = invoice.territoryInfo ? { ...invoice.territoryInfo } : {};
+    if (!territoryInfo.state || !territoryInfo.district || !territoryInfo.mandal) {
+      const uDoc = await User.findById(invoice.recipientUserId);
+      const vDoc = await Vendor.findOne({ $or: [{ userId: invoice.recipientUserId }, { _id: invoice.recipientUserId }] });
+      const aDoc = await BusinessApplication.findOne({
+        $or: [
+          { userId: invoice.recipientUserId },
+          ...(invoice.recipientEmail ? [{ email: invoice.recipientEmail.toLowerCase().trim() }] : []),
+          ...(invoice.recipientPhone ? [{ mobile: invoice.recipientPhone.trim() }] : [])
+        ]
+      }).sort({ createdAt: -1 });
+      const rDoc = await RestaurantProfile.findOne({ $or: [{ userId: invoice.recipientUserId }, { _id: invoice.recipientUserId }] });
+
+      territoryInfo.state = territoryInfo.state || vDoc?.state || aDoc?.state || rDoc?.state || uDoc?.territory?.state || "";
+      territoryInfo.district = territoryInfo.district || vDoc?.district || aDoc?.district || (rDoc as any)?.district || rDoc?.city || uDoc?.territory?.district || "";
+      territoryInfo.mandal = territoryInfo.mandal || vDoc?.mandal || aDoc?.mandal || (rDoc as any)?.mandal || rDoc?.locality || uDoc?.territory?.mandal || "";
+      invoice.territoryInfo = territoryInfo;
+      await invoice.save();
+    }
+
     // Execute Multi-Tier Commission Settlement
     const commissionResult = await AssignmentCommissionService.processFeeCommissionSettlement({
       sourceUserId: invoice.recipientUserId,
@@ -606,7 +656,7 @@ export const payInvoice = async (req: Request, res: Response) => {
       serviceKey: invoice.serviceKey,
       amount: invoice.baseAmount,
       referenceId: invoice._id,
-      location: invoice.territoryInfo as any,
+      location: territoryInfo as any,
       notes: invoice.title,
     });
 
@@ -682,13 +732,34 @@ export const markInvoicePaidManual = async (req: AuthRequest, res: Response) => 
     invoice.paymentMethod = "Manual / Bank Transfer";
     invoice.notes = `${invoice.notes ? invoice.notes + " | " : ""}${notes}`;
 
+    // Ensure territoryInfo is populated before processing commission
+    let territoryInfo: any = invoice.territoryInfo ? { ...invoice.territoryInfo } : {};
+    if (!territoryInfo.state || !territoryInfo.district || !territoryInfo.mandal) {
+      const uDoc = await User.findById(invoice.recipientUserId);
+      const vDoc = await Vendor.findOne({ $or: [{ userId: invoice.recipientUserId }, { _id: invoice.recipientUserId }] });
+      const aDoc = await BusinessApplication.findOne({
+        $or: [
+          { userId: invoice.recipientUserId },
+          ...(invoice.recipientEmail ? [{ email: invoice.recipientEmail.toLowerCase().trim() }] : []),
+          ...(invoice.recipientPhone ? [{ mobile: invoice.recipientPhone.trim() }] : [])
+        ]
+      }).sort({ createdAt: -1 });
+      const rDoc = await RestaurantProfile.findOne({ $or: [{ userId: invoice.recipientUserId }, { _id: invoice.recipientUserId }] });
+
+      territoryInfo.state = territoryInfo.state || vDoc?.state || aDoc?.state || rDoc?.state || uDoc?.territory?.state || "";
+      territoryInfo.district = territoryInfo.district || vDoc?.district || aDoc?.district || (rDoc as any)?.district || rDoc?.city || uDoc?.territory?.district || "";
+      territoryInfo.mandal = territoryInfo.mandal || vDoc?.mandal || aDoc?.mandal || (rDoc as any)?.mandal || rDoc?.locality || uDoc?.territory?.mandal || "";
+      invoice.territoryInfo = territoryInfo;
+      await invoice.save();
+    }
+
     const commissionResult = await AssignmentCommissionService.processFeeCommissionSettlement({
       sourceUserId: invoice.recipientUserId,
       sourceRole: invoice.recipientRole as any,
       serviceKey: invoice.serviceKey,
       amount: invoice.baseAmount,
       referenceId: invoice._id,
-      location: invoice.territoryInfo as any,
+      location: territoryInfo as any,
       notes: invoice.title,
     });
 

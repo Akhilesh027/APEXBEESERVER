@@ -105,8 +105,32 @@ const getOrderTerritory = (order) => {
         pincode: pincode || '504312'
     };
 };
+const isStoreSelfDelivery = async (order) => {
+    if (!order) return false;
+    if (order.deliveryType === 'self_delivery' ||
+        order.deliveryType === 'store_delivery' ||
+        Boolean(order.isVendorSelfDelivery) ||
+        Boolean(order.isSelfDelivery)) {
+        return true;
+    }
+    if (order.sellerId) {
+        try {
+            const vendorDoc = await Vendor_1.Vendor.findOne({
+                $or: [{ _id: order.sellerId }, { userId: order.sellerId }]
+            });
+            if (vendorDoc?.isSelfDelivery || vendorDoc?.deliveryMode === 'self_delivery') {
+                return true;
+            }
+        } catch (_) {}
+    }
+    return false;
+};
 const autoAssignDeliveryPartner = async (order, excludedPartnerIds = []) => {
     try {
+        if (await isStoreSelfDelivery(order)) {
+            console.log(`[AutoAssign] Skipping platform assignment for order ${order.orderNumber} - Vendor has chosen Store Self-Delivery.`);
+            return;
+        }
         const orderTerritory = getOrderTerritory(order);
         console.log(`[AutoAssign] Matching territory for order ${order.orderNumber}: State=${orderTerritory.state}, District=${orderTerritory.district}, Mandal=${orderTerritory.mandal}`);
         const activePartners = await DeliveryPartner_1.DeliveryPartner.find({
@@ -1098,6 +1122,14 @@ const updateOrder = async (req, res) => {
                 }
             }
         }
+        if (req.body.deliveryAgentId) {
+            if (await isStoreSelfDelivery(currentOrder)) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Store Self-Delivery is enabled for this vendor. Platform delivery agents cannot be assigned to this order."
+                });
+            }
+        }
         if (req.body.orderStatus) {
             const statusMap = {
                 'placed': 'Placed',
@@ -1188,7 +1220,9 @@ const updateOrder = async (req, res) => {
                 }
             }
             else if (['Confirmed', 'Placed', 'Packed', 'Shipped', 'Ready', 'ready_for_pickup'].includes(order.orderStatus) && !order.deliveryAgentId) {
-                await autoAssignDeliveryPartner(order);
+                if (!(await isStoreSelfDelivery(order))) {
+                    await autoAssignDeliveryPartner(order);
+                }
             }
             if (req.body.orderStatus && req.body.orderStatus !== currentOrder.orderStatus) {
                 try {

@@ -6,6 +6,9 @@ export interface ISubscriptionStatement extends Document {
   vendorId: mongoose.Types.ObjectId;
   customerId: mongoose.Types.ObjectId;
   billingPeriod: string; // YYYY-MM
+  billingCycle?: 'weekly' | 'monthly';
+  periodStart?: string;
+  periodEnd?: string;
   expectedDeliveries: number;
   delivered: number;
   failed: number;
@@ -21,12 +24,17 @@ export interface ISubscriptionStatement extends Document {
   generatedDate: Date;
   approvedDate?: Date;
   walletTransactionId?: mongoose.Types.ObjectId;
+  deliveryItems?: Array<{ taskId: mongoose.Types.ObjectId; date: string; quantity: number; unitPrice: number; amount: number }>;
   createdAt: Date;
   updatedAt: Date;
 }
 
 const SubscriptionStatementSchema = new Schema<ISubscriptionStatement>(
   {
+    billingCycle: { type: String, enum: ['weekly', 'monthly'] },
+    periodStart: String,
+    periodEnd: String,
+    deliveryItems: [{ taskId: { type: Schema.Types.ObjectId, ref: 'SubscriptionDeliveryTask' }, date: String, quantity: Number, unitPrice: Number, amount: Number }],
     statementNumber: {
       type: String,
       required: true,
