@@ -5,6 +5,8 @@ import { Order } from '../models/Order';
 import { TableQR } from '../models/TableQR';
 import { DeliveryPartner } from '../models/DeliveryPartner';
 import { DeliveryAssignment } from '../models/DeliveryAssignment';
+import { RestaurantProfile } from '../models/RestaurantProfile';
+import { Vendor } from '../models/Vendor';
 import { NotificationService } from '../modules/notifications/services/notificationService';
 
 export const getFoodOrders = async (req: FoodPartnerAuthRequest, res: Response): Promise<void> => {
@@ -133,6 +135,36 @@ export const getLiveOrdersFeed = async (req: FoodPartnerAuthRequest, res: Respon
   }
 };
 
+export const isFoodOrderSelfDelivery = async (order: any): Promise<boolean> => {
+  if (!order) return false;
+  if (
+    order.deliveryType === 'self_delivery' ||
+    order.deliveryType === 'store_delivery' ||
+    Boolean(order.isVendorSelfDelivery) ||
+    Boolean(order.isSelfDelivery)
+  ) {
+    return true;
+  }
+  const sellerId = order.sellerId || (order as any).restaurantId || (order as any).vendorId;
+  if (sellerId) {
+    try {
+      const restaurantDoc = await RestaurantProfile.findOne({
+        $or: [{ _id: sellerId }, { userId: sellerId }, { storeId: sellerId }, { vendorId: sellerId }]
+      });
+      if (restaurantDoc?.isSelfDelivery || restaurantDoc?.deliveryMode === 'self_delivery' || restaurantDoc?.deliveryMode === 'pickup_only') {
+        return true;
+      }
+      const vendorDoc = await Vendor.findOne({
+        $or: [{ _id: sellerId }, { userId: sellerId }]
+      });
+      if (vendorDoc?.isSelfDelivery || vendorDoc?.deliveryMode === 'self_delivery' || vendorDoc?.deliveryMode === 'pickup_only') {
+        return true;
+      }
+    } catch (_) {}
+  }
+  return false;
+};
+
 export const acceptFoodOrder = async (req: FoodPartnerAuthRequest, res: Response): Promise<void> => {
   try {
     const ctx: any = req.foodPartnerContext || {};
@@ -191,8 +223,10 @@ export const acceptFoodOrder = async (req: FoodPartnerAuthRequest, res: Response
     order.deliveryAgentId = undefined;
     await order.save();
 
+    const isSelfDelivery = await isFoodOrderSelfDelivery(order);
+
     let assignment: any = null;
-    if (!isOfflineQr) {
+    if (!isOfflineQr && !isSelfDelivery) {
       assignment = await DeliveryAssignment.findOne({ orderId: order._id });
       if (!assignment) {
         assignment = new DeliveryAssignment({
@@ -215,7 +249,7 @@ export const acceptFoodOrder = async (req: FoodPartnerAuthRequest, res: Response
         await assignment.save();
       }
     } else {
-      // Remove any erroneous delivery assignments for offline QR table orders
+      // Remove any erroneous delivery assignments for offline QR table orders or self-delivery orders
       await DeliveryAssignment.deleteMany({ orderId: order._id }).catch(() => {});
     }
 
@@ -306,13 +340,25 @@ export const updateFoodOrderStatus = async (req: FoodPartnerAuthRequest, res: Re
       Boolean(order.tableNumber) ||
       (order.customerNotes || '').toLowerCase().includes('table');
 
-    // Friendly timeline note based on channel
+    const isSelfDelivery = await isFoodOrderSelfDelivery(order);
+
+    // Friendly timeline note based on channel and delivery mode
     let note = `Order status updated to ${status}`;
     if (isOfflineQr) {
       if (['ready', 'Ready', 'served', 'Served', 'ready_for_pickup'].includes(status)) {
         note = `Food served to Table ${order.tableNumber || ''} — Guests dining (No Rider/OTP needed)`;
       } else if (['delivered', 'Delivered', 'completed', 'Completed'].includes(status)) {
         note = `Table ${order.tableNumber || ''} order completed & cleared (Paid in full)`;
+      }
+    } else if (isSelfDelivery) {
+      if (['ready', 'Ready', 'ready_for_pickup'].includes(status)) {
+        note = `Order packed & ready for store fleet dispatch (Self-Delivery)`;
+      } else if (['out_for_delivery', 'Out for Delivery'].includes(status)) {
+        note = `Dispatched with restaurant store rider to customer address`;
+        order.deliveryType = 'self_delivery';
+        order.isVendorSelfDelivery = true;
+      } else if (['delivered', 'Delivered', 'completed', 'Completed'].includes(status)) {
+        note = `Delivered safely by restaurant store rider to customer`;
       }
     }
 
@@ -329,8 +375,8 @@ export const updateFoodOrderStatus = async (req: FoodPartnerAuthRequest, res: Re
     }
     await order.save();
 
-    // If offline QR table order is completed / delivered, release table back to AVAILABLE
-    if (isOfflineQr && ['delivered', 'Delivered', 'completed', 'Completed'].includes(status)) {
+    // If offline QR table order or self-delivery order is completed / delivered, release table and clean assignments
+    if ((isOfflineQr || isSelfDelivery) && ['delivered', 'Delivered', 'completed', 'Completed'].includes(status)) {
       if (order.tableNumber) {
         await TableQR.updateMany(
           {
@@ -352,9 +398,9 @@ export const updateFoodOrderStatus = async (req: FoodPartnerAuthRequest, res: Re
       await DeliveryAssignment.deleteMany({ orderId: order._id }).catch(() => {});
     }
 
-    // Ensure pending DeliveryAssignment exists for delivery broadcast ONLY for online delivery orders
+    // Ensure pending DeliveryAssignment exists for delivery broadcast ONLY for external platform delivery orders
     let assignment: any = null;
-    if (!isOfflineQr) {
+    if (!isOfflineQr && !isSelfDelivery) {
       assignment = await DeliveryAssignment.findOne({ orderId: order._id });
       if (!assignment) {
         assignment = new DeliveryAssignment({

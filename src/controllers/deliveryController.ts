@@ -256,7 +256,7 @@ export const getOrders = async (req: AuthRequest, res: Response): Promise<void> 
           const vendorPhone = vendorObj?.phone || vendorObj?.mobile || '9177176969';
 
           const isMine = ord.deliveryAgentId && allAgentIds.some((id: any) => String(id) === String(ord.deliveryAgentId));
-          const assignedStatus = isMine ? (ord.orderStatus === 'Shipped' ? 'Assigned' : ord.orderStatus) : 'Pending';
+          const assignedStatus = isMine ? (ord.orderStatus || 'Assigned') : 'Pending';
 
           assignments.push({
             _id: ord._id,
@@ -646,7 +646,7 @@ export const rejectOrder = async (req: AuthRequest, res: Response): Promise<void
     const { order, assignment } = await findOrderAndAssignment(id);
 
     if (order) {
-      if (order.orderStatus === 'Accepted' || order.orderStatus === 'Assigned') {
+      if (['Accepted', 'Assigned', 'Pending', 'pending', 'assigned'].includes(order.orderStatus)) {
         order.orderStatus = 'Confirmed';
       }
       if (!order.timeline) order.timeline = [];
@@ -658,6 +658,9 @@ export const rejectOrder = async (req: AuthRequest, res: Response): Promise<void
       await Order.findByIdAndUpdate(order._id, {
         orderStatus: order.orderStatus,
         deliveryAgentId: null,
+        assignedDeliveryAgent: null,
+        deliveryAgentName: null,
+        deliveryAgentPhone: null,
         timeline: order.timeline
       });
     }
@@ -684,6 +687,16 @@ export const reachedPickup = async (req: AuthRequest, res: Response): Promise<vo
     const { order, assignment } = await findOrderAndAssignment(id);
 
     if (order) {
+      const currentStatus = String(order.orderStatus || assignment?.status || '').trim();
+      // Guard: delivery partner must accept the order first before starting execution
+      if (['Assigned', 'Pending', 'pending', 'assigned', 'Packed', 'Ready', 'ready_for_pickup'].includes(currentStatus)) {
+        res.status(400).json({
+          success: false,
+          message: 'Please accept the order first before heading to the pickup location.'
+        });
+        return;
+      }
+
       addOrderTimelineStep(order, 'Reached Vendor', 'Delivery partner arrived at merchant store pickup location');
       await Order.findByIdAndUpdate(order._id, {
         orderStatus: 'Reached Vendor',

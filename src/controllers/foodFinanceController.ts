@@ -15,13 +15,22 @@ export const getEarningsSummary = async (req: FoodPartnerAuthRequest, res: Respo
 
     let wallet = await Wallet.findOne({ $or: [{ userId: { $in: sellerIds } }, { vendorId: { $in: sellerIds } }] });
 
-    let settlements = await CommissionSettlement.find({
-      $or: [
-        { recipientId: { $in: sellerIds } },
-        { vendorId: { $in: sellerIds } },
-        { restaurantId: { $in: sellerIds } }
+    const partnerSettlementFilter = {
+      $and: [
+        {
+          $or: [
+            { recipientId: { $in: sellerIds } },
+            { vendorId: { $in: sellerIds } },
+            { restaurantId: { $in: sellerIds } }
+          ]
+        },
+        { settlementType: { $in: ['vendor', 'restaurant', 'seller'] } }
       ]
-    }).populate('orderId', 'orderNumber totalAmount createdAt commissionReleaseStatus').sort({ createdAt: -1 });
+    };
+
+    let settlements = await CommissionSettlement.find(partnerSettlementFilter)
+      .populate('orderId', 'orderNumber totalAmount createdAt commissionReleaseStatus')
+      .sort({ createdAt: -1 });
 
     const allOrders = await Order.find({
       $or: [
@@ -47,13 +56,14 @@ export const getEarningsSummary = async (req: FoodPartnerAuthRequest, res: Respo
           if (order.items && order.items.length > 0) {
             for (const item of order.items) {
               const menuItem = menuItems.find(m => String(m._id) === String(item.productId) || m.name === item.productName);
-              const commPct = menuItem?.platformCommissionPercent || 12;
-              platformFee += Math.round((item.price * item.quantity * commPct) / 100);
+              const commPct = Number(menuItem?.platformCommissionPercent || 0);
+              platformFee += Number(((item.price * item.quantity * commPct) / 100).toFixed(2));
             }
-          } else {
-            platformFee = Math.round((order.totalAmount || 0) * 0.12);
           }
-          const netVendorAmount = order.totalAmount || 0;
+          if (platformFee === 0 && order.orderSummary?.platformFee) {
+            platformFee = Number(order.orderSummary.platformFee);
+          }
+          const netVendorAmount = Math.max(0, Number(((order.totalAmount || 0) - platformFee).toFixed(2)));
 
           const newSettlement = new CommissionSettlement({
             recipientId: ctx.userId || ctx.restaurantId,
@@ -72,8 +82,13 @@ export const getEarningsSummary = async (req: FoodPartnerAuthRequest, res: Respo
           console.warn('[getEarningsSummary] Settlement auto-gen warning:', e.message);
         }
       } else {
-        // Automatically release payout to wallet when food order is delivered
+        // Automatically release payout to wallet when food order is delivered and reconcile net amount
         const existingSettlement = settlements[existingIdx];
+        const platformFeeVal = Number(existingSettlement.totalPlatformFee || 0);
+        if (platformFeeVal > 0 && existingSettlement.amount === order.totalAmount) {
+          existingSettlement.amount = Math.max(0, Number((order.totalAmount - platformFeeVal).toFixed(2)));
+          await existingSettlement.save();
+        }
         if (isReleased && existingSettlement.status !== 'released') {
           existingSettlement.status = 'released';
           existingSettlement.released = true;
@@ -157,7 +172,7 @@ export const getEarningsSummary = async (req: FoodPartnerAuthRequest, res: Respo
         : 0;
       const fee = item.platformShareAmount !== undefined && item.platformShareAmount !== null
         ? item.platformShareAmount
-        : Math.round(((sp * (item.platformCommissionPercent || 5)) / 100) * 100) / 100;
+        : Math.round(((sp * (item.platformCommissionPercent || 0)) / 100) * 100) / 100;
       const payout = isApexBeeComm
         ? (item.vendorPayoutAmount !== undefined && item.vendorPayoutAmount !== null
           ? Number(item.vendorPayoutAmount)
@@ -183,15 +198,40 @@ export const getEarningsSummary = async (req: FoodPartnerAuthRequest, res: Respo
     });
 
     // Calculate per-order commission breakdown from completed orders
-    const orderCommissionBreakdown = allOrders.slice(0, 50).map((o) => ({
-      _id: o._id,
-      orderNumber: o.orderNumber,
-      totalAmount: o.totalAmount || 0,
-      platformFee: Math.round((o.totalAmount || 0) * 0.12),
-      vendorEarning: o.totalAmount || 0,
-      createdAt: o.createdAt,
-      orderStatus: o.orderStatus,
-    }));
+    const orderCommissionBreakdown = allOrders.slice(0, 50).map((o) => {
+      const matchSettlement = settlements.find(s => String(s.orderId?._id || s.orderId) === String(o._id));
+      let platformFee = 0;
+      let vendorEarning = 0;
+
+      if (matchSettlement) {
+        vendorEarning = Number(matchSettlement.amount || 0);
+        platformFee = matchSettlement.totalPlatformFee !== undefined && matchSettlement.totalPlatformFee !== null && matchSettlement.totalPlatformFee > 0
+          ? Number(matchSettlement.totalPlatformFee)
+          : Math.max(0, Number(((o.totalAmount || 0) - vendorEarning).toFixed(2)));
+      } else {
+        if (o.items && o.items.length > 0) {
+          for (const item of o.items) {
+            const menuItem = menuItems.find(m => String(m._id) === String(item.productId) || m.name === item.productName);
+            const commPct = Number(menuItem?.platformCommissionPercent || 0);
+            platformFee += Number(((item.price * item.quantity * commPct) / 100).toFixed(2));
+          }
+        }
+        if (platformFee === 0 && o.orderSummary?.platformFee) {
+          platformFee = Number(o.orderSummary.platformFee);
+        }
+        vendorEarning = Math.max(0, Number(((o.totalAmount || 0) - platformFee).toFixed(2)));
+      }
+
+      return {
+        _id: o._id,
+        orderNumber: o.orderNumber,
+        totalAmount: o.totalAmount || 0,
+        platformFee,
+        vendorEarning,
+        createdAt: o.createdAt,
+        orderStatus: o.orderStatus,
+      };
+    });
 
     res.status(200).json({
       success: true,
@@ -220,25 +260,26 @@ export const getSettlementHistory = async (req: FoodPartnerAuthRequest, res: Res
     const { limit = 50, page = 1 } = req.query;
 
     const skip = (Number(page) - 1) * Number(limit);
-    const settlements = await CommissionSettlement.find({
-      $or: [
-        { recipientId: { $in: sellerIds } },
-        { vendorId: { $in: sellerIds } },
-        { restaurantId: { $in: sellerIds } }
+    const partnerSettlementFilter = {
+      $and: [
+        {
+          $or: [
+            { recipientId: { $in: sellerIds } },
+            { vendorId: { $in: sellerIds } },
+            { restaurantId: { $in: sellerIds } }
+          ]
+        },
+        { settlementType: { $in: ['vendor', 'restaurant', 'seller'] } }
       ]
-    })
+    };
+
+    const settlements = await CommissionSettlement.find(partnerSettlementFilter)
       .populate('orderId', 'orderNumber totalAmount createdAt')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(Number(limit));
 
-    const totalCount = await CommissionSettlement.countDocuments({
-      $or: [
-        { recipientId: { $in: sellerIds } },
-        { vendorId: { $in: sellerIds } },
-        { restaurantId: { $in: sellerIds } }
-      ]
-    });
+    const totalCount = await CommissionSettlement.countDocuments(partnerSettlementFilter);
 
     res.status(200).json({
       success: true,

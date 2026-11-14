@@ -101,7 +101,16 @@ export const updateProfile = async (req: FoodPartnerAuthRequest, res: Response):
     if (profile.verificationStatus === 'APPROVED') {
       delete updateData.legalBusinessName;
       delete updateData.fssaiNumber;
-      delete updateData.gstNumber;
+      if (profile.gstNumber) {
+        delete updateData.gstNumber;
+      }
+    }
+
+    // Maintain consistent self-delivery flags
+    if (updateData.deliveryMode === 'self_delivery') {
+      updateData.isSelfDelivery = true;
+    } else if (updateData.deliveryMode === 'platform_delivery') {
+      updateData.isSelfDelivery = false;
     }
 
     // Clean up non-schema frontend fields
@@ -167,6 +176,17 @@ export const updateProfile = async (req: FoodPartnerAuthRequest, res: Response):
         }
         if (updateData.address) vendorUpdate.address = updateData.address;
         if (updateData.pincode) vendorUpdate.pincode = updateData.pincode;
+
+        // Synchronize GST & Delivery Fleet configuration to Vendor
+        if (updateData.hasGst !== undefined) vendorUpdate.hasGst = !!updateData.hasGst;
+        if (updateData.gstNumber !== undefined) vendorUpdate.gstNumber = updateData.gstNumber;
+        if (updateData.gstPricingMode !== undefined) vendorUpdate.gstPricingMode = updateData.gstPricingMode;
+        if (updateData.gstRate !== undefined) vendorUpdate.gstRate = Number(updateData.gstRate);
+        if (updateData.deliveryMode !== undefined) vendorUpdate.deliveryMode = updateData.deliveryMode;
+        if (updateData.isSelfDelivery !== undefined) vendorUpdate.isSelfDelivery = !!updateData.isSelfDelivery;
+        if (updateData.isSelfPickup !== undefined) vendorUpdate.isSelfPickup = !!updateData.isSelfPickup;
+        if (updateData.deliveryRadiusKm !== undefined) vendorUpdate.deliveryRadiusKm = Number(updateData.deliveryRadiusKm);
+        if (updateData.deliveryCharge !== undefined) vendorUpdate.deliveryCharge = Number(updateData.deliveryCharge);
 
         if (Object.keys(vendorUpdate).length > 0) {
           await Vendor.findByIdAndUpdate(profile.vendorId, { $set: vendorUpdate });

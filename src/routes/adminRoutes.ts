@@ -54,7 +54,8 @@ import {
   getAllTransactions,
   updateTransaction,
   deleteTransaction,
-  deleteAllTransactions
+  deleteAllTransactions,
+  getProductSubscriptionsHub
 } from '../controllers/adminController';
 import { requestVendorDocument } from '../controllers/vendorController';
 import { processReferralReleases } from '../controllers/referralController';
@@ -133,6 +134,7 @@ router.post('/orders/:id/distribute-commission', protect, restrictTo('admin'), (
   req.body = { ...req.body, orderId: req.params.id };
   processReferralReleases(req, res);
 });
+router.get('/product-subscriptions', protect, restrictTo('admin'), getProductSubscriptionsHub);
 router.post('/inventory/cleanup-expired-reservations', protect, restrictTo('admin'), cleanupExpiredReservations);
 router.get('/feature-flags', protect, restrictTo('admin'), getFeatureFlag);
 router.post('/feature-flags', protect, restrictTo('admin'), setFeatureFlag);

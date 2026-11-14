@@ -34,7 +34,10 @@ export interface IRestaurantProfile extends Document {
   alternatePhone?: string;
   email: string;
   fssaiNumber: string;
+  hasGst?: boolean;
   gstNumber?: string;
+  gstPricingMode?: 'inclusive' | 'exclusive';
+  gstRate?: number;
   panNumber?: string;
   address: string;
   locality: string;
@@ -45,6 +48,11 @@ export interface IRestaurantProfile extends Document {
     type: 'Point';
     coordinates: [number, number]; // [longitude, latitude]
   };
+  deliveryMode?: 'self_delivery' | 'platform_delivery' | 'pickup_only';
+  isSelfDelivery?: boolean;
+  isSelfPickup?: boolean;
+  deliveryRadiusKm?: number;
+  deliveryCharge?: number;
   averagePreparationMinutes: number;
   minimumOrderValue: number;
   deliveryEnabled: boolean;
@@ -120,7 +128,10 @@ const RestaurantProfileSchema = new Schema<IRestaurantProfile>(
     alternatePhone: { type: String, default: '' },
     email: { type: String, required: true, trim: true },
     fssaiNumber: { type: String, default: '' },
+    hasGst: { type: Boolean, default: false },
     gstNumber: { type: String, default: '' },
+    gstPricingMode: { type: String, enum: ['inclusive', 'exclusive'], default: 'inclusive' },
+    gstRate: { type: Number, default: 5 },
     panNumber: { type: String, default: '' },
     address: { type: String, required: true },
     locality: { type: String, default: '' },
@@ -131,6 +142,15 @@ const RestaurantProfileSchema = new Schema<IRestaurantProfile>(
       type: { type: String, enum: ['Point'], default: 'Point' },
       coordinates: { type: [Number], required: true },
     },
+    deliveryMode: {
+      type: String,
+      enum: ['self_delivery', 'platform_delivery', 'pickup_only'],
+      default: 'platform_delivery',
+    },
+    isSelfDelivery: { type: Boolean, default: false },
+    isSelfPickup: { type: Boolean, default: true },
+    deliveryRadiusKm: { type: Number, default: 5 },
+    deliveryCharge: { type: Number, default: 0 },
     averagePreparationMinutes: { type: Number, default: 20 },
     minimumOrderValue: { type: Number, default: 100 },
     deliveryEnabled: { type: Boolean, default: true },

@@ -94,12 +94,19 @@ const isStoreSelfDelivery = async (order: any): Promise<boolean> => {
   ) {
     return true;
   }
-  if (order.sellerId) {
+  const sellerId = order.sellerId || (order as any).restaurantId || (order as any).vendorId;
+  if (sellerId) {
     try {
       const vendorDoc = await Vendor.findOne({
-        $or: [{ _id: order.sellerId }, { userId: order.sellerId }]
+        $or: [{ _id: sellerId }, { userId: sellerId }]
       });
       if (vendorDoc?.isSelfDelivery || vendorDoc?.deliveryMode === 'self_delivery') {
+        return true;
+      }
+      const restaurantDoc = await RestaurantProfile.findOne({
+        $or: [{ _id: sellerId }, { userId: sellerId }, { storeId: sellerId }, { vendorId: sellerId }]
+      });
+      if (restaurantDoc?.isSelfDelivery || restaurantDoc?.deliveryMode === 'self_delivery') {
         return true;
       }
     } catch (_) {}

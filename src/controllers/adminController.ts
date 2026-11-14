@@ -621,6 +621,24 @@ export const getApplications = async (
         }
       }
 
+      const isFoodApp = String(appObj.applicationType || appObj.roleId || '').toLowerCase().includes('food') ||
+        String(appObj.applicationType || appObj.roleId || '').toLowerCase().includes('restaurant');
+      if (isFoodApp) {
+        if (!appObj.categories || appObj.categories.length === 0) {
+          appObj.categories = ['Food & Dining'];
+        }
+        if (!appObj.primaryCategory) appObj.primaryCategory = 'Food & Dining';
+        if (!appObj.category) appObj.category = 'Food & Dining';
+        const foodSub = appObj.subCategory || appObj.foodBusinessType || 'Restaurants';
+        if (!Array.isArray(appObj.approvedSubcategories) || appObj.approvedSubcategories.length === 0) {
+          appObj.approvedSubcategories = [foodSub];
+        }
+        if (!Array.isArray(appObj.requestedSubcategories) || appObj.requestedSubcategories.length === 0) {
+          appObj.requestedSubcategories = [foodSub];
+        }
+        if (!appObj.subCategory) appObj.subCategory = foodSub;
+      }
+
       const stKey = app.state ? `state:${app.state.trim().toLowerCase()}` : "";
       const distKey = app.state && app.district ? `district:${app.state.trim().toLowerCase()}:${app.district.trim().toLowerCase()}` : "";
       const mandalKey = app.state && app.district && app.mandal ? `mandal:${app.state.trim().toLowerCase()}:${app.district.trim().toLowerCase()}:${app.mandal.trim().toLowerCase()}` : "";
@@ -698,6 +716,24 @@ export const getApplicationById = async (
       } else {
         appObj.categories = [];
       }
+    }
+
+    const isFoodAppSingle = String(appObj.applicationType || appObj.roleId || '').toLowerCase().includes('food') ||
+      String(appObj.applicationType || appObj.roleId || '').toLowerCase().includes('restaurant');
+    if (isFoodAppSingle) {
+      if (!appObj.categories || appObj.categories.length === 0) {
+        appObj.categories = ['Food & Dining'];
+      }
+      if (!appObj.primaryCategory) appObj.primaryCategory = 'Food & Dining';
+      if (!appObj.category) appObj.category = 'Food & Dining';
+      const foodSub = appObj.subCategory || appObj.foodBusinessType || 'Restaurants';
+      if (!Array.isArray(appObj.approvedSubcategories) || appObj.approvedSubcategories.length === 0) {
+        appObj.approvedSubcategories = [foodSub];
+      }
+      if (!Array.isArray(appObj.requestedSubcategories) || appObj.requestedSubcategories.length === 0) {
+        appObj.requestedSubcategories = [foodSub];
+      }
+      if (!appObj.subCategory) appObj.subCategory = foodSub;
     }
 
     const stateFranchise = await Franchise.findOne({
@@ -793,6 +829,16 @@ export const updateApplicationDetails = async (
     if (updates.panNumber !== undefined) app.panNumber = updates.panNumber;
     if (updates.aadhaarNumber !== undefined) app.aadhaarNumber = updates.aadhaarNumber;
     if (updates.fssaiNumber !== undefined) app.fssaiNumber = updates.fssaiNumber;
+    if (updates.restaurantName !== undefined) app.restaurantName = updates.restaurantName;
+    if (updates.foodBusinessType !== undefined) app.foodBusinessType = updates.foodBusinessType;
+    if (updates.foodPreference !== undefined) app.foodPreference = updates.foodPreference;
+    if (updates.cuisines !== undefined) {
+      app.cuisines = Array.isArray(updates.cuisines)
+        ? updates.cuisines
+        : typeof updates.cuisines === 'string'
+          ? updates.cuisines.split(',').map((c: string) => c.trim()).filter(Boolean)
+          : [];
+    }
     if (updates.experience !== undefined) app.experience = updates.experience;
     if (updates.investmentCapacity !== undefined) app.investmentCapacity = updates.investmentCapacity;
     if (updates.franchiseLevel !== undefined) app.franchiseLevel = updates.franchiseLevel;
@@ -819,9 +865,37 @@ export const updateApplicationDetails = async (
       }
     }
     if (updates.subCategory) (app as any).subCategory = updates.subCategory;
-    if (Array.isArray(updates.approvedSubcategories) && !(app.onboardingVersion === 2 && app.subcategoryDecisions?.length)) (app as any).approvedSubcategories = updates.approvedSubcategories;
+    if (Array.isArray(updates.approvedSubcategories) && !(app.onboardingVersion === 2 && app.subcategoryDecisions?.length)) {
+      (app as any).approvedSubcategories = updates.approvedSubcategories;
+      (app as any).requestedSubcategories = updates.approvedSubcategories;
+    }
 
     await app.save();
+
+    // Sync with RestaurantProfile if food partner application
+    const isFoodAppUpdate = String(app.applicationType || app.roleId || '').toLowerCase().includes('food') ||
+      String(app.applicationType || app.roleId || '').toLowerCase().includes('restaurant');
+    if (isFoodAppUpdate && app.userId) {
+      try {
+        const restUpdate: any = {};
+        if (updates.restaurantName || updates.businessName) restUpdate.restaurantName = updates.restaurantName || updates.businessName;
+        if (updates.fssaiNumber) restUpdate.fssaiNumber = updates.fssaiNumber;
+        if (updates.gstNumber) restUpdate.gstNumber = updates.gstNumber;
+        if (updates.panNumber) restUpdate.panNumber = updates.panNumber;
+        if (updates.cuisines) restUpdate.cuisines = app.cuisines;
+        if (updates.foodPreference) restUpdate.foodPreference = updates.foodPreference;
+        if (updates.address) restUpdate.address = updates.address;
+        if (updates.pincode) restUpdate.pincode = updates.pincode;
+        if (updates.mandal) restUpdate.locality = updates.mandal;
+        if (updates.district) restUpdate.city = updates.district;
+        if (updates.state) restUpdate.state = updates.state;
+        if (Object.keys(restUpdate).length > 0) {
+          await RestaurantProfile.findOneAndUpdate({ userId: app.userId }, { $set: restUpdate });
+        }
+      } catch (restSyncErr) {
+        console.warn('RestaurantProfile sync warning:', restSyncErr);
+      }
+    }
 
     // Sync with User document if exists
     if (app.userId) {
@@ -1743,23 +1817,23 @@ export const verifyKycApplication = async (
           address: app.address || 'Address Pending',
           pincode: app.pincode || (user as any)?.pincode || '',
           storeType: 'restaurant',
-          categories: ['Food & Dining'],
-          primaryCategory: 'Food & Dining',
-          category: 'Food & Dining',
-          subCategory: app.subCategory || app.foodBusinessType || 'Restaurants',
-          approvedSubcategories: [app.subCategory || app.foodBusinessType || 'Restaurants'],
-          subCategories: [app.subCategory || app.foodBusinessType || 'Restaurants'],
+          categories: (app as any).categories?.length ? (app as any).categories : ['Food & Dining'],
+          primaryCategory: (app as any).primaryCategory || 'Food & Dining',
+          category: (app as any).category || 'Food & Dining',
+          subCategory: (app as any).subCategory || app.foodBusinessType || 'Restaurants',
+          approvedSubcategories: (app as any).approvedSubcategories?.length ? (app as any).approvedSubcategories : [app.subCategory || app.foodBusinessType || 'Restaurants'],
+          subCategories: (app as any).approvedSubcategories?.length ? (app as any).approvedSubcategories : [app.subCategory || app.foodBusinessType || 'Restaurants'],
           marketplaceStatus: 'Approved',
         });
         await vendor.save();
       } else {
-        vendor.categories = ['Food & Dining'];
-        vendor.primaryCategory = 'Food & Dining';
-        vendor.category = 'Food & Dining';
-        vendor.subCategory = app.subCategory || app.foodBusinessType || vendor.subCategory || 'Restaurants';
-        vendor.approvedSubcategories = [vendor.subCategory];
-        vendor.subCategories = [vendor.subCategory];
-        await vendor.save();
+        vendor.categories = (app as any).categories?.length ? (app as any).categories : ['Food & Dining'];
+        vendor.primaryCategory = (app as any).primaryCategory || 'Food & Dining';
+        vendor.category = (app as any).category || 'Food & Dining';
+        vendor.subCategory = (app as any).subCategory || app.foodBusinessType || vendor.subCategory || 'Restaurants';
+        vendor.approvedSubcategories = (app as any).approvedSubcategories?.length ? (app as any).approvedSubcategories : [vendor.subCategory];
+        vendor.subCategories = vendor.approvedSubcategories;
+         await vendor.save();
       }
 
       let restaurant = await RestaurantProfile.findOne({ userId: user._id });
@@ -4774,5 +4848,43 @@ export const deleteAllTransactions = async (_req: Request, res: Response): Promi
     });
   } catch (error: any) {
     res.status(500).json({ success: false, message: 'Failed to delete all transactions', error: error.message });
+  }
+};
+
+export const getProductSubscriptionsHub = async (req: Request, res: Response) => {
+  try {
+    let LocalShopSubscriptionModel: any = null;
+    try {
+      LocalShopSubscriptionModel = mongoose.model('LocalShopSubscription');
+    } catch (_) {
+      LocalShopSubscriptionModel = require('../models/LocalShopSubscription').default;
+    }
+
+    const localSubs = await LocalShopSubscriptionModel.find({})
+      .populate('productId', 'name images thumbnail price baseSellingPrice sku SKU attributes')
+      .populate('vendorId', 'businessName shopName name phone storeDesign logo')
+      .sort({ createdAt: -1 });
+
+    const subscriptionOrders = await Order.find({
+      $or: [
+        { isScheduledSubscription: true },
+        { isSubscription: true },
+        { deliveryType: 'subscribed' },
+        { orderType: 'SUBSCRIPTION' },
+        { 'scheduleDetails.frequency': { $exists: true } }
+      ]
+    })
+      .populate('customerId', 'name phone email')
+      .populate('sellerId', 'businessName shopName name phone')
+      .populate('items.productId', 'name thumbnail images price baseSellingPrice attributes variants specifications sku SKU')
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      subscriptions: localSubs,
+      orders: subscriptionOrders
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: error.message });
   }
 };

@@ -3,6 +3,7 @@ import Product from '../models/Product';
 import FoodMenuItem from '../models/FoodMenuItem';
 import { Coupon } from '../models/Coupon';
 import { Vendor } from '../models/Vendor';
+import { RestaurantProfile } from '../models/RestaurantProfile';
 import { enforceOneTimeDairyOrder } from './dairyOrderRules';
 
 export interface CheckoutItemInput {
@@ -24,10 +25,13 @@ export interface CalculatedCheckout {
     shipping?: number;
     packingFee: number;
     packageCharge?: number;
+    packagingCharge?: number;
     platformFee?: number;
     discount: number;
     couponDiscount?: number;
     tax?: number;
+    exclusiveTax?: number;
+    inclusiveTax?: number;
     cgst?: number;
     sgst?: number;
     total: number;
@@ -109,10 +113,20 @@ export class PricingService {
           itemPlatformFee = directFee > 0 ? directFee : Math.round((unitSelling * feePct) / 100);
         }
 
+        const itemShipping = foodItem.shippingCharge || foodItem.deliveryFee || 0;
+
         subtotal += itemTotal;
         totalMrp += unitMrp * item.quantity;
+        shippingFee += itemShipping * item.quantity;
         packingFee += itemPacking * item.quantity;
         platformFee += itemPlatformFee * item.quantity;
+
+        // Food GST resolution dynamically from item-level setting with restaurant profile fallback
+        const hasGst = restaurant.hasGst !== undefined ? Boolean(restaurant.hasGst) : Boolean(restaurant.gstNumber);
+        const resolvedGstRate = hasGst
+          ? (foodItem.gstRate !== undefined ? Number(foodItem.gstRate) : (restaurant.gstRate !== undefined ? Number(restaurant.gstRate) : 5))
+          : 0;
+        const resolvedGstPricingMode = foodItem.gstPricingMode || restaurant.gstPricingMode || 'inclusive';
 
         orderItems.push({
           productId: foodItem._id.toString(),
@@ -133,8 +147,8 @@ export class PricingService {
           platformFeeAmount: itemPlatformFee,
           distributedFrom: distFrom,
           vendorCommissionPercent: foodItem.vendorCommissionPercent || 0,
-          gstRate: 5,
-          gstPricingMode: 'inclusive',
+          gstRate: resolvedGstRate,
+          gstPricingMode: resolvedGstPricingMode,
         });
 
         continue;
@@ -235,7 +249,7 @@ export class PricingService {
       });
     }
 
-    // Check Vendor Delivery configuration (if vendor has configured delivery charge)
+    // Check Vendor / Restaurant Delivery configuration (if vendor or restaurant has configured delivery charge)
     if (firstSellerId && mongoose.Types.ObjectId.isValid(firstSellerId)) {
       try {
         const vendor = await Vendor.findOne({ $or: [{ _id: firstSellerId }, { userId: firstSellerId }] });
@@ -246,6 +260,20 @@ export class PricingService {
             // If item-level shipping was not specified, apply the vendor's self-delivery charge
             if (shippingFee === 0 && Number(vendor.deliveryCharge) > 0) {
               shippingFee = Number(vendor.deliveryCharge);
+            }
+          }
+        } else {
+          // Check RestaurantProfile if seller is a food outlet
+          const restaurant = await RestaurantProfile.findOne({
+            $or: [{ _id: firstSellerId }, { userId: firstSellerId }, { storeId: firstSellerId }, { vendorId: firstSellerId }]
+          });
+          if (restaurant) {
+            if (restaurant.deliveryMode === 'pickup_only') {
+              shippingFee = 0;
+            } else if (restaurant.deliveryMode === 'self_delivery' || restaurant.isSelfDelivery) {
+              if (shippingFee === 0 && Number(restaurant.deliveryCharge) > 0) {
+                shippingFee = Number(restaurant.deliveryCharge);
+              }
             }
           }
         }
@@ -350,10 +378,13 @@ export class PricingService {
         shipping: shippingFee,
         packingFee,
         packageCharge: packingFee,
+        packagingCharge: packingFee,
         platformFee,
         discount,
         couponDiscount: discount,
         tax,
+        exclusiveTax,
+        inclusiveTax,
         cgst,
         sgst,
         total: grandTotal,

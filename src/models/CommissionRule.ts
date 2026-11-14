@@ -33,9 +33,9 @@ const CommissionRuleSchema = new Schema<ICommissionRule>(
       index: true
     },
     description: { type: String, default: "" },
-    platformPercentage: { type: Number, required: true, default: 5 },
-    franchisePercentage: { type: Number, required: true, default: 5 },
-    vendorPercentage: { type: Number, required: true, default: 90 },
+    platformPercentage: { type: Number, required: true, default: 0 },
+    franchisePercentage: { type: Number, required: true, default: 0 },
+    vendorPercentage: { type: Number, required: true, default: 100 },
     isActive: { type: Boolean, default: true, index: true },
     entrepreneurPercent: { type: Number, default: 0 },
     mandalPercent: { type: Number, default: 0 },

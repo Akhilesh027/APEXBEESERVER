@@ -194,32 +194,52 @@ export const generateAllSeparateTableQRs = async (req: FoodPartnerAuthRequest, r
 export const getCustomerScannedMenu = async (req: Request, res: Response): Promise<void> => {
   try {
     const { tokenOrTable } = req.params;
+    const { restaurantId } = req.query;
     const query = String(tokenOrTable).trim();
 
-    // Find table by qrToken or tableNumber
-    let table = await TableQR.findOne({
-      $or: [
-        { qrToken: query },
-        { tableNumber: query.toUpperCase() },
-        { _id: mongoose.isValidObjectId(query) ? query : null },
-      ],
+    // Find table by qrToken or tableNumber (scoped to restaurantId if provided)
+    const baseConditions: any[] = [
+      { qrToken: query },
+      { tableNumber: query.toUpperCase() },
+    ];
+    if (mongoose.isValidObjectId(query)) {
+      baseConditions.push({ _id: query });
+    }
+
+    const tableFilter: any = {
+      $or: baseConditions,
       isActive: true,
-    }).populate('restaurantId', 'restaurantName logo coverImage locality cuisines phone operationalStatus diningEnabled');
+    };
+    if (restaurantId && mongoose.isValidObjectId(String(restaurantId))) {
+      tableFilter.restaurantId = restaurantId;
+    }
+
+    let table = await TableQR.findOne(tableFilter).populate(
+      'restaurantId',
+      'restaurantName logo coverImage locality cuisines phone operationalStatus diningEnabled'
+    );
 
     if (!table) {
-      // Fallback: Return first active restaurant profile and its active menu
-      const firstRest = await RestaurantProfile.findOne({ operationalStatus: 'OPEN' });
-      if (firstRest) {
-        const items = await FoodMenuItem.find({ restaurantId: firstRest._id, status: 'ACTIVE' }).populate('categoryId', 'name');
+      // If table wasn't found by specific token, check if restaurant was specified
+      let targetRest = null;
+      if (restaurantId && mongoose.isValidObjectId(String(restaurantId))) {
+        targetRest = await RestaurantProfile.findById(restaurantId);
+      } else {
+        targetRest = await RestaurantProfile.findOne({ operationalStatus: 'OPEN' });
+      }
+
+      if (targetRest) {
+        const items = await FoodMenuItem.find({ restaurantId: targetRest._id, status: 'ACTIVE' }).populate('categoryId', 'name');
         res.status(200).json({
           success: true,
           table: {
-            tableNumber: query.toUpperCase() || 'T-01',
-            section: 'Main Dining Hall',
+            tableNumber: query.toUpperCase() || 'Counter',
+            section: 'Dining Area',
             discountPercent: 10,
-            specialNote: 'Welcome! Scan and order directly without waiting for a waiter.',
+            specialNote: 'Welcome! Scan and order directly.',
+            restaurantId: targetRest._id,
           },
-          restaurant: firstRest,
+          restaurant: targetRest,
           items,
         });
         return;
@@ -253,6 +273,7 @@ export const getCustomerScannedMenu = async (req: Request, res: Response): Promi
       success: true,
       table: {
         _id: table._id,
+        restaurantId: (table.restaurantId as any)?._id || table.restaurantId,
         tableNumber: table.tableNumber,
         section: table.section,
         label: table.label,
@@ -272,16 +293,24 @@ export const getCustomerScannedMenu = async (req: Request, res: Response): Promi
 // PLACE DINE-IN ORDER FROM SCANNED QR
 export const placeCustomerTableOrder = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { qrToken, tableNumber, items, customerName, customerPhone, orderNotes } = req.body;
+    const { qrToken, tableNumber, restaurantId, items, customerName, customerPhone, orderNotes } = req.body;
 
     if (!items || !Array.isArray(items) || items.length === 0) {
       res.status(400).json({ success: false, message: 'Cart items cannot be empty' });
       return;
     }
 
-    const table = await TableQR.findOne({
-      $or: [{ qrToken }, { tableNumber: String(tableNumber).toUpperCase() }],
-    });
+    const tableFilter: any = {};
+    if (qrToken) {
+      tableFilter.qrToken = qrToken;
+    } else {
+      tableFilter.tableNumber = String(tableNumber || 'T-01').toUpperCase();
+      if (restaurantId && mongoose.isValidObjectId(String(restaurantId))) {
+        tableFilter.restaurantId = restaurantId;
+      }
+    }
+
+    const table = await TableQR.findOne(tableFilter);
 
     const orderNumber = `TB-${Math.floor(1000 + Math.random() * 9000)}`;
 
@@ -320,10 +349,11 @@ export const placeCustomerTableOrder = async (req: Request, res: Response): Prom
 
     // Persist real Order document for Kitchen Live Orders & notification chimes
     let orderDoc: any = null;
-    if (table?.restaurantId) {
+    const effectiveRestaurantId = table?.restaurantId || (restaurantId && mongoose.isValidObjectId(String(restaurantId)) ? restaurantId : null);
+    if (effectiveRestaurantId) {
       try {
-        const restaurantProfile = await RestaurantProfile.findById(table.restaurantId);
-        const sellerId = restaurantProfile?.userId || table.restaurantId;
+        const restaurantProfile = await RestaurantProfile.findById(effectiveRestaurantId);
+        const sellerId = restaurantProfile?.userId || effectiveRestaurantId;
 
         orderDoc = await Order.create({
           orderNumber: `ORD-${orderNumber}`,

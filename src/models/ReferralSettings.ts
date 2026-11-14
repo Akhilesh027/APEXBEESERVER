@@ -6,6 +6,11 @@ export interface IReferralSettings extends Document {
     level2: number;
     level3: number;
   };
+  productOrderRewards?: {
+    level1Percent: number;
+    level2Percent: number;
+    level3Percent: number;
+  };
   onboardingRewards: {
     vendor: number;
     service_provider: number;
@@ -26,6 +31,11 @@ const ReferralSettingsSchema = new Schema<IReferralSettings>(
       level1: { type: Number, default: 0 },
       level2: { type: Number, default: 0 },
       level3: { type: Number, default: 0 }
+    },
+    productOrderRewards: {
+      level1Percent: { type: Number, default: 0 },
+      level2Percent: { type: Number, default: 0 },
+      level3Percent: { type: Number, default: 0 }
     },
     onboardingRewards: {
       vendor: { type: Number, default: 0 },

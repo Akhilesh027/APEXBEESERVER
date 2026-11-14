@@ -23,6 +23,10 @@ export interface IFoodMenuItem extends Document {
   basePrice: number;
   offerPrice?: number;
   taxRatePercent: number;
+  gstRate?: number;
+  gstPricingMode?: 'inclusive' | 'exclusive';
+  deliveryMode?: 'default' | 'platform_delivery' | 'self_delivery' | 'pickup_only';
+  isSelfDelivery?: boolean;
   packagingCharge?: number;
   preparationTimeMinutes: number;
   isBestseller: boolean;
@@ -88,6 +92,14 @@ const FoodMenuItemSchema = new Schema<IFoodMenuItem>(
     basePrice: { type: Number, required: true, min: 0 },
     offerPrice: { type: Number, default: 0 },
     taxRatePercent: { type: Number, default: 5 }, // 5% GST standard for food
+    gstRate: { type: Number, default: 5 },
+    gstPricingMode: { type: String, enum: ['inclusive', 'exclusive'], default: 'inclusive' },
+    deliveryMode: {
+      type: String,
+      enum: ['default', 'platform_delivery', 'self_delivery', 'pickup_only'],
+      default: 'default',
+    },
+    isSelfDelivery: { type: Boolean, default: false },
     packagingCharge: { type: Number, default: 0 },
     preparationTimeMinutes: { type: Number, default: 20 },
     isBestseller: { type: Boolean, default: false },

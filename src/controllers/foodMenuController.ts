@@ -336,6 +336,11 @@ export const createMenuItem = async (req: FoodPartnerAuthRequest, res: Response)
 
     const itemImage = image || req.body.imageUrl || '';
     const slug = name.toLowerCase().replace(/[^a-z0-9]/g, '-') + '-' + Math.floor(100 + Math.random() * 900);
+    const resolvedGstRate = req.body.gstRate !== undefined ? Number(req.body.gstRate) : 5;
+    const resolvedGstMode = req.body.gstPricingMode || 'inclusive';
+    const resolvedDeliveryMode = req.body.deliveryMode || 'default';
+    const isSelfDeliveryItem = resolvedDeliveryMode === 'self_delivery';
+
     const item = new FoodMenuItem({
       restaurantId,
       categoryId,
@@ -347,6 +352,11 @@ export const createMenuItem = async (req: FoodPartnerAuthRequest, res: Response)
       image: itemImage,
       basePrice: price,
       offerPrice: offerPrice || 0,
+      gstRate: resolvedGstRate,
+      taxRatePercent: resolvedGstRate,
+      gstPricingMode: resolvedGstMode,
+      deliveryMode: resolvedDeliveryMode,
+      isSelfDelivery: isSelfDeliveryItem,
       packagingCharge: packCharge,
       packingCharge: packCharge,
       shippingCharge: shipCharge,
@@ -394,6 +404,8 @@ export const createMenuItem = async (req: FoodPartnerAuthRequest, res: Response)
         foodMenuItemId: item._id,
         baseMrp: price,
         baseSellingPrice: offerPrice || price,
+        gstRate: resolvedGstRate,
+        gstPricingMode: resolvedGstMode,
         shippingCharge: shipCharge,
         packingCharge: packCharge,
         deliveryFee: shipCharge,
@@ -709,6 +721,13 @@ export const updateMenuItem = async (req: FoodPartnerAuthRequest, res: Response)
     if (updateData.shippingCharge !== undefined) {
       updateData.deliveryFee = Number(updateData.shippingCharge);
     }
+    if (updateData.gstRate !== undefined) {
+      updateData.gstRate = Number(updateData.gstRate);
+      updateData.taxRatePercent = Number(updateData.gstRate);
+    }
+    if (updateData.deliveryMode !== undefined) {
+      updateData.isSelfDelivery = updateData.deliveryMode === 'self_delivery';
+    }
 
     const item = await FoodMenuItem.findOneAndUpdate({ _id: id, restaurantId }, updateData, { new: true });
     if (!item) {
@@ -740,6 +759,8 @@ export const updateMenuItem = async (req: FoodPartnerAuthRequest, res: Response)
         prodSync.shippingCharge = sCharge;
         prodSync.deliveryFee = sCharge;
       }
+      if (updateData.gstRate !== undefined) prodSync.gstRate = Number(updateData.gstRate);
+      if (updateData.gstPricingMode !== undefined) prodSync.gstPricingMode = updateData.gstPricingMode;
       if (updateData.isPreOrder !== undefined) prodSync.isPreOrder = Boolean(updateData.isPreOrder);
       if (updateData.preOrderType !== undefined) prodSync.preOrderType = updateData.preOrderType;
       if (updateData.preOrderLeadTimeDays !== undefined) prodSync.preOrderLeadTimeDays = Number(updateData.preOrderLeadTimeDays);

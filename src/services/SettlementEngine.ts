@@ -3,9 +3,12 @@ import { CommissionSettlement } from '../models/CommissionSettlement';
 import { ReferralTransaction } from '../models/ReferralTransaction';
 import { Order } from '../models/Order';
 import Product from '../models/Product';
+import { FoodMenuItem } from '../models/FoodMenuItem';
+import { CommissionRule } from '../models/CommissionRule';
 import { User } from '../models/User';
 import { ReferralSettings } from '../models/ReferralSettings';
 import { BusinessRelationship } from '../models/BusinessRelationship';
+import { Wallet } from '../models/Wallet';
 import { WalletEngine } from './WalletEngine';
 import { ServiceProvider } from '../models/ServiceProvider';
 import { ServiceRequest } from '../models/ServiceRequest';
@@ -24,7 +27,25 @@ export class SettlementEngine {
       level: doc.level,
       transactionType: doc.transactionType
     }).session(session || null);
-    if (existing) return existing;
+    if (existing) {
+      if (existing.status !== 'released' && Math.abs(existing.amount - doc.amount) > 0.001) {
+        const diff = Number((doc.amount - existing.amount).toFixed(2));
+        existing.amount = doc.amount;
+        if (session) {
+          await existing.save({ session });
+        } else {
+          await existing.save();
+        }
+        if (diff !== 0 && existing.status === 'pending') {
+          await Wallet.findOneAndUpdate(
+            { userId: existing.recipientUserId },
+            { $inc: { pendingBalance: diff } },
+            { session: session || undefined }
+          );
+        }
+      }
+      return existing;
+    }
     const created = await ReferralTransaction.create([doc], { session });
 
     const tx = created[0];
@@ -46,7 +67,30 @@ export class SettlementEngine {
       recipientId: doc.recipientId,
       settlementType: doc.settlementType
     }).session(session || null);
-    if (existing) return existing;
+    if (existing) {
+      if (existing.status !== 'released' && Math.abs(existing.amount - doc.amount) > 0.001) {
+        const diff = Number((doc.amount - existing.amount).toFixed(2));
+        existing.amount = doc.amount;
+        if (doc.totalPlatformFee !== undefined) existing.totalPlatformFee = doc.totalPlatformFee;
+        if (doc.stateFranchiseId) existing.stateFranchiseId = doc.stateFranchiseId;
+        if (doc.districtFranchiseId) existing.districtFranchiseId = doc.districtFranchiseId;
+        if (doc.mandalFranchiseId) existing.mandalFranchiseId = doc.mandalFranchiseId;
+        if (doc.entrepreneurId) existing.entrepreneurId = doc.entrepreneurId;
+        if (session) {
+          await existing.save({ session });
+        } else {
+          await existing.save();
+        }
+        if (diff !== 0 && existing.status === 'pending') {
+          await Wallet.findOneAndUpdate(
+            { userId: existing.recipientId },
+            { $inc: { pendingBalance: diff } },
+            { session: session || undefined }
+          );
+        }
+      }
+      return existing;
+    }
     const created = await CommissionSettlement.create([doc], { session });
 
     const s = created[0];
@@ -209,9 +253,7 @@ export class SettlementEngine {
           const l2Recipient = (hierarchy && hierarchy.level2UserId) ? hierarchy.level2UserId : this.COMPANY_ID;
           const l3Recipient = (hierarchy && hierarchy.level3UserId) ? hierarchy.level3UserId : this.COMPANY_ID;
 
-          const l1Amount = (settings.firstOrderRewards && settings.firstOrderRewards.level1 !== undefined && settings.firstOrderRewards.level1 !== 0)
-            ? settings.firstOrderRewards.level1
-            : 50;
+          const l1Amount = Number(settings.firstOrderRewards?.level1 || 0);
 
           if (l1Amount > 0) {
             try {
@@ -342,48 +384,109 @@ export class SettlementEngine {
     // 2. PRODUCT COMMISSIONS & FRANCHISE SETTLEMENTS & VENDOR PAYOUT
     // ==========================================
     if (order.items && order.items.length > 0) {
+      // Dynamic referral settings from DB (no hardcoding)
+      let querySettings = ReferralSettings.findOne({});
+      if (session) querySettings = querySettings.session(session);
+      const settings: any = (await querySettings) || new ReferralSettings();
+
+      const defaultL1Percent = Number(settings?.productOrderRewards?.level1Percent || 0);
+      const defaultL2Percent = Number(settings?.productOrderRewards?.level2Percent || 0);
+      const defaultL3Percent = Number(settings?.productOrderRewards?.level3Percent || 0);
+
       for (const item of order.items) {
         let queryProd = Product.findById(item.productId);
         if (session) queryProd = queryProd.session(session);
-        const product = await queryProd;
+        let product: any = await queryProd;
+
+        // Support food items / restaurant menu items
+        if (!product) {
+          try {
+            let queryFood = FoodMenuItem.findById(item.productId);
+            if (session) queryFood = queryFood.session(session);
+            product = await queryFood;
+          } catch (_) {}
+        }
         if (!product) continue;
 
-        const sellingPrice = item.price;
-        const qty = item.quantity;
-        const totalSellingAmount = sellingPrice * qty;
+        const sellingPrice = Number(item.price || 0);
+        const qty = Number(item.quantity || 1);
+        const totalSellingAmount = Number((sellingPrice * qty).toFixed(2));
 
-        // Platform fee & vendor commission calculations
-        const platformFeePercent = product.adminPricing?.platformFeePercent || 0;
-        const totalPlatformFee = (totalSellingAmount * platformFeePercent) / 100;
+        const sellerId = product.sellerId || product.restaurantId || (order as any).sellerId || (order as any).vendorId;
+        const sellerType = product.sellerType || (product.restaurantId ? 'food' : 'vendor');
 
-        const vendorCommissionPercent = product.adminPricing?.vendorCommissionPercent || 0;
-        const totalVendorCommission = (totalSellingAmount * vendorCommissionPercent) / 100;
+        // Dynamic commission rule from DB for seller's business type (no hardcoding)
+        let commRule: any = null;
+        try {
+          commRule = await CommissionRule.findOne({
+            $or: [
+              { businessType: sellerType },
+              { name: sellerType },
+              { name: 'default' },
+              { isActive: true },
+              { active: true }
+            ]
+          }).session(session || null);
+        } catch (_) {}
 
-        const distributedFrom = product.adminPricing?.distributedFrom || 'platform_fee';
+        // Platform fee determination (dynamic percentage or fixed amount from product or active commission rule)
+        const rulePlatformPercent = Number(commRule?.platformPercentage || 0);
+        let platformFeePercent = Number(product.adminPricing?.platformFeePercent ?? product.platformCommissionPercent ?? 0);
+        let directPlatformFee = Number(product.adminPricing?.platformFeeAmount ?? product.platformShareAmount ?? item.platformFeeAmount ?? 0);
+
+        // If not set directly on product, check if order summary has platformFee or use active CommissionRule
+        if (directPlatformFee === 0 && platformFeePercent === 0) {
+          if (order.orderSummary?.platformFee && order.items.length > 0) {
+            directPlatformFee = Number((order.orderSummary.platformFee / order.items.length / qty).toFixed(2));
+          } else if (rulePlatformPercent > 0) {
+            platformFeePercent = rulePlatformPercent;
+          }
+        }
+
+        let totalPlatformFee = 0;
+        if (directPlatformFee > 0) {
+          totalPlatformFee = Number((directPlatformFee * qty).toFixed(2));
+        } else if (platformFeePercent > 0) {
+          totalPlatformFee = Number(((totalSellingAmount * platformFeePercent) / 100).toFixed(2));
+        }
+
+        const vendorCommissionPercent = Number(product.adminPricing?.vendorCommissionPercent ?? product.vendorCommissionPercent ?? 0);
+        let totalVendorCommission = 0;
+        if (vendorCommissionPercent > 0) {
+          totalVendorCommission = Number(((totalSellingAmount * vendorCommissionPercent) / 100).toFixed(2));
+        }
+
+        const distributedFrom = product.adminPricing?.distributedFrom || product.distributedFrom || 'platform_fee';
         let distributionPool = totalPlatformFee;
 
         if (distributedFrom === 'apexbee_commission') {
           distributionPool = totalVendorCommission;
         } else if (distributedFrom === 'both') {
-          distributionPool = totalPlatformFee + totalVendorCommission;
+          distributionPool = Number((totalPlatformFee + totalVendorCommission).toFixed(2));
         } else if (distributedFrom === 'none') {
           distributionPool = 0;
         }
 
-        // A. Generate Referral Transactions using adminPricing.commissionShares strictly
-        const shares = product.adminPricing?.commissionShares || [];
-        const getShareAmount = (type: string) => {
+        // A. Generate Referral Transactions using adminPricing.commissionShares or dynamic settings
+        const shares = product.adminPricing?.commissionShares || product.commissionShares || [];
+        const getShareAmount = (type: string, fallbackPercent: number = 0) => {
           if (distributedFrom === 'none') return 0;
           const sh = shares.find((s: any) => s.type === type && s.isActive !== false);
-          if (!sh) return 0;
-          const commissionBase = product.adminPricing?.commissionBase || 'platform_fee';
-          if (commissionBase === 'sale_price') {
-            return (totalSellingAmount * sh.percent) / 100;
+          if (sh) {
+            const commissionBase = product.adminPricing?.commissionBase || 'platform_fee';
+            if (commissionBase === 'sale_price') {
+              return Number(((totalSellingAmount * sh.percent) / 100).toFixed(2));
+            }
+            return sh.amount ? Number((sh.amount * qty).toFixed(2)) : Number(((distributionPool * sh.percent) / 100).toFixed(2));
           }
-          return sh.amount ? (sh.amount * qty) : ((distributionPool * sh.percent) / 100);
+          // Dynamic fallback when product has no custom commission share overrides
+          if (fallbackPercent > 0 && distributionPool > 0) {
+            return Number(((distributionPool * fallbackPercent) / 100).toFixed(2));
+          }
+          return 0;
         };
 
-        // Task USER - 13: Product Referral Tracking & 3-Level Duplicate Incentive Prevention
+        // Product Referral Tracking & 3-Level Duplicate Incentive Prevention
         let productSharer: any = null;
         if (order.productSharerId) {
           let querySharer = User.findById(order.productSharerId);
@@ -412,14 +515,11 @@ export class SettlementEngine {
         let uplines: any[] = [];
 
         if (productSharer && !isSharerSelf && !isExistingDownline) {
-          // Rule 3: Non-downline buyer purchased via shared product link.
-          // Direct product sharer earns the Level 1 Product Commission for driving the sale.
-          // Buyer's permanent hierarchy remains completely intact without corruption.
           const sharerHierarchy = productSharer.referralHierarchy;
           uplines = [
             {
               id: productSharer._id,
-              amount: getShareAmount("level1"),
+              amount: getShareAmount("level1", defaultL1Percent),
               level: 1,
               isFallback: false,
               txType: "product_link_referral_commission",
@@ -427,7 +527,7 @@ export class SettlementEngine {
             },
             {
               id: sharerHierarchy?.level1UserId || this.COMPANY_ID,
-              amount: getShareAmount("level2"),
+              amount: getShareAmount("level2", defaultL2Percent),
               level: 2,
               isFallback: !sharerHierarchy?.level1UserId,
               txType: "product_commission",
@@ -435,7 +535,7 @@ export class SettlementEngine {
             },
             {
               id: sharerHierarchy?.level2UserId || this.COMPANY_ID,
-              amount: getShareAmount("level3"),
+              amount: getShareAmount("level3", defaultL3Percent),
               level: 3,
               isFallback: !sharerHierarchy?.level2UserId,
               txType: "product_commission",
@@ -443,13 +543,10 @@ export class SettlementEngine {
             }
           ];
         } else {
-          // Rule 1: Buyer is in existing 3-level downline (or organic order).
-          // Standard 3-tier commission distribution logic strictly applies.
-          // No duplicate product-link incentive is generated.
           uplines = [
-            { id: hierarchy?.level1UserId || this.COMPANY_ID, amount: getShareAmount("level1"), level: 1, isFallback: !hierarchy?.level1UserId, txType: "product_commission", reason: "product_commission" },
-            { id: hierarchy?.level2UserId || this.COMPANY_ID, amount: getShareAmount("level2"), level: 2, isFallback: !hierarchy?.level2UserId, txType: "product_commission", reason: "product_commission" },
-            { id: hierarchy?.level3UserId || this.COMPANY_ID, amount: getShareAmount("level3"), level: 3, isFallback: !hierarchy?.level3UserId, txType: "product_commission", reason: "product_commission" }
+            { id: hierarchy?.level1UserId || this.COMPANY_ID, amount: getShareAmount("level1", defaultL1Percent), level: 1, isFallback: !hierarchy?.level1UserId, txType: "product_commission", reason: "product_commission" },
+            { id: hierarchy?.level2UserId || this.COMPANY_ID, amount: getShareAmount("level2", defaultL2Percent), level: 2, isFallback: !hierarchy?.level2UserId, txType: "product_commission", reason: "product_commission" },
+            { id: hierarchy?.level3UserId || this.COMPANY_ID, amount: getShareAmount("level3", defaultL3Percent), level: 3, isFallback: !hierarchy?.level3UserId, txType: "product_commission", reason: "product_commission" }
           ];
         }
 
@@ -475,28 +572,30 @@ export class SettlementEngine {
 
         // B. Generate Unified Franchise/Vendor/Company Settlements
         let queryRel = BusinessRelationship.findOne({
-          userId: product.sellerId,
-          businessType: { $in: ["vendor", "manufacturer", "wholesaler"] },
+          userId: sellerId,
+          businessType: { $in: ["vendor", "manufacturer", "wholesaler", "food", "restaurant"] },
           status: "active"
         });
         if (session) queryRel = queryRel.session(session);
         const rel = await queryRel;
 
-        // Vendor Payout Calculation
+        // Vendor / Partner Net Payout Calculation:
+        // Selling amount minus total platform cut (platform fee + vendor commission)
+        const totalPlatformDeductions = Number((totalPlatformFee + totalVendorCommission).toFixed(2));
         const finalSellerAmount = (product.adminPricing?.finalSellerAmount !== undefined
-          ? (product.adminPricing.finalSellerAmount * qty)
-          : (totalSellingAmount - totalVendorCommission));
+          ? Number((product.adminPricing.finalSellerAmount * qty).toFixed(2))
+          : Math.max(0, Number((totalSellingAmount - totalPlatformDeductions).toFixed(2))));
 
         // 1. Create Vendor Settlement Row
-        if (finalSellerAmount > 0) {
+        if (finalSellerAmount > 0 && sellerId) {
           try {
             await this.createCommissionSettlementUnique({
               orderId: order._id,
               productId: product._id,
-              recipientId: product.sellerId,
+              recipientId: sellerId,
               amount: finalSellerAmount,
               settlementType: 'vendor',
-              vendorId: product.sellerId,
+              vendorId: sellerId,
               status: 'placed',
               releaseDate
             }, session);
@@ -506,24 +605,31 @@ export class SettlementEngine {
         }
 
         if (distributionPool > 0 || totalPlatformFee > 0) {
-          const statePercent = (shares.find((s: any) => s.type === "state" && s.isActive !== false)?.percent || 0);
-          const districtPercent = (shares.find((s: any) => s.type === "district" && s.isActive !== false)?.percent || 0);
-          const mandalPercent = (shares.find((s: any) => s.type === "mandal" && s.isActive !== false)?.percent || 0);
-          const entrepreneurPercent = (shares.find((s: any) => s.type === "entrepreneur" && s.isActive !== false)?.percent || 0);
+          // Dynamic percentages strictly from active CommissionRule in database (0 if unconfigured)
+          const defaultStatePercent = Number(commRule?.statePercent || 0);
+          const defaultDistrictPercent = Number(commRule?.districtPercent || 0);
+          const defaultMandalPercent = Number(commRule?.mandalPercent || 0);
+          const defaultEntrepreneurPercent = Number(commRule?.entrepreneurPercent || 0);
+
+          const statePercent = (shares.find((s: any) => s.type === "state" && s.isActive !== false)?.percent ?? defaultStatePercent);
+          const districtPercent = (shares.find((s: any) => s.type === "district" && s.isActive !== false)?.percent ?? defaultDistrictPercent);
+          const mandalPercent = (shares.find((s: any) => s.type === "mandal" && s.isActive !== false)?.percent ?? defaultMandalPercent);
+          const entrepreneurPercent = (shares.find((s: any) => s.type === "entrepreneur" && s.isActive !== false)?.percent ?? defaultEntrepreneurPercent);
           const wishLinkPercent = (shares.find((s: any) => s.type === "wishlink" && s.isActive !== false)?.percent || 0);
           const referralPoolPercent = (shares.find((s: any) => s.type === "referralPool" && s.isActive !== false)?.percent || 0);
-          const companyPercent = (shares.find((s: any) => s.type === "company" && s.isActive !== false)?.percent || 0) ||
-            (100 - (statePercent + districtPercent + mandalPercent + entrepreneurPercent + wishLinkPercent + referralPoolPercent));
+
+          const totalAllocated = statePercent + districtPercent + mandalPercent + entrepreneurPercent + wishLinkPercent + referralPoolPercent;
+          const companyPercent = (shares.find((s: any) => s.type === "company" && s.isActive !== false)?.percent ?? (Number(commRule?.companyPercent || 0)));
 
           const getSplitAmount = (type: string, percent: number) => {
             if (distributedFrom === 'none') return 0;
             const sh = shares.find((s: any) => s.type === type && s.isActive !== false);
             const commissionBase = product.adminPricing?.commissionBase || 'platform_fee';
             if (commissionBase === 'sale_price') {
-              return (totalSellingAmount * percent) / 100;
+              return Number(((totalSellingAmount * percent) / 100).toFixed(2));
             }
-            if (sh && sh.amount) return sh.amount * qty;
-            return (distributionPool * percent) / 100;
+            if (sh && sh.amount) return Number((sh.amount * qty).toFixed(2));
+            return Number(((distributionPool * percent) / 100).toFixed(2));
           };
 
           const stateCommission = getSplitAmount("state", statePercent);
@@ -534,16 +640,31 @@ export class SettlementEngine {
           const referralPoolCommission = getSplitAmount("referralPool", referralPoolPercent);
           const companyCommission = getSplitAmount("company", companyPercent);
 
-          // Resolve actual User IDs for the recipients or fallback to Company System Wallet
+          // Resolve actual User IDs for the recipients or dynamically resolve by territory
           const stateFranchise = rel?.stateFranchiseId ? await mongoose.model("Franchise").findById(rel.stateFranchiseId).session(session || null) : null;
           const districtFranchise = rel?.districtFranchiseId ? await mongoose.model("Franchise").findById(rel.districtFranchiseId).session(session || null) : null;
           const mandalFranchise = rel?.mandalFranchiseId ? await mongoose.model("Franchise").findById(rel.mandalFranchiseId).session(session || null) : null;
           const entrepreneur = rel?.entrepreneurId ? await mongoose.model("Entrepreneur").findById(rel.entrepreneurId).session(session || null) : null;
 
-          const stateUserId = stateFranchise ? stateFranchise.userId : this.COMPANY_ID;
-          const districtUserId = districtFranchise ? districtFranchise.userId : this.COMPANY_ID;
-          const mandalUserId = mandalFranchise ? mandalFranchise.userId : this.COMPANY_ID;
-          const entrepreneurUserId = entrepreneur ? entrepreneur.userId : this.COMPANY_ID;
+          let territoryFranchisers: any = null;
+          if (!stateFranchise || !districtFranchise || !mandalFranchise) {
+            try {
+              const { AssignmentCommissionService } = require('./AssignmentCommissionService');
+              const orderTerritory = {
+                mandal: order.shippingAddress?.mandal || (order as any).mandal || '',
+                district: order.shippingAddress?.district || order.shippingAddress?.city || (order as any).district || '',
+                state: order.shippingAddress?.state || (order as any).state || 'Telangana'
+              };
+              territoryFranchisers = await AssignmentCommissionService.resolveTerritoryFranchisers(orderTerritory, sellerId);
+            } catch (tErr) {
+              console.warn('[SettlementEngine] Territory franchise resolution notice:', tErr);
+            }
+          }
+
+          const stateUserId = (stateFranchise ? stateFranchise.userId : null) || territoryFranchisers?.stateFranchiseUserId || this.COMPANY_ID;
+          const districtUserId = (districtFranchise ? districtFranchise.userId : null) || territoryFranchisers?.districtFranchiseUserId || this.COMPANY_ID;
+          const mandalUserId = (mandalFranchise ? mandalFranchise.userId : null) || territoryFranchisers?.mandalFranchiseUserId || this.COMPANY_ID;
+          const entrepreneurUserId = (entrepreneur ? entrepreneur.userId : null) || this.COMPANY_ID;
 
           const splits: Array<{ recipientUserId: any; amount: number; type: string; fieldName: string }> = [
             { recipientUserId: stateUserId, amount: stateCommission, type: stateUserId.toString() === this.COMPANY_ID.toString() ? 'company' : 'franchise', fieldName: 'stateFranchiseId' },
@@ -559,12 +680,12 @@ export class SettlementEngine {
             if (sp.recipientUserId && sp.amount > 0) {
               try {
                 const legacyFields: any = {
-                  vendorId: product.sellerId,
+                  vendorId: sellerId,
                   totalPlatformFee,
-                  stateFranchiseId: stateFranchise ? stateFranchise.userId : null,
-                  districtFranchiseId: districtFranchise ? districtFranchise.userId : null,
-                  mandalFranchiseId: mandalFranchise ? mandalFranchise.userId : null,
-                  entrepreneurId: entrepreneur ? entrepreneur.userId : null
+                  stateFranchiseId: stateUserId,
+                  districtFranchiseId: districtUserId,
+                  mandalFranchiseId: mandalUserId,
+                  entrepreneurId: entrepreneurUserId
                 };
 
                 await this.createCommissionSettlementUnique({
@@ -699,7 +820,7 @@ export class SettlementEngine {
         }
       }
 
-      // If releasing for a specific order and no settlements exist yet, generate them first!
+      // If releasing for a specific order, reconcile and generate any missing settlements/referrals first!
       if (resolvedOrder && orderDbId) {
         let qTxs = ReferralTransaction.countDocuments({ orderId: orderDbId });
         if (sess) qTxs = qTxs.session(sess);
@@ -709,8 +830,20 @@ export class SettlementEngine {
         if (sess) qSettlements = qSettlements.session(sess);
         const existingSettlementsCount = await qSettlements;
 
-        if (existingTxsCount === 0 && existingSettlementsCount === 0) {
-          console.log(`[SettlementEngine] Generating missing settlements for order ${resolvedOrder.orderNumber} (${orderDbId})...`);
+        let needsReconciliation = (existingTxsCount === 0 || existingSettlementsCount <= 1);
+        if (!needsReconciliation) {
+          const unreleasedVendorSettlement = await CommissionSettlement.findOne({
+            orderId: orderDbId,
+            settlementType: 'vendor',
+            status: { $in: ['placed', 'pending'] }
+          }).session(sess || null);
+          if (unreleasedVendorSettlement && resolvedOrder.totalAmount && unreleasedVendorSettlement.amount >= resolvedOrder.totalAmount) {
+            needsReconciliation = true;
+          }
+        }
+
+        if (needsReconciliation) {
+          console.log(`[SettlementEngine] Generating / reconciling complete settlements and referrals for order ${resolvedOrder.orderNumber} (${orderDbId})...`);
           await this.createSettlements(resolvedOrder, sess);
         }
       }
@@ -876,6 +1009,24 @@ export class SettlementEngine {
           await resolvedOrder.save({ session: sess });
         } else {
           await resolvedOrder.save();
+        }
+      } else if (releasedTxs > 0 || releasedSettlements > 0) {
+        const touchedOrderIds = [
+          ...pendingTxs.map(t => t.orderId),
+          ...pendingSettlements.map(s => s.orderId)
+        ].filter(Boolean);
+        if (touchedOrderIds.length > 0) {
+          await Order.updateMany(
+            { _id: { $in: touchedOrderIds } },
+            {
+              $set: {
+                commissionReleaseStatus: 'Released',
+                isCommissionReleased: true,
+                commissionReleasedAt: now
+              }
+            },
+            sess ? { session: sess } : undefined
+          );
         }
       }
 
